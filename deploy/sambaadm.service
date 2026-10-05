@@ -1,0 +1,21 @@
+[Unit]
+Description=sambaadm — Samba4 AD administration
+After=network.target samba-ad-dc.service
+Wants=samba-ad-dc.service
+
+[Service]
+Type=simple
+User=sambaadm
+Group=sambaadm
+EnvironmentFile=-/etc/sambaadm/env
+ExecStart=/usr/local/bin/sambaadm serve --config /etc/sambaadm/config.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/sambaadm
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

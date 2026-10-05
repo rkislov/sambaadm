@@ -1,0 +1,27 @@
+{{define "login.html"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход · sambaadm</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <h1 class="brand">sambaadm</h1>
+    <p class="muted">Администрирование Samba4 AD</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <form method="post" action="/login">
+      <label>Логин
+        <input type="text" name="username" autocomplete="username" required autofocus>
+      </label>
+      <label>Пароль
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Войти</button>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}

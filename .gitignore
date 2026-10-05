@@ -1,0 +1,15 @@
+# Бинарник
+bin/
+dist/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Secrets
+.env
+*.pem
+*.key
+!**/testdata/**

@@ -1,0 +1,29 @@
+server:
+  listen: ":8080"
+  # tls:
+  #   cert: /etc/sambaadm/server.crt
+  #   key:  /etc/sambaadm/server.key
+  metrics: true
+
+ldap:
+  uri: "ldaps://dc1.example.com:636"
+  # uri: "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi"
+  base_dn: "DC=example,DC=com"
+  bind:
+    type: simple
+    user: "administrator@example.com"
+    password_env: SAMBAADM_PASSWORD
+
+auth:
+  session_ttl: 8h
+  roles:
+    admins:
+      - "CN=Domain Admins,CN=Users,DC=example,DC=com"
+    helpdesk:
+      - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
+
+audit:
+  file: /var/log/sambaadm/audit.log
+
+logging:
+  level: info

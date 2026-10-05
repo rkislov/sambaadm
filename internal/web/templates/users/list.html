@@ -1,0 +1,52 @@
+{{define "users/list.html"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · sambaadm</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="/static/js/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">sambaadm</a>
+    <nav>
+      <a href="/">Дашборд</a>
+      <a href="/users" class="active">Пользователи</a>
+      <a href="/groups">Группы</a>
+      <a href="/domain">Домен</a>
+    </nav>
+    <div class="user">
+      <span>{{.User}}</span>
+      <form method="post" action="/logout" class="inline">
+        <button type="submit" class="linkish">Выход</button>
+      </form>
+    </div>
+  </header>
+  <main class="container">
+    <h1>Пользователи</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <form class="toolbar" method="get" action="/users">
+      <input type="search" name="q" placeholder="Поиск…" hx-get="/users" hx-trigger="keyup changed delay:300ms" hx-target="body">
+      <button type="submit">Найти</button>
+    </form>
+    <table>
+      <thead><tr><th>Логин</th><th>Имя</th><th>Статус</th><th>DN</th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.SAMAccountName}}</td>
+          <td>{{.DisplayName}}</td>
+          <td>{{if .Enabled}}активен{{else}}отключён{{end}}</td>
+          <td class="mono">{{.DN}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Нет данных</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
+{{end}}
