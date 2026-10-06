@@ -5,7 +5,7 @@ COMMIT   ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE     ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  := -s -w -X sambaadm/internal/version.Version=$(VERSION) -X sambaadm/internal/version.Commit=$(COMMIT) -X sambaadm/internal/version.Date=$(DATE)
 
-.PHONY: build test lint run clean release release-github docker checksums
+.PHONY: build test lint run clean release release-github docker checksums integration
 
 build:
 	@mkdir -p bin
@@ -44,3 +44,7 @@ checksums:
 
 docker:
 	docker build -t $(APP):$(VERSION) .
+
+# Optional live Samba DC tests (see testdata/README.md)
+integration:
+	SAMBAADM_IT=1 go test ./internal/service -run Integration -count=1 -timeout 60s

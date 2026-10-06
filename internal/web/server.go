@@ -23,7 +23,7 @@ import (
 	"sambaadm/internal/service"
 )
 
-//go:embed templates static
+//go:embed templates static openapi.yaml
 var assets embed.FS
 
 // Options wires dependencies into the HTTP server.
@@ -105,6 +105,8 @@ func (s *Server) buildRouter() chi.Router {
 	if s.cfg.Server.Metrics {
 		r.Handle("/metrics", promhttp.Handler())
 	}
+	r.Get("/api/openapi.yaml", s.handleOpenAPISpec)
+	r.Get("/api/docs", s.handleAPIDocs)
 
 	r.Get("/login", s.handleLoginGet)
 	r.Post("/login", s.handleLoginPost)
@@ -234,6 +236,20 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+func (s *Server) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	b, err := assets.ReadFile("openapi.yaml")
+	if err != nil {
+		http.Error(w, "openapi missing", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	_, _ = w.Write(b)
+}
+
+func (s *Server) handleAPIDocs(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "api_docs.html", pageData{Title: "OpenAPI", Lang: langFrom(r)})
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {

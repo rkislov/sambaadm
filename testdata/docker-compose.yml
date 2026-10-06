@@ -1,0 +1,26 @@
+# Lab Samba AD DC for integration smoke-tests (NOT for production).
+# Usage:
+#   docker compose -f testdata/docker-compose.yml up -d
+# Default domain: SAMBAADM.TEST / Administrator / Passw0rd
+services:
+  dc:
+    image: nowsci/samba-domain:latest
+    hostname: dc1
+    environment:
+      DOMAIN: SAMBAADM.TEST
+      DOMAINPASS: Passw0rd
+      DNSFORWARDER: "1.1.1.1"
+      HOSTIP: "127.0.0.1"
+    ports:
+      - "389:389"
+      - "636:636"
+      - "88:88"
+      - "445:445"
+    volumes:
+      - samba-data:/var/lib/samba
+    cap_add:
+      - SYS_ADMIN
+    restart: unless-stopped
+
+volumes:
+  samba-data:

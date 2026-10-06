@@ -1,0 +1,95 @@
+openapi: 3.0.3
+info:
+  title: sambaadm API
+  version: "1.0"
+  description: REST API for Samba4 AD administration (session cookie + CSRF for mutating methods).
+servers:
+  - url: /api/v1
+paths:
+  /users:
+    get:
+      summary: List users
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: ou
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Create user
+      responses:
+        "201": { description: Created }
+  /users/{login}:
+    get:
+      summary: Get user
+      parameters:
+        - in: path
+          name: login
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+    delete:
+      summary: Delete user
+      parameters:
+        - in: path
+          name: login
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /groups:
+    get:
+      summary: List groups
+      responses:
+        "200": { description: OK }
+  /domain:
+    get:
+      summary: Domain info
+      responses:
+        "200": { description: OK }
+  /dns/zones:
+    get:
+      summary: List DNS zones
+      responses:
+        "200": { description: OK }
+  /gpo:
+    get:
+      summary: List GPOs
+      responses:
+        "200": { description: OK }
+  /shares:
+    get:
+      summary: List local smb.conf file shares
+      responses:
+        "200": { description: OK }
+    post:
+      summary: Create share (+ directory/ACL)
+      responses:
+        "201": { description: Created }
+  /printers:
+    get:
+      summary: List printer shares / CUPS
+      responses:
+        "200": { description: OK }
+  /acl:
+    get:
+      summary: Get POSIX ACL for path
+      parameters:
+        - in: query
+          name: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sambaadm_session
+security:
+  - cookieAuth: []
