@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** этап 3 — доверия, FSMO, репликация, сайты. Мутации доверий/FSMO/repl через `samba-tool` на DC; чтение — LDAP. DNS и GPO — следующий этап.
+> **Статус:** этап 4 — DNS и базовый GPO. Зоны/записи и GPO через `samba-tool` (+ LDAP list). Далее — локализация, CSRF, полный RBAC.
 
 ---
 
@@ -19,9 +19,9 @@ Linux-first: на контроллере домена удобно работа�
 
 | Слой | Что есть сейчас |
 |------|-----------------|
-| **CLI** | users/groups/ou/computers + `trust`, `domain fsmo/level`, `repl`, `site`, `subnet` |
-| **Web UI** | users/groups/computers/OU + trusts, repl, sites, domain/FSMO |
-| **REST** | `/api/v1/users|groups|computers|ou|trusts|domain|repl|sites|subnets` |
+| **CLI** | … + `dns zone|record`, `gpo` list/create/link/backup |
+| **Web UI** | … + `/dns`, `/gpo` |
+| **REST** | … + `/api/v1/dns/*`, `/api/v1/gpo` |
 | **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, bind, paged search, add/modify/delete/moddn |
 | **Безопасность** | cookie-сессии (HttpOnly), роли readonly/helpdesk/admin, журнал аудита |
 
@@ -154,6 +154,10 @@ sambaadm domain info|fsmo|level
 sambaadm repl partners|status|sync
 sambaadm site list|create|delete
 sambaadm subnet list|create|delete
+sambaadm dns zone list|create|delete
+sambaadm dns record query|add|update|delete
+sambaadm gpo list|show|create|delete|link|unlink|backup|restore
+sambaadm gpo distribute <gpo>   # SYSVOL → все DC + ACL, со статусом
 ```
 
 Пароль пользователя: только через `--prompt` / интерактивный ввод (не в argv). Смена `unicodePwd` требует `ldaps://` или `ldapi://`.
@@ -265,7 +269,7 @@ make docker
 1. ~~Каркас: cobra, chi, embed, конфиг, LDAP, auth~~
 2. ~~CRUD пользователей, групп, OU, компьютеров~~
 3. ~~Доверия, FSMO, репликация, сайты~~
-4. DNS и базовый GPO
+4. ~~DNS и базовый GPO~~
 5. Полный SSR/HTMX, локализация, RBAC, аудит
 6. Интеграционные тесты, документация, релизный пайплайн
 

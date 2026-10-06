@@ -207,7 +207,7 @@ func openServices() (*service.Services, func(), error) {
 			return nil, nil, err
 		}
 	}
-	svcs := service.New(client, auditLog)
+	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{GPO: rootCfg.GPO})
 	cleanup := func() {
 		_ = client.Close()
 		_ = auditLog.Close()

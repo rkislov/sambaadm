@@ -22,6 +22,15 @@ auth:
     helpdesk:
       - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
 
+gpo:
+  sysvol_path: /var/lib/samba/sysvol
+  # drs | rsync | both — как доставлять GPO на остальные DC
+  sync_mode: both
+  rsync_binary: rsync
+  ssh_binary: ssh
+  # после rsync: ssh <dc> samba-tool ntacl sysvolreset
+  remote_sysvolreset: true
+
 audit:
   file: /var/log/sambaadm/audit.log
 

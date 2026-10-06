@@ -62,3 +62,14 @@ sambaadm [global flags] <command>
 ### Сайты и подсети
 - `sambaadm site list|create|delete`
 - `sambaadm subnet list|create|delete`
+
+### DNS (samba-tool)
+- `sambaadm dns zone list|create|delete`
+- `sambaadm dns record query --zone=... [--name=@] [--type=A]`
+- `sambaadm dns record add|update|delete --zone=... --name=... --type=A --data=...`
+
+### GPO (samba-tool)
+- `sambaadm gpo list|show|create|delete`
+- `sambaadm gpo link|unlink --container=DN --gpo=GUID`
+- `sambaadm gpo backup|restore <gpo> --path=DIR`
+- `sambaadm gpo distribute <gpo>` — доставить SYSVOL на все DC (DRS + rsync + ACL), со статусом шагов

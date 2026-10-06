@@ -16,6 +16,16 @@ type Config struct {
 	Auth    AuthConfig    `mapstructure:"auth"`
 	Audit   AuditConfig   `mapstructure:"audit"`
 	Logging LoggingConfig `mapstructure:"logging"`
+	GPO     GPOConfig     `mapstructure:"gpo"`
+}
+
+// GPOConfig controls SYSVOL distribution to other DCs.
+type GPOConfig struct {
+	SysvolPath        string `mapstructure:"sysvol_path"`
+	SyncMode          string `mapstructure:"sync_mode"` // drs | rsync | both
+	RsyncBinary       string `mapstructure:"rsync_binary"`
+	SSHBinary         string `mapstructure:"ssh_binary"`
+	RemoteSysvolReset bool   `mapstructure:"remote_sysvolreset"`
 }
 
 type ServerConfig struct {
@@ -101,6 +111,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ldap.bind.password_env", "SAMBAADM_PASSWORD")
 	v.SetDefault("auth.session_ttl", "8h")
 	v.SetDefault("logging.level", "info")
+	v.SetDefault("gpo.sysvol_path", "/var/lib/samba/sysvol")
+	v.SetDefault("gpo.sync_mode", "both")
+	v.SetDefault("gpo.rsync_binary", "rsync")
+	v.SetDefault("gpo.ssh_binary", "ssh")
+	v.SetDefault("gpo.remote_sysvolreset", true)
 }
 
 // BindPassword resolves the LDAP bind password from the configured env var.

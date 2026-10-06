@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -48,7 +49,8 @@ type Server struct {
 // New constructs the web server and router.
 func New(opts Options) (*Server, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"year": func() int { return time.Now().Year() },
+		"year":    func() int { return time.Now().Year() },
+		"urlpath": url.PathEscape,
 	}).ParseFS(assets, "templates/*.html", "templates/*/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
@@ -105,6 +107,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/trusts", s.handleTrusts)
 		r.Get("/repl", s.handleRepl)
 		r.Get("/sites", s.handleSites)
+		r.Get("/dns", s.handleDNS)
+		r.Get("/gpo", s.handleGPO)
 		r.Get("/domain", s.handleDomainPage)
 	})
 
@@ -148,6 +152,23 @@ func (s *Server) buildRouter() chi.Router {
 		r.Delete("/sites/{name}", s.handleAPISiteDelete)
 		r.Get("/subnets", s.handleAPISubnets)
 		r.Post("/subnets", s.handleAPISubnetCreate)
+
+		r.Get("/dns/zones", s.handleAPIDNSZones)
+		r.Post("/dns/zones", s.handleAPIDNSZoneCreate)
+		r.Delete("/dns/zones/{zone}", s.handleAPIDNSZoneDelete)
+		r.Get("/dns/zones/{zone}/records", s.handleAPIDNSRecords)
+		r.Post("/dns/zones/{zone}/records", s.handleAPIDNSRecordAdd)
+		r.Delete("/dns/zones/{zone}/records", s.handleAPIDNSRecordDelete)
+
+		r.Get("/gpo", s.handleAPIGPOs)
+		r.Post("/gpo", s.handleAPIGPOCreate)
+		r.Delete("/gpo/{gpo}", s.handleAPIGPODelete)
+		r.Post("/gpo/{gpo}/link", s.handleAPIGPOLink)
+		r.Post("/gpo/{gpo}/unlink", s.handleAPIGPOUnlink)
+		r.Post("/gpo/{gpo}/backup", s.handleAPIGPOBackup)
+		r.Post("/gpo/{gpo}/restore", s.handleAPIGPORestore)
+		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
+		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
 	})
 
 	return r

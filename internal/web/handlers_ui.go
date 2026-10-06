@@ -201,6 +201,34 @@ func (s *Server) handleOU(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleDNS(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	zones, err := s.svcs.DNS.ListZones(r.Context())
+	if err != nil {
+		s.render(w, "dns/list.html", pageData{
+			Title: "DNS", User: sess.Username, Role: sess.Role, Error: err.Error(),
+		})
+		return
+	}
+	s.render(w, "dns/list.html", pageData{
+		Title: "DNS", User: sess.Username, Role: sess.Role, Content: zones,
+	})
+}
+
+func (s *Server) handleGPO(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	gpos, err := s.svcs.GPO.List(r.Context())
+	if err != nil {
+		s.render(w, "gpo/list.html", pageData{
+			Title: "GPO", User: sess.Username, Role: sess.Role, Error: err.Error(),
+		})
+		return
+	}
+	s.render(w, "gpo/list.html", pageData{
+		Title: "GPO", User: sess.Username, Role: sess.Role, Content: gpos,
+	})
+}
+
 func (s *Server) handleUserCreateForm(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
 	s.render(w, "users/create.html", pageData{Title: "Новый пользователь", User: sess.Username, Role: sess.Role})
