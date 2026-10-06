@@ -16,6 +16,9 @@
       <a href="/groups">Группы</a>
       <a href="/computers">Компьютеры</a>
       <a href="/ou">OU</a>
+      <a href="/trusts">Доверия</a>
+      <a href="/repl">Репликация</a>
+      <a href="/sites">Сайты</a>
       <a href="/domain" class="active">Домен</a>
     </nav>
     <div class="user">
@@ -29,12 +32,30 @@
     <h1>Домен</h1>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{with .Content}}
+    {{with .Info}}
+    <h2>Информация</h2>
     <dl class="kv">
       <dt>Base DN</dt><dd class="mono">{{.BaseDN}}</dd>
       <dt>DNS root</dt><dd>{{.DNSRoot}}</dd>
       <dt>NetBIOS</dt><dd>{{.NetBIOS}}</dd>
       <dt>Function level</dt><dd>{{.FunctionLvl}}</dd>
     </dl>
+    {{end}}
+    {{with .Level}}
+    <h2>Уровень</h2>
+    <pre class="panel">{{.Raw}}</pre>
+    {{end}}
+    <h2>FSMO</h2>
+    <table>
+      <thead><tr><th>Роль</th><th>Владелец</th><th>Источник</th></tr></thead>
+      <tbody>
+      {{range .FSMO}}
+        <tr><td>{{.Role}}</td><td class="mono">{{.Owner}}</td><td>{{.Source}}</td></tr>
+      {{else}}
+        <tr><td colspan="3" class="muted">Нет данных</td></tr>
+      {{end}}
+      </tbody>
+    </table>
     {{end}}
   </main>
 </body>

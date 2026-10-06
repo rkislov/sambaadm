@@ -77,7 +77,10 @@ func (s *ComputerService) Move(ctx context.Context, name, toOU, actor, ip string
 	if err != nil {
 		return err
 	}
-	rdn := "CN=" + ldap.EscapeDN(cnFromDN(c.DN))
+	rdn, err := rdnFromDN(c.DN)
+	if err != nil {
+		return err
+	}
 	if err := s.ldap.ModifyDN(ctx, c.DN, rdn, true, toOU); err != nil {
 		s.audit.Failure(actor, "computer.move", c.DN, ip, err)
 		return err

@@ -1,0 +1,50 @@
+{{define "trusts/list.html"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · sambaadm</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">sambaadm</a>
+    <nav>
+      <a href="/">Дашборд</a>
+      <a href="/users">Пользователи</a>
+      <a href="/trusts" class="active">Доверия</a>
+      <a href="/repl">Репликация</a>
+      <a href="/sites">Сайты</a>
+      <a href="/domain">Домен</a>
+    </nav>
+    <div class="user">
+      <span>{{.User}}</span>
+      <form method="post" action="/logout" class="inline">
+        <button type="submit" class="linkish">Выход</button>
+      </form>
+    </div>
+  </header>
+  <main class="container">
+    <h1>Доверия</h1>
+    <p class="muted">Создание/проверка/удаление — через samba-tool на DC.</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <table>
+      <thead><tr><th>Домен</th><th>Направление</th><th>Тип</th><th>DN</th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.Domain}}</td>
+          <td>{{.Direction}}</td>
+          <td>{{.Type}}</td>
+          <td class="mono">{{.DN}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Нет доверий</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
+{{end}}

@@ -6,7 +6,7 @@
 |--------|------|------|----------|
 | GET | `/users?ou=&q=` | read | список пользователей |
 | GET | `/users/{login}` | read | карточка |
-| POST | `/users` | admin | создать (JSON body) |
+| POST | `/users` | admin | создать |
 | DELETE | `/users/{login}` | admin | удалить |
 | POST | `/users/{login}/enable` | helpdesk+ | включить |
 | POST | `/users/{login}/disable` | helpdesk+ | отключить |
@@ -17,6 +17,18 @@
 | DELETE | `/computers/{name}` | admin | удалить |
 | GET/POST | `/ou` | read/admin | список / создать |
 | DELETE | `/ou?dn=` | admin | удалить OU |
+| GET/POST | `/trusts` | read/admin | список / создать (samba-tool) |
+| DELETE | `/trusts/{domain}` | admin | удалить |
+| POST | `/trusts/{domain}/validate` | admin | проверить |
 | GET | `/domain` | read | инфо о домене |
+| GET | `/domain/fsmo` | read | FSMO роли |
+| POST | `/domain/fsmo/transfer` | admin | `{"role":"pdc"}` |
+| GET | `/domain/level` | read | functional level |
+| GET | `/repl/partners` | read | партнёры |
+| GET | `/repl/status` | read | showrepl |
+| POST | `/repl/sync` | admin | `{"from":"dc2"}` |
+| GET/POST | `/sites` | read/admin | сайты |
+| DELETE | `/sites/{name}` | admin | удалить сайт |
+| GET/POST | `/subnets` | read/admin | подсети |
 
 Также: `GET /healthz`, `GET /metrics`.

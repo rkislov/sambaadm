@@ -121,8 +121,55 @@ func (s *Server) handleDomainPage(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	fsmo, _ := s.svcs.Domain.FSMOShow(r.Context())
+	lvl, _ := s.svcs.Domain.LevelShow(r.Context())
 	s.render(w, "domain/info.html", pageData{
-		Title: "Домен", User: sess.Username, Role: sess.Role, Content: info,
+		Title: "Домен", User: sess.Username, Role: sess.Role,
+		Content: map[string]any{"Info": info, "FSMO": fsmo, "Level": lvl},
+	})
+}
+
+func (s *Server) handleTrusts(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	trusts, err := s.svcs.Trusts.List(r.Context())
+	if err != nil {
+		s.render(w, "trusts/list.html", pageData{
+			Title: "Доверия", User: sess.Username, Role: sess.Role, Error: err.Error(),
+		})
+		return
+	}
+	s.render(w, "trusts/list.html", pageData{
+		Title: "Доверия", User: sess.Username, Role: sess.Role, Content: trusts,
+	})
+}
+
+func (s *Server) handleRepl(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	st, err := s.svcs.Repl.Status(r.Context())
+	if err != nil {
+		s.render(w, "repl/status.html", pageData{
+			Title: "Репликация", User: sess.Username, Role: sess.Role, Error: err.Error(),
+		})
+		return
+	}
+	s.render(w, "repl/status.html", pageData{
+		Title: "Репликация", User: sess.Username, Role: sess.Role, Content: st,
+	})
+}
+
+func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
+	sess := sessionFrom(r)
+	sites, err := s.svcs.Sites.List(r.Context())
+	subnets, _ := s.svcs.Subnets.List(r.Context())
+	if err != nil {
+		s.render(w, "sites/list.html", pageData{
+			Title: "Сайты", User: sess.Username, Role: sess.Role, Error: err.Error(),
+		})
+		return
+	}
+	s.render(w, "sites/list.html", pageData{
+		Title: "Сайты", User: sess.Username, Role: sess.Role,
+		Content: map[string]any{"Sites": sites, "Subnets": subnets},
 	})
 }
 

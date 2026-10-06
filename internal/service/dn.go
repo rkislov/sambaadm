@@ -28,14 +28,53 @@ func DefaultComputersOU(ou, baseDN string) string {
 	return "CN=Computers," + baseDN
 }
 
+// cnFromDN returns the unescaped value of the first RDN attribute
+// (CN/OU/etc). Uses RFC 4514 parsing so escaped commas in values work.
 func cnFromDN(dn string) string {
-	parts := strings.SplitN(dn, ",", 2)
-	if len(parts) == 0 {
-		return dn
+	parsed, err := ldap.ParseDN(dn)
+	if err != nil || len(parsed.RDNs) == 0 || len(parsed.RDNs[0].Attributes) == 0 {
+		return cnFromDNFallback(dn)
 	}
-	kv := strings.SplitN(parts[0], "=", 2)
+	return parsed.RDNs[0].Attributes[0].Value
+}
+
+// rdnFromDN returns the first RDN as a properly escaped string for ModifyDN
+// (e.g. `CN=Smith\, John`).
+func rdnFromDN(dn string) (string, error) {
+	parsed, err := ldap.ParseDN(dn)
+	if err != nil {
+		return "", fmt.Errorf("parse DN: %w", err)
+	}
+	if len(parsed.RDNs) == 0 {
+		return "", fmt.Errorf("empty DN")
+	}
+	return parsed.RDNs[0].String(), nil
+}
+
+func cnFromDNFallback(dn string) string {
+	// Last resort: split on unescaped commas only.
+	var b strings.Builder
+	escaped := false
+	for i := 0; i < len(dn); i++ {
+		c := dn[i]
+		if escaped {
+			b.WriteByte(c)
+			escaped = false
+			continue
+		}
+		if c == '\\' {
+			escaped = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == ',' {
+			break
+		}
+		b.WriteByte(c)
+	}
+	kv := strings.SplitN(b.String(), "=", 2)
 	if len(kv) != 2 {
-		return parts[0]
+		return b.String()
 	}
 	return kv[1]
 }

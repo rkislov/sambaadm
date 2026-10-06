@@ -94,10 +94,8 @@ func (s *UserService) Create(ctx context.Context, in CreateUserInput, actor, ip 
 		upn = login + "@" + dnsFromBaseDN(base)
 	}
 
+	// Create disabled first — Samba/AD typically require a password before enable.
 	uac := ldapproto.UACNormalAccount | ldapproto.UACAccountDisable
-	if in.Enabled && in.Password != "" {
-		uac = ldapproto.UACNormalAccount
-	}
 
 	attrs := []ldap.Attribute{
 		{Type: ldapproto.AttrObjectClass, Vals: []string{"top", "person", "organizationalPerson", "user"}},
@@ -124,11 +122,12 @@ func (s *UserService) Create(ctx context.Context, in CreateUserInput, actor, ip 
 			s.audit.Failure(actor, "user.create.password", dn, ip, err)
 			return nil, fmt.Errorf("user created but password set failed: %w", err)
 		}
-		if in.Enabled {
-			if err := s.setEnabledDN(ctx, dn, true); err != nil {
-				s.audit.Failure(actor, "user.create.enable", dn, ip, err)
-				return nil, fmt.Errorf("user created but enable failed: %w", err)
-			}
+	}
+	// Honor Enabled independently of whether a password was supplied.
+	if in.Enabled {
+		if err := s.setEnabledDN(ctx, dn, true); err != nil {
+			s.audit.Failure(actor, "user.create.enable", dn, ip, err)
+			return nil, fmt.Errorf("user created but enable failed: %w", err)
 		}
 	}
 
@@ -180,7 +179,10 @@ func (s *UserService) Move(ctx context.Context, login, toOU, actor, ip string) e
 	if err != nil {
 		return err
 	}
-	rdn := "CN=" + ldap.EscapeDN(cnFromDN(u.DN))
+	rdn, err := rdnFromDN(u.DN)
+	if err != nil {
+		return err
+	}
 	if err := s.ldap.ModifyDN(ctx, u.DN, rdn, true, toOU); err != nil {
 		s.audit.Failure(actor, "user.move", u.DN, ip, err)
 		return err

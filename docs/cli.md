@@ -47,5 +47,18 @@ sambaadm [global flags] <command>
 - `sambaadm ou delete <dn>`
 - `sambaadm ou move <dn> --to=DN`
 
-### Домен
+### Доверия (мутации — samba-tool на DC)
+- `sambaadm trust list|show|create|delete|validate`
+
+### Домен / FSMO
 - `sambaadm domain info`
+- `sambaadm domain fsmo show|transfer|seize --role=...`
+- `sambaadm domain level show|raise`
+
+### Репликация
+- `sambaadm repl partners|status`
+- `sambaadm repl sync --from=DC [--dest=DC] [--nc=DN]`
+
+### Сайты и подсети
+- `sambaadm site list|create|delete`
+- `sambaadm subnet list|create|delete`

@@ -85,7 +85,10 @@ func (s *OUService) Delete(ctx context.Context, dn, actor, ip string) error {
 
 // Move relocates an OU under a new parent.
 func (s *OUService) Move(ctx context.Context, dn, toParent, actor, ip string) error {
-	rdn := "OU=" + ldap.EscapeDN(cnFromDN(dn))
+	rdn, err := rdnFromDN(dn)
+	if err != nil {
+		return err
+	}
 	if err := s.ldap.ModifyDN(ctx, dn, rdn, true, toParent); err != nil {
 		s.audit.Failure(actor, "ou.move", dn, ip, err)
 		return err

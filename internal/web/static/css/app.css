@@ -170,6 +170,22 @@ th {
 
 .form-card button { margin-top: 0.5rem; }
 
+h2 {
+  margin: 1.75rem 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  white-space: pre-wrap;
+}
+
 input[type="text"],
 input[type="password"],
 input[type="search"] {

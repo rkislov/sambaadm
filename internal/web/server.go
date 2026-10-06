@@ -102,6 +102,9 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/groups", s.handleGroups)
 		r.Get("/computers", s.handleComputers)
 		r.Get("/ou", s.handleOU)
+		r.Get("/trusts", s.handleTrusts)
+		r.Get("/repl", s.handleRepl)
+		r.Get("/sites", s.handleSites)
 		r.Get("/domain", s.handleDomainPage)
 	})
 
@@ -126,7 +129,25 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/ou", s.handleAPIOUCreate)
 		r.Delete("/ou", s.handleAPIOUDelete)
 
+		r.Get("/trusts", s.handleAPITrusts)
+		r.Post("/trusts", s.handleAPITrustCreate)
+		r.Delete("/trusts/{domain}", s.handleAPITrustDelete)
+		r.Post("/trusts/{domain}/validate", s.handleAPITrustValidate)
+
 		r.Get("/domain", s.handleAPIDomain)
+		r.Get("/domain/fsmo", s.handleAPIFSMO)
+		r.Post("/domain/fsmo/transfer", s.handleAPIFSMOTransfer)
+		r.Get("/domain/level", s.handleAPIDomainLevel)
+
+		r.Get("/repl/partners", s.handleAPIReplPartners)
+		r.Get("/repl/status", s.handleAPIReplStatus)
+		r.Post("/repl/sync", s.handleAPIReplSync)
+
+		r.Get("/sites", s.handleAPISites)
+		r.Post("/sites", s.handleAPISiteCreate)
+		r.Delete("/sites/{name}", s.handleAPISiteDelete)
+		r.Get("/subnets", s.handleAPISubnets)
+		r.Post("/subnets", s.handleAPISubnetCreate)
 	})
 
 	return r

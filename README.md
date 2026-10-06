@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** этап 2 — CRUD объектов каталога. Пользователи, группы, OU и компьютеры доступны через CLI, Web UI и REST API. Доверия, FSMO, DNS и GPO — в следующих этапах.
+> **Статус:** этап 3 — доверия, FSMO, репликация, сайты. Мутации доверий/FSMO/repl через `samba-tool` на DC; чтение — LDAP. DNS и GPO — следующий этап.
 
 ---
 
@@ -19,9 +19,9 @@ Linux-first: на контроллере домена удобно работа�
 
 | Слой | Что есть сейчас |
 |------|-----------------|
-| **CLI** | `user` CRUD + enable/disable/password/move; `group` + members; `ou`; `computer`; `domain info`; `serve` |
-| **Web UI** | логин, дашборд, пользователи (создание, enable/disable HTMX), группы, компьютеры, OU, домен |
-| **REST** | `/api/v1/users|groups|computers|ou|domain` (+ мутации) |
+| **CLI** | users/groups/ou/computers + `trust`, `domain fsmo/level`, `repl`, `site`, `subnet` |
+| **Web UI** | users/groups/computers/OU + trusts, repl, sites, domain/FSMO |
+| **REST** | `/api/v1/users|groups|computers|ou|trusts|domain|repl|sites|subnets` |
 | **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, bind, paged search, add/modify/delete/moddn |
 | **Безопасность** | cookie-сессии (HttpOnly), роли readonly/helpdesk/admin, журнал аудита |
 
@@ -149,7 +149,11 @@ sambaadm user list|show|create|delete|enable|disable|set-password|move
 sambaadm group list|show|create|delete|add-member|remove-member|members
 sambaadm computer list|show|delete|move
 sambaadm ou list|tree|create|delete|move
-sambaadm domain info
+sambaadm trust list|show|create|delete|validate
+sambaadm domain info|fsmo|level
+sambaadm repl partners|status|sync
+sambaadm site list|create|delete
+sambaadm subnet list|create|delete
 ```
 
 Пароль пользователя: только через `--prompt` / интерактивный ввод (не в argv). Смена `unicodePwd` требует `ldaps://` или `ldapi://`.
@@ -260,7 +264,7 @@ make docker
 
 1. ~~Каркас: cobra, chi, embed, конфиг, LDAP, auth~~
 2. ~~CRUD пользователей, групп, OU, компьютеров~~
-3. Доверия, FSMO, репликация, сайты
+3. ~~Доверия, FSMO, репликация, сайты~~
 4. DNS и базовый GPO
 5. Полный SSR/HTMX, локализация, RBAC, аудит
 6. Интеграционные тесты, документация, релизный пайплайн
