@@ -31,6 +31,15 @@ gpo:
   # после rsync: ssh <dc> samba-tool ntacl sysvolreset
   remote_sysvolreset: true
 
+# Локальные файловые шары / принтеры (smb.conf на этой машине)
+samba:
+  smb_conf: /etc/samba/smb.conf
+  shares_root: /srv/samba
+  create_mode: "0755"
+  # false = путь шары обязан быть под shares_root
+  allow_any_path: false
+  reload_cmd: "smbcontrol all reload-config"
+
 audit:
   file: /var/log/sambaadm/audit.log
 

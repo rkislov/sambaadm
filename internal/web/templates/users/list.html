@@ -1,52 +1,33 @@
 {{define "users/list.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script src="/static/js/htmx.min.js" defer></script>
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/">Дашборд</a>
-      <a href="/users" class="active">Пользователи</a>
-      <a href="/groups">Группы</a>
-      <a href="/computers">Компьютеры</a>
-      <a href="/ou">OU</a>
-      <a href="/domain">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
     <div class="toolbar" style="justify-content:space-between;align-items:center">
-      <h1 style="margin:0">Пользователи</h1>
-      <a class="btn" href="/users/new">Создать</a>
+      <h1 style="margin:0">{{t .Lang "nav.users"}}</h1>
+      {{if canAdmin .Role}}<a class="btn" href="/users/new">+</a>{{end}}
     </div>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     <form class="toolbar" method="get" action="/users">
-      <input type="search" name="q" placeholder="Поиск…" value="">
-      <button type="submit">Найти</button>
+      <input type="search" name="q" placeholder="…" value="">
+      <button type="submit">OK</button>
     </form>
     <table>
-      <thead><tr><th>Логин</th><th>Имя</th><th>Статус</th><th>DN</th><th></th></tr></thead>
+      <thead><tr><th>Login</th><th>Name</th><th>Status</th><th>DN</th><th></th></tr></thead>
       <tbody>
       {{range .Content}}
         {{template "users/row.html" .}}
       {{else}}
-        <tr><td colspan="5" class="muted">Нет данных</td></tr>
+        <tr><td colspan="5" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

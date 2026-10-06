@@ -11,6 +11,9 @@ func TestRBACResolve(t *testing.T) {
 		Admins:   []string{"CN=Domain Admins,CN=Users,DC=example,DC=com"},
 		Helpdesk: []string{"CN=Helpdesk,OU=Groups,DC=example,DC=com"},
 	})
+	if !r.Configured() {
+		t.Fatal("expected configured")
+	}
 	if got := r.Resolve([]string{"CN=Domain Admins,CN=Users,DC=example,DC=com"}); got != RoleAdmin {
 		t.Fatalf("admin: got %s", got)
 	}
@@ -19,6 +22,16 @@ func TestRBACResolve(t *testing.T) {
 	}
 	if got := r.Resolve([]string{"CN=Other,DC=example,DC=com"}); got != RoleReadonly {
 		t.Fatalf("readonly: got %s", got)
+	}
+}
+
+func TestRBACUnconfiguredIsAdmin(t *testing.T) {
+	r := NewRBAC(config.RolesConfig{})
+	if r.Configured() {
+		t.Fatal("expected unconfigured")
+	}
+	if got := r.Resolve(nil); got != RoleAdmin {
+		t.Fatalf("unconfigured should be admin, got %s", got)
 	}
 }
 

@@ -1,38 +1,20 @@
 {{define "gpo/list.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
-  <script src="/static/js/htmx.min.js" defer></script>
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/">Дашборд</a>
-      <a href="/dns">DNS</a>
-      <a href="/gpo" class="active">GPO</a>
-      <a href="/domain">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
-    <h1>Group Policy</h1>
-    <p class="muted">Расспространение копирует SYSVOL на все DC (DRS + rsync) и применяет ACL.</p>
+    <h1>{{t .Lang "nav.gpo"}}</h1>
+    <p class="muted">SYSVOL → all DCs (DRS + rsync) + ACL.</p>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
     <div id="gpo-job-panel" class="job-panel" aria-live="polite"></div>
 
     <table>
-      <thead><tr><th>Имя</th><th>GUID</th><th>Источник</th><th></th></tr></thead>
+      <thead><tr><th>Name</th><th>GUID</th><th>Source</th><th></th></tr></thead>
       <tbody>
       {{range .Content}}
         <tr>
@@ -40,23 +22,24 @@
           <td class="mono">{{.GUID}}</td>
           <td>{{.Source}}</td>
           <td class="actions">
-            {{if .GUID}}
+            {{if and .GUID (canAdmin $.Role)}}
             <button class="btn btn-sm"
               hx-post="/api/v1/gpo/{{urlpath .GUID}}/distribute"
               hx-target="#gpo-job-panel"
               hx-swap="innerHTML"
-              hx-confirm="Расспространить «{{.DisplayName}}» на все контроллеры домена?">
-              Расспространить
+              hx-confirm="Distribute «{{.DisplayName}}»?">
+              Distribute
             </button>
             {{end}}
           </td>
         </tr>
       {{else}}
-        <tr><td colspan="4" class="muted">Нет GPO</td></tr>
+        <tr><td colspan="4" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

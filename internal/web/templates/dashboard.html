@@ -1,43 +1,21 @@
 {{define "dashboard.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/" class="active">Дашборд</a>
-      <a href="/users">Пользователи</a>
-      <a href="/groups">Группы</a>
-      <a href="/computers">Компьютеры</a>
-      <a href="/ou">OU</a>
-      <a href="/trusts">Доверия</a>
-      <a href="/repl">Репликация</a>
-      <a href="/sites">Сайты</a>
-      <a href="/dns">DNS</a>
-      <a href="/gpo">GPO</a>
-      <a href="/domain">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}} <small>({{.Role}})</small></span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
-    <h1>Дашборд</h1>
-    <p class="muted">Состояние подключения к контроллеру домена.</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <h1>{{t .Lang "dashboard.title"}}</h1>
+    <p class="muted">{{t .Lang "dashboard.hint"}}</p>
     <dl class="kv">
       <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
       <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>
     </dl>
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

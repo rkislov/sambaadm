@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** этап 4 — DNS и базовый GPO. Зоны/записи и GPO через `samba-tool` (+ LDAP list). Далее — локализация, CSRF, полный RBAC.
+> **Статус:** этап 6 — локальный `smb.conf`: общие папки (mkdir + ACL), принтеры, права на каталоги (CLI/Web/API).
 
 ---
 
@@ -19,11 +19,11 @@ Linux-first: на контроллере домена удобно работа�
 
 | Слой | Что есть сейчас |
 |------|-----------------|
-| **CLI** | … + `dns zone|record`, `gpo` list/create/link/backup |
-| **Web UI** | … + `/dns`, `/gpo` |
-| **REST** | … + `/api/v1/dns/*`, `/api/v1/gpo` |
+| **CLI** | … + `share`, `printer`, `acl` |
+| **Web UI** | … + `/shares`, `/printers`, `/audit`, `/settings` |
+| **REST** | … + `/api/v1/shares`, `/printers`, `/acl` |
 | **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, bind, paged search, add/modify/delete/moddn |
-| **Безопасность** | cookie-сессии (HttpOnly), роли readonly/helpdesk/admin, журнал аудита |
+| **Безопасность** | cookie-сессии (HttpOnly), CSRF, RBAC по `memberOf`, журнал аудита |
 
 Общая бизнес-логика живёт в `internal/service` и вызывается и из CLI, и из HTTP-хендлеров.
 
@@ -158,6 +158,10 @@ sambaadm dns zone list|create|delete
 sambaadm dns record query|add|update|delete
 sambaadm gpo list|show|create|delete|link|unlink|backup|restore
 sambaadm gpo distribute <gpo>   # SYSVOL → все DC + ACL, со статусом
+
+sambaadm share list|show|create|delete|set|reload
+sambaadm printer list|create|delete
+sambaadm acl get|set <path>
 ```
 
 Пароль пользователя: только через `--prompt` / интерактивный ввод (не в argv). Смена `unicodePwd` требует `ldaps://` или `ldapi://`.
@@ -172,14 +176,19 @@ sambaadm gpo distribute <gpo>   # SYSVOL → все DC + ACL, со статус�
 
 | URL | Назначение |
 |-----|------------|
-| `/login` | вход (LDAP bind → сессия) |
+| `/login` | вход (LDAP bind → `memberOf` → роль → сессия) |
 | `/` | дашборд |
-| `/users`, `/groups`, `/domain` | разделы UI |
-| `/api/v1/users` | JSON API |
+| `/users` … `/gpo`, `/domain` | разделы UI |
+| `/shares`, `/printers` | локальные шары smb.conf и принтеры |
+| `/audit` | журнал аудита |
+| `/settings` | язык интерфейса (ru/en) |
+| `/api/v1/users` | JSON API (мутации: заголовок `X-CSRF-Token`) |
 | `/healthz` | liveness |
 | `/metrics` | Prometheus |
 
 Фронтенд — серверный HTML (`html/template`) + HTMX; CSS/JS вшиты в бинарник через `embed`. Node.js в рантайме не нужен.
+
+Роли задаются группами в `auth.roles` (DN). Если группы не заданы — все успешно вошедшие получают `admin`. CSRF обязателен для POST/PUT/PATCH/DELETE при наличии сессии (форма `csrf_token` или заголовок `X-CSRF-Token`).
 
 ---
 
@@ -207,6 +216,7 @@ internal/
   cli/                 команды cobra
   service/             бизнес-логика
   ldap/                клиент LDAP
+  smbconf/             разбор/запись smb.conf
   web/                 UI + API + embed
   auth/                сессии, RBAC
   config/              Viper (YAML/ENV/flags)

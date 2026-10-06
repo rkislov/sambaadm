@@ -20,6 +20,9 @@ type Services struct {
 	Subnets   *SubnetService
 	DNS       *DNSService
 	GPO       *GPOService
+	Shares    *ShareService
+	Printers  *PrinterService
+	FSACL     *FSACLService
 	Audit     *audit.Logger
 	Tool      *samba.Runner
 }
@@ -28,6 +31,7 @@ type Services struct {
 type ServiceOptions struct {
 	SambaTool string
 	GPO       config.GPOConfig
+	Samba     config.SambaConfig
 }
 
 // New builds the service layer on top of an LDAP client.
@@ -38,6 +42,7 @@ func New(ldap *ldapproto.Client, auditLog *audit.Logger) *Services {
 // NewWithOptions builds services with optional samba-tool path and GPO sync settings.
 func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts ServiceOptions) *Services {
 	tool := samba.NewRunner(opts.SambaTool)
+	shares := newShareService(auditLog, opts.Samba)
 	return &Services{
 		Users:     &UserService{ldap: ldap, audit: auditLog},
 		Groups:    &GroupService{ldap: ldap, audit: auditLog},
@@ -54,7 +59,10 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Service
 			gpoCfg: opts.GPO,
 			jobs:   newJobStore(),
 		},
-		Audit: auditLog,
-		Tool:  tool,
+		Shares:   shares,
+		Printers: newPrinterService(auditLog, shares),
+		FSACL:    newFSACLService(auditLog, shares),
+		Audit:    auditLog,
+		Tool:     tool,
 	}
 }

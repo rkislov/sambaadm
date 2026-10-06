@@ -1,0 +1,88 @@
+{{define "shares/create.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <h1>{{t .Lang "shares.create"}}</h1>
+    <p class="muted">{{t .Lang "shares.hint"}}</p>
+    {{template "shares/tips" .}}
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+
+    <form method="post" action="/shares" class="form-card form-wide" id="share-create-form">
+      {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
+
+      <fieldset class="preset-box">
+        <legend>{{t .Lang "shares.preset.title"}}</legend>
+        <p class="field-hint">{{t .Lang "shares.preset.hint"}}</p>
+        <div class="preset-grid">
+          <label class="preset"><input type="radio" name="preset" value="domain_read" data-preset> {{t .Lang "shares.preset.domain_read"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="domain_rw" data-preset> {{t .Lang "shares.preset.domain_rw"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="domain_group_rw" data-preset> {{t .Lang "shares.preset.domain_group_rw"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="users_only" data-preset> {{t .Lang "shares.preset.users_only"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="authenticated" data-preset> {{t .Lang "shares.preset.authenticated"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="guest_public" data-preset> {{t .Lang "shares.preset.guest_public"}}</label>
+          <label class="preset"><input type="radio" name="preset" value="custom" data-preset checked> {{t .Lang "shares.preset.custom"}}</label>
+        </div>
+      </fieldset>
+
+      <h2>{{t .Lang "shares.section.basic"}}</h2>
+      <label>{{t .Lang "shares.field.name"}} <input name="name" required autocomplete="off"></label>
+      <label>{{t .Lang "shares.field.path"}} <input name="path" id="share-path" placeholder="{{with .Content}}{{.SharesRoot}}/name{{end}}">
+        <span class="field-hint">{{t .Lang "shares.field.path.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.comment"}} <input name="comment"></label>
+
+      <h2>{{t .Lang "shares.section.samba"}}</h2>
+      <label>{{t .Lang "shares.field.valid_users"}}
+        <input name="valid_users" id="f-valid" placeholder='"Domain Users" или alice,"Bob Smith",@Finance'>
+        <span class="field-hint">{{t .Lang "shares.field.valid_users.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.write_list"}}
+        <input name="write_list" id="f-write" placeholder='@"Domain Users" или @Finance'>
+        <span class="field-hint">{{t .Lang "shares.field.write_list.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.read_list"}}
+        <input name="read_list" id="f-read" placeholder="@Auditors">
+        <span class="field-hint">{{t .Lang "shares.field.read_list.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.force_group"}}
+        <input name="force_group" id="f-fgroup" placeholder="domain users">
+        <span class="field-hint">{{t .Lang "shares.field.force_group.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.force_user"}} <input name="force_user" id="f-fuser"></label>
+
+      <div class="check-row">
+        <label class="check"><input type="checkbox" name="read_only" id="f-ro" value="1"> {{t .Lang "shares.field.read_only"}}</label>
+        <label class="check"><input type="checkbox" name="guest_ok" id="f-guest" value="1"> {{t .Lang "shares.field.guest_ok"}}</label>
+        <label class="check"><input type="checkbox" name="browseable" id="f-browse" value="1" checked> {{t .Lang "shares.field.browseable"}}</label>
+        <label class="check"><input type="checkbox" name="inherit_acls" value="1" checked> {{t .Lang "shares.field.inherit_acls"}}</label>
+        <label class="check"><input type="checkbox" name="map_acl_inherit" value="1" checked> {{t .Lang "shares.field.map_acl_inherit"}}</label>
+      </div>
+      <p class="field-hint">{{t .Lang "shares.field.guest_ok.warn"}}</p>
+
+      <h2>{{t .Lang "shares.section.fs"}}</h2>
+      <label>{{t .Lang "shares.field.owner"}} <input name="owner" id="f-owner" placeholder="root:domain users"></label>
+      <label>{{t .Lang "shares.field.mode"}} <input name="mode" id="f-mode" placeholder="0770">
+        <span class="field-hint">{{t .Lang "shares.field.mode.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.acl"}}
+        <input name="acl" id="f-acl" placeholder="g:domain users:rwx,o::---">
+        <span class="field-hint">{{t .Lang "shares.field.acl.hint"}}</span>
+      </label>
+      <label>{{t .Lang "shares.field.default_acl"}}
+        <input name="default_acl" id="f-dacl" placeholder="g:domain users:rwx,o::---">
+        <span class="field-hint">{{t .Lang "shares.field.default_acl.hint"}}</span>
+      </label>
+      <label class="check"><input type="checkbox" name="create_dir" value="1" checked> {{t .Lang "shares.field.create_dir"}}</label>
+
+      <button type="submit">{{t .Lang "shares.create.submit"}}</button>
+    </form>
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

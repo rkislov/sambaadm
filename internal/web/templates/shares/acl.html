@@ -1,0 +1,173 @@
+{{define "shares/acl.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <h1>{{t .Lang "shares.acl"}}</h1>
+    {{template "shares/tips" .}}
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    {{with .Content}}
+    {{with .Share}}
+    <p><strong>{{.Name}}</strong> <span class="mono muted">{{.Path}}</span>
+      {{if .GuestOK}}<span class="badge badge-failed">guest</span>{{end}}
+      {{if .ReadOnly}}<span class="badge">RO</span>{{else}}<span class="badge badge-ok">RW</span>{{end}}
+    </p>
+    {{end}}
+
+    {{if canAdmin $.Role}}
+    <section class="perm-section">
+      <h2>{{t $.Lang "shares.section.samba"}}</h2>
+      <p class="field-hint">{{t $.Lang "shares.access.hint"}}</p>
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+        {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
+        <input type="hidden" name="action" value="samba">
+        {{with .Share}}
+        <label>{{t $.Lang "shares.field.valid_users"}}
+          <input name="valid_users" value="{{.ValidUsers}}">
+          <span class="field-hint">{{t $.Lang "shares.field.valid_users.hint"}}</span>
+        </label>
+        <label class="check"><input type="checkbox" name="clear_valid" value="1"> {{t $.Lang "shares.field.clear_valid"}}</label>
+        <label>{{t $.Lang "shares.field.write_list"}}
+          <input name="write_list" value="{{.WriteList}}">
+          <span class="field-hint">{{t $.Lang "shares.field.write_list.hint"}}</span>
+        </label>
+        <label class="check"><input type="checkbox" name="clear_write" value="1"> {{t $.Lang "shares.field.clear_write"}}</label>
+        <label>{{t $.Lang "shares.field.read_list"}}
+          <input name="read_list" value="{{.ReadList}}">
+        </label>
+        <label class="check"><input type="checkbox" name="clear_read" value="1"> {{t $.Lang "shares.field.clear_read"}}</label>
+        <label>{{t $.Lang "shares.field.force_group"}} <input name="force_group" value="{{.ForceGroup}}"></label>
+        <label>{{t $.Lang "shares.field.force_user"}} <input name="force_user" value="{{.ForceUser}}"></label>
+        <div class="check-row">
+          <label class="check"><input type="checkbox" name="read_only" value="1" {{if .ReadOnly}}checked{{end}}> {{t $.Lang "shares.field.read_only"}}</label>
+          <label class="check"><input type="checkbox" name="guest_ok" value="1" {{if .GuestOK}}checked{{end}}> {{t $.Lang "shares.field.guest_ok"}}</label>
+          <label class="check"><input type="checkbox" name="browseable" value="1" {{if .Browseable}}checked{{end}}> {{t $.Lang "shares.field.browseable"}}</label>
+          <label class="check"><input type="checkbox" name="inherit_acls" value="1" {{if .InheritACLs}}checked{{end}}> {{t $.Lang "shares.field.inherit_acls"}}</label>
+          <label class="check"><input type="checkbox" name="map_acl_inherit" value="1" {{if .MapACLInherit}}checked{{end}}> {{t $.Lang "shares.field.map_acl_inherit"}}</label>
+        </div>
+        {{end}}
+        <button type="submit">{{t $.Lang "shares.access.save"}}</button>
+      </form>
+    </section>
+    {{end}}
+
+    {{with .ACL}}
+    <section class="perm-section">
+      <h2>{{t $.Lang "shares.section.fs"}}</h2>
+      <dl class="kv">
+        <dt>{{t $.Lang "shares.acl.exists"}}</dt><dd>{{.Exists}}</dd>
+        <dt>{{t $.Lang "shares.field.mode"}}</dt><dd class="mono">{{.Mode}}</dd>
+        <dt>{{t $.Lang "shares.field.owner"}}</dt><dd>{{.Owner}}:{{.Group}}</dd>
+      </dl>
+      {{if .Entries}}
+      <table>
+        <thead><tr>
+          <th>{{t $.Lang "shares.acl.col.scope"}}</th>
+          <th>{{t $.Lang "shares.acl.col.kind"}}</th>
+          <th>{{t $.Lang "shares.acl.col.who"}}</th>
+          <th>{{t $.Lang "shares.acl.col.perms"}}</th>
+        </tr></thead>
+        <tbody>
+        {{range .Entries}}
+          <tr>
+            <td>{{if .Default}}{{t $.Lang "shares.acl.default"}}{{else}}{{t $.Lang "shares.acl.access"}}{{end}}</td>
+            <td>{{.Kind}}</td>
+            <td class="mono">{{.Qualifier}}</td>
+            <td class="mono">{{.Perms}}</td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{end}}
+      {{if .ACLText}}<h3>{{t $.Lang "shares.acl.raw"}}</h3><pre class="panel">{{.ACLText}}</pre>{{end}}
+      {{if .DefaultACL}}<h3>{{t $.Lang "shares.field.default_acl"}}</h3><pre class="panel">{{.DefaultACL}}</pre>{{end}}
+    </section>
+    {{end}}
+
+    {{if canAdmin $.Role}}
+    <section class="perm-section">
+      <h2>{{t $.Lang "shares.acl.edit"}}</h2>
+      <p class="field-hint">{{t $.Lang "shares.acl.edit.hint"}}</p>
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+        {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
+        <input type="hidden" name="action" value="fs">
+        <label>{{t $.Lang "shares.field.owner"}} <input name="owner" value="{{with .ACL}}{{.Owner}}{{if .Group}}:{{.Group}}{{end}}{{end}}"></label>
+        <label>{{t $.Lang "shares.field.mode"}} <input name="mode" value="{{with .ACL}}{{.Mode}}{{end}}"></label>
+
+        <fieldset>
+          <legend>{{t $.Lang "shares.acl.builder"}}</legend>
+          <p class="field-hint">{{t $.Lang "shares.acl.builder.hint"}}</p>
+          <div class="acl-builder">
+            <label>{{t $.Lang "shares.acl.col.kind"}}
+              <select name="acl_kind">
+                <option value="group">group</option>
+                <option value="user">user</option>
+                <option value="other">other</option>
+                <option value="mask">mask</option>
+              </select>
+            </label>
+            <label>{{t $.Lang "shares.acl.col.who"}} <input name="acl_name" placeholder="domain users / alice"></label>
+            <div class="check-row">
+              <label class="check"><input type="checkbox" name="acl_r" value="1" checked> r</label>
+              <label class="check"><input type="checkbox" name="acl_w" value="1"> w</label>
+              <label class="check"><input type="checkbox" name="acl_x" value="1" checked> x</label>
+            </div>
+          </div>
+          <label>{{t $.Lang "shares.field.acl"}} <input name="acl" placeholder="g:domain users:rwx,u:alice:r-x,o::---">
+            <span class="field-hint">{{t $.Lang "shares.field.acl.hint"}}</span>
+          </label>
+          <label>{{t $.Lang "shares.field.default_acl"}} <input name="default_acl" placeholder="g:domain users:rwx,o::---">
+            <span class="field-hint">{{t $.Lang "shares.field.default_acl.hint"}}</span>
+          </label>
+          <label>{{t $.Lang "shares.acl.remove"}} <input name="remove_acl" placeholder="g:oldgroup"></label>
+        </fieldset>
+
+        <div class="check-row">
+          <label class="check"><input type="checkbox" name="inherit_default" value="1"> {{t $.Lang "shares.acl.copy_default"}}</label>
+          <label class="check"><input type="checkbox" name="recursive" value="1"> {{t $.Lang "shares.acl.recursive"}}</label>
+          <label class="check"><input type="checkbox" name="default_recursive" value="1"> {{t $.Lang "shares.acl.default_recursive"}}</label>
+          <label class="check"><input type="checkbox" name="clear_acl" value="1"> {{t $.Lang "shares.acl.clear"}}</label>
+          <label class="check"><input type="checkbox" name="clear_default" value="1"> {{t $.Lang "shares.acl.clear_default"}}</label>
+        </div>
+        <button type="submit">{{t $.Lang "shares.acl.save"}}</button>
+      </form>
+    </section>
+
+    <section class="perm-section">
+      <h2>{{t $.Lang "shares.xattr.title"}}</h2>
+      <p class="field-hint">{{t $.Lang "shares.xattr.hint"}}</p>
+      {{with .ACL}}
+      {{if .XAttrs}}
+      <table>
+        <thead><tr><th>Name</th><th>Value</th></tr></thead>
+        <tbody>
+        {{range .XAttrs}}
+          <tr><td class="mono">{{.Name}}</td><td class="mono">{{.Value}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+      {{else}}
+      <p class="muted">{{t $.Lang "common.no_data"}}</p>
+      {{end}}
+      {{end}}
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+        {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
+        <input type="hidden" name="action" value="xattr">
+        <label>{{t $.Lang "shares.xattr.name"}} <input name="xattr_name" placeholder="user.comment"></label>
+        <label>{{t $.Lang "shares.xattr.value"}} <input name="xattr_value"></label>
+        <label>{{t $.Lang "shares.xattr.remove"}} <input name="xattr_remove" placeholder="user.comment"></label>
+        <button type="submit">{{t $.Lang "shares.xattr.save"}}</button>
+      </form>
+    </section>
+    {{end}}
+    {{end}}
+    <p><a href="/shares">← {{t .Lang "nav.shares"}}</a></p>
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

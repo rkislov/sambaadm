@@ -19,12 +19,13 @@ const (
 
 // Session holds authenticated user state.
 type Session struct {
-	ID        string
-	Username  string
-	DN        string
-	Role      Role
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	ID         string
+	Username   string
+	DN         string
+	Role       Role
+	CSRFToken  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
 }
 
 // Store is an in-memory session store (replace with Redis/DB later if needed).
@@ -53,12 +54,17 @@ func (s *Store) Create(username, dn string, role Role) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
+	csrf, err := randomID(32)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	sess := &Session{
 		ID:        id,
 		Username:  username,
 		DN:        dn,
 		Role:      role,
+		CSRFToken: csrf,
 		CreatedAt: now,
 		ExpiresAt: now.Add(s.ttl),
 	}

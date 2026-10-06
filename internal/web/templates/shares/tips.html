@@ -1,0 +1,20 @@
+{{define "shares/tips"}}
+<details class="tips" open>
+  <summary>{{t .Lang "shares.tips.title"}}</summary>
+  <div class="tips-body">
+    <p class="tips-lead">{{t .Lang "shares.tips.lead"}}</p>
+    <ol class="tips-list">
+      <li><strong>{{t .Lang "shares.tips.layers.title"}}</strong> — {{t .Lang "shares.tips.layers.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.domain_ro.title"}}</strong> — {{t .Lang "shares.tips.domain_ro.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.domain_rw.title"}}</strong> — {{t .Lang "shares.tips.domain_rw.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.group.title"}}</strong> — {{t .Lang "shares.tips.group.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.users.title"}}</strong> — {{t .Lang "shares.tips.users.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.auth.title"}}</strong> — {{t .Lang "shares.tips.auth.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.guest.title"}}</strong> — {{t .Lang "shares.tips.guest.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.inherit.title"}}</strong> — {{t .Lang "shares.tips.inherit.body"}}</li>
+      <li><strong>{{t .Lang "shares.tips.names.title"}}</strong> — {{t .Lang "shares.tips.names.body"}}</li>
+    </ol>
+    <p class="muted tips-examples">{{t .Lang "shares.tips.examples"}}</p>
+  </div>
+</details>
+{{end}}
