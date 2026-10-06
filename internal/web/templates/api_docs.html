@@ -1,0 +1,20 @@
+{{define "api_docs.html"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>sambaadm OpenAPI</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>body{margin:0} .top{padding:0.75rem 1rem;font-family:system-ui,sans-serif}</style>
+</head>
+<body>
+  <div class="top"><a href="/">← sambaadm</a> · OpenAPI · <a href="/api/openapi.yaml">openapi.yaml</a></div>
+  <div id="swagger"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    SwaggerUIBundle({ url: "/api/openapi.yaml", dom_id: "#swagger", deepLinking: true });
+  </script>
+</body>
+</html>
+{{end}}

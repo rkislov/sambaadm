@@ -74,7 +74,11 @@ sambaadm [global flags] <command>
 - `sambaadm gpo backup|restore <gpo> --path=DIR`
 - `sambaadm gpo distribute <gpo>` — доставить SYSVOL на все DC (DRS + rsync + ACL), со статусом шагов
 
-### Локальные шары / smb.conf
+### Прочее
+- `sambaadm completion bash|zsh|fish|powershell`
+- `sambaadm version`
+
+### Локальные шары / smb.conf (вне этапов ТЗ)
 - `sambaadm share list|show|create|delete|set|reload`
 - `sambaadm share create --name=docs [--path=/srv/samba/docs] [--valid-users=@staff] [--owner=root:root] [--mode=0755] [--acl=u:alice:rwx]`
 - `sambaadm share delete docs [--remove-dir]`
