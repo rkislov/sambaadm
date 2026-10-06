@@ -443,6 +443,249 @@ func (s *Server) handleAPISubnetCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sub)
 }
 
+func (s *Server) handleAPIDNSZones(w http.ResponseWriter, r *http.Request) {
+	zones, err := s.svcs.DNS.ListZones(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, zones)
+}
+
+func (s *Server) handleAPIDNSZoneCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		return
+	}
+	sess := sessionFrom(r)
+	if err := s.svcs.DNS.CreateZone(r.Context(), body.Name, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "created", "name": body.Name})
+}
+
+func (s *Server) handleAPIDNSZoneDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	zone, _ := url.PathUnescape(chi.URLParam(r, "zone"))
+	sess := sessionFrom(r)
+	if err := s.svcs.DNS.DeleteZone(r.Context(), zone, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleAPIDNSRecords(w http.ResponseWriter, r *http.Request) {
+	zone, _ := url.PathUnescape(chi.URLParam(r, "zone"))
+	recs, err := s.svcs.DNS.QueryRecords(r.Context(), zone, r.URL.Query().Get("name"), r.URL.Query().Get("type"))
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, recs)
+}
+
+func (s *Server) handleAPIDNSRecordAdd(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	zone, _ := url.PathUnescape(chi.URLParam(r, "zone"))
+	var in service.AddDNSRecordInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	in.Zone = zone
+	sess := sessionFrom(r)
+	if err := s.svcs.DNS.AddRecord(r.Context(), in, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "created"})
+}
+
+func (s *Server) handleAPIDNSRecordDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	zone, _ := url.PathUnescape(chi.URLParam(r, "zone"))
+	var in service.AddDNSRecordInput
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+	in.Zone = zone
+	sess := sessionFrom(r)
+	if err := s.svcs.DNS.DeleteRecord(r.Context(), in, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleAPIGPOs(w http.ResponseWriter, r *http.Request) {
+	gpos, err := s.svcs.GPO.List(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, gpos)
+}
+
+func (s *Server) handleAPIGPOCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name required"})
+		return
+	}
+	sess := sessionFrom(r)
+	out, err := s.svcs.GPO.Create(r.Context(), body.Name, sess.Username, r.RemoteAddr)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "created", "output": out})
+}
+
+func (s *Server) handleAPIGPODelete(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	sess := sessionFrom(r)
+	if err := s.svcs.GPO.Delete(r.Context(), gpo, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleAPIGPOLink(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	var body struct {
+		Container string `json:"container"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Container == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "container required"})
+		return
+	}
+	sess := sessionFrom(r)
+	if err := s.svcs.GPO.Link(r.Context(), body.Container, gpo, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "linked"})
+}
+
+func (s *Server) handleAPIGPOUnlink(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	var body struct {
+		Container string `json:"container"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Container == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "container required"})
+		return
+	}
+	sess := sessionFrom(r)
+	if err := s.svcs.GPO.Unlink(r.Context(), body.Container, gpo, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "unlinked"})
+}
+
+func (s *Server) handleAPIGPOBackup(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path required"})
+		return
+	}
+	sess := sessionFrom(r)
+	if err := s.svcs.GPO.Backup(r.Context(), gpo, body.Path, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "backed_up"})
+}
+
+func (s *Server) handleAPIGPORestore(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	var body struct {
+		Path string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path required"})
+		return
+	}
+	sess := sessionFrom(r)
+	if err := s.svcs.GPO.Restore(r.Context(), gpo, body.Path, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
+}
+
+func (s *Server) handleAPIGPODistribute(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
+	sess := sessionFrom(r)
+	job, err := s.svcs.GPO.StartDistribute(r.Context(), gpo, sess.Username, r.RemoteAddr)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		s.render(w, "gpo/job.html", job)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, job)
+}
+
+func (s *Server) handleAPIGPODistributeStatus(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobID")
+	job, ok := s.svcs.GPO.GetDistributeJob(jobID)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		s.render(w, "gpo/job.html", job)
+		return
+	}
+	writeJSON(w, http.StatusOK, job)
+}
+
 func requireRole(w http.ResponseWriter, r *http.Request, check func(auth.Role) bool) bool {
 	sess := sessionFrom(r)
 	if sess == nil || !check(sess.Role) {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"sambaadm/internal/audit"
+	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/samba"
 )
@@ -23,18 +24,19 @@ type Services struct {
 	Tool      *samba.Runner
 }
 
-// Options configures service construction.
-type Options struct {
-	SambaTool string // path/name of samba-tool; empty = default
+// ServiceOptions configures optional dependencies.
+type ServiceOptions struct {
+	SambaTool string
+	GPO       config.GPOConfig
 }
 
 // New builds the service layer on top of an LDAP client.
 func New(ldap *ldapproto.Client, auditLog *audit.Logger) *Services {
-	return NewWithOptions(ldap, auditLog, Options{})
+	return NewWithOptions(ldap, auditLog, ServiceOptions{})
 }
 
-// NewWithOptions builds services with optional samba-tool path.
-func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Options) *Services {
+// NewWithOptions builds services with optional samba-tool path and GPO sync settings.
+func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts ServiceOptions) *Services {
 	tool := samba.NewRunner(opts.SambaTool)
 	return &Services{
 		Users:     &UserService{ldap: ldap, audit: auditLog},
@@ -46,9 +48,13 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Options
 		Repl:      &ReplService{ldap: ldap, audit: auditLog, tool: tool},
 		Sites:     &SiteService{ldap: ldap, audit: auditLog},
 		Subnets:   &SubnetService{ldap: ldap, audit: auditLog},
-		DNS:       &DNSService{ldap: ldap, audit: auditLog},
-		GPO:       &GPOService{ldap: ldap, audit: auditLog},
-		Audit:     auditLog,
-		Tool:      tool,
+		DNS:       &DNSService{ldap: ldap, audit: auditLog, tool: tool},
+		GPO: &GPOService{
+			ldap: ldap, audit: auditLog, tool: tool,
+			gpoCfg: opts.GPO,
+			jobs:   newJobStore(),
+		},
+		Audit: auditLog,
+		Tool:  tool,
 	}
 }

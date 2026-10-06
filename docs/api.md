@@ -30,5 +30,17 @@
 | GET/POST | `/sites` | read/admin | сайты |
 | DELETE | `/sites/{name}` | admin | удалить сайт |
 | GET/POST | `/subnets` | read/admin | подсети |
+| GET/POST | `/dns/zones` | read/admin | DNS-зоны |
+| DELETE | `/dns/zones/{zone}` | admin | удалить зону |
+| GET | `/dns/zones/{zone}/records?name=&type=` | read | query |
+| POST/DELETE | `/dns/zones/{zone}/records` | admin | add / delete (`name,type,data`) |
+| GET/POST | `/gpo` | read/admin | список / создать |
+| DELETE | `/gpo/{gpo}` | admin | удалить |
+| POST | `/gpo/{gpo}/link` | admin | `{"container":"DN"}` |
+| POST | `/gpo/{gpo}/unlink` | admin | `{"container":"DN"}` |
+| POST | `/gpo/{gpo}/backup` | admin | `{"path":"..."}` |
+| POST | `/gpo/{gpo}/restore` | admin | `{"path":"..."}` |
+| POST | `/gpo/{gpo}/distribute` | admin | запуск распространения на все DC |
+| GET | `/gpo/distribute/{jobID}` | read | статус job (прогресс/шаги) |
 
 Также: `GET /healthz`, `GET /metrics`.

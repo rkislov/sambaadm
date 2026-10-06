@@ -1,0 +1,31 @@
+{{define "gpo/job.html"}}
+<div class="job-card" id="job-{{.ID}}"
+  {{if or (eq .Status "running") (eq .Status "pending")}}
+  hx-get="/api/v1/gpo/distribute/{{.ID}}"
+  hx-trigger="every 1s"
+  hx-swap="outerHTML"
+  {{end}}>
+  <div class="job-head">
+    <strong>Расспространение GPO</strong>
+    <span class="job-meta mono">{{.GUID}}</span>
+    <span class="badge badge-{{.Status}}">{{.Status}}</span>
+  </div>
+  <div class="progress">
+    <div class="progress-bar" style="width:{{.Progress}}%"></div>
+  </div>
+  <div class="progress-label">{{.Progress}}%</div>
+  <ol class="steps">
+    {{range .Steps}}
+    <li class="step step-{{.Status}}">
+      <span class="step-mark"></span>
+      <div class="step-body">
+        <div class="step-title">{{.Title}}</div>
+        {{if .Detail}}<div class="step-detail muted">{{.Detail}}</div>{{end}}
+        {{if .Message}}<div class="step-msg">{{.Message}}</div>{{end}}
+      </div>
+    </li>
+    {{end}}
+  </ol>
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+</div>
+{{end}}

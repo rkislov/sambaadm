@@ -1,0 +1,62 @@
+{{define "gpo/list.html"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · sambaadm</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="/static/js/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">sambaadm</a>
+    <nav>
+      <a href="/">Дашборд</a>
+      <a href="/dns">DNS</a>
+      <a href="/gpo" class="active">GPO</a>
+      <a href="/domain">Домен</a>
+    </nav>
+    <div class="user">
+      <span>{{.User}}</span>
+      <form method="post" action="/logout" class="inline">
+        <button type="submit" class="linkish">Выход</button>
+      </form>
+    </div>
+  </header>
+  <main class="container">
+    <h1>Group Policy</h1>
+    <p class="muted">Расспространение копирует SYSVOL на все DC (DRS + rsync) и применяет ACL.</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+
+    <div id="gpo-job-panel" class="job-panel" aria-live="polite"></div>
+
+    <table>
+      <thead><tr><th>Имя</th><th>GUID</th><th>Источник</th><th></th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.DisplayName}}</td>
+          <td class="mono">{{.GUID}}</td>
+          <td>{{.Source}}</td>
+          <td class="actions">
+            {{if .GUID}}
+            <button class="btn btn-sm"
+              hx-post="/api/v1/gpo/{{urlpath .GUID}}/distribute"
+              hx-target="#gpo-job-panel"
+              hx-swap="innerHTML"
+              hx-confirm="Расспространить «{{.DisplayName}}» на все контроллеры домена?">
+              Расспространить
+            </button>
+            {{end}}
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Нет GPO</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>
+{{end}}

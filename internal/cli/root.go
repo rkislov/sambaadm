@@ -77,6 +77,8 @@ func init() {
 	rootCmd.AddCommand(replCmd)
 	rootCmd.AddCommand(siteCmd)
 	rootCmd.AddCommand(subnetCmd)
+	rootCmd.AddCommand(dnsCmd)
+	rootCmd.AddCommand(gpoCmd)
 }
 
 var versionCmd = &cobra.Command{
