@@ -72,7 +72,11 @@ func init() {
 	rootCmd.AddCommand(groupCmd)
 	rootCmd.AddCommand(computerCmd)
 	rootCmd.AddCommand(ouCmd)
+	rootCmd.AddCommand(trustCmd)
 	rootCmd.AddCommand(domainCmd)
+	rootCmd.AddCommand(replCmd)
+	rootCmd.AddCommand(siteCmd)
+	rootCmd.AddCommand(subnetCmd)
 }
 
 var versionCmd = &cobra.Command{

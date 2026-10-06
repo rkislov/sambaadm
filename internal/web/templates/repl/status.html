@@ -1,4 +1,4 @@
-{{define "domain/info.html"}}
+{{define "repl/status.html"}}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -12,14 +12,10 @@
     <a class="brand" href="/">sambaadm</a>
     <nav>
       <a href="/">Дашборд</a>
-      <a href="/users">Пользователи</a>
-      <a href="/groups">Группы</a>
-      <a href="/computers">Компьютеры</a>
-      <a href="/ou">OU</a>
       <a href="/trusts">Доверия</a>
-      <a href="/repl">Репликация</a>
+      <a href="/repl" class="active">Репликация</a>
       <a href="/sites">Сайты</a>
-      <a href="/domain" class="active">Домен</a>
+      <a href="/domain">Домен</a>
     </nav>
     <div class="user">
       <span>{{.User}}</span>
@@ -29,33 +25,24 @@
     </div>
   </header>
   <main class="container">
-    <h1>Домен</h1>
+    <h1>Репликация</h1>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{with .Content}}
-    {{with .Info}}
-    <h2>Информация</h2>
-    <dl class="kv">
-      <dt>Base DN</dt><dd class="mono">{{.BaseDN}}</dd>
-      <dt>DNS root</dt><dd>{{.DNSRoot}}</dd>
-      <dt>NetBIOS</dt><dd>{{.NetBIOS}}</dd>
-      <dt>Function level</dt><dd>{{.FunctionLvl}}</dd>
-    </dl>
-    {{end}}
-    {{with .Level}}
-    <h2>Уровень</h2>
-    <pre class="panel">{{.Raw}}</pre>
-    {{end}}
-    <h2>FSMO</h2>
+    <h2>Партнёры</h2>
     <table>
-      <thead><tr><th>Роль</th><th>Владелец</th><th>Источник</th></tr></thead>
+      <thead><tr><th>Имя</th><th>Статус</th><th>DN</th></tr></thead>
       <tbody>
-      {{range .FSMO}}
-        <tr><td>{{.Role}}</td><td class="mono">{{.Owner}}</td><td>{{.Source}}</td></tr>
+      {{range .Partners}}
+        <tr><td>{{.Name}}</td><td>{{.Status}}</td><td class="mono">{{.DN}}</td></tr>
       {{else}}
         <tr><td colspan="3" class="muted">Нет данных</td></tr>
       {{end}}
       </tbody>
     </table>
+    {{if .Raw}}
+    <h2>drs showrepl</h2>
+    <pre class="panel">{{.Raw}}</pre>
+    {{end}}
     {{end}}
   </main>
 </body>
