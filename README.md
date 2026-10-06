@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** этап 1 — каркас. Есть конфиг, LDAP-клиент, сессии/RBAC-заготовки, `serve`, базовые команды `user` / `group` / `domain` и SSR-страницы. CRUD, доверия, FSMO, DNS и GPO — в следующих этапах.
+> **Статус:** этап 2 — CRUD объектов каталога. Пользователи, группы, OU и компьютеры доступны через CLI, Web UI и REST API. Доверия, FSMO, DNS и GPO — в следующих этапах.
 
 ---
 
@@ -19,11 +19,11 @@ Linux-first: на контроллере домена удобно работа�
 
 | Слой | Что есть сейчас |
 |------|-----------------|
-| **CLI** | `serve`, `version`, `user list\|show`, `group list`, `domain info` |
-| **Web UI** | логин, дашборд, пользователи, группы, домен (SSR + HTMX) |
-| **REST** | `GET /api/v1/users`, `/groups`, `/domain`; `/healthz`, `/metrics` |
-| **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, simple bind, paged search |
-| **Безопасность** | cookie-сессии (HttpOnly), роли readonly/helpdesk/admin (каркас), журнал аудита |
+| **CLI** | `user` CRUD + enable/disable/password/move; `group` + members; `ou`; `computer`; `domain info`; `serve` |
+| **Web UI** | логин, дашборд, пользователи (создание, enable/disable HTMX), группы, компьютеры, OU, домен |
+| **REST** | `/api/v1/users|groups|computers|ou|domain` (+ мутации) |
+| **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, bind, paged search, add/modify/delete/moddn |
+| **Безопасность** | cookie-сессии (HttpOnly), роли readonly/helpdesk/admin, журнал аудита |
 
 Общая бизнес-логика живёт в `internal/service` и вызывается и из CLI, и из HTTP-хендлеров.
 
@@ -52,7 +52,7 @@ Windows:
 
 ### Сборка из исходников
 
-Требуется Go 1.22+.
+Требуется Go 1.24+ (модуль собирается с `go 1.26` toolchain).
 
 ```bash
 git clone https://github.com/rkislov/sambaadm.git
@@ -145,12 +145,14 @@ sambaadm [global flags] <command>
 sambaadm version
 sambaadm serve [--listen=:8080] [--tls-cert=...] [--tls-key=...]
 
-sambaadm user list [--ou=DN]
-sambaadm user show <login>
-
-sambaadm group list
+sambaadm user list|show|create|delete|enable|disable|set-password|move
+sambaadm group list|show|create|delete|add-member|remove-member|members
+sambaadm computer list|show|delete|move
+sambaadm ou list|tree|create|delete|move
 sambaadm domain info
 ```
+
+Пароль пользователя: только через `--prompt` / интерактивный ввод (не в argv). Смена `unicodePwd` требует `ldaps://` или `ldapi://`.
 
 Подробнее: [`docs/cli.md`](docs/cli.md).
 
@@ -257,7 +259,7 @@ make docker
 ## Дорожная карта
 
 1. ~~Каркас: cobra, chi, embed, конфиг, LDAP, auth~~
-2. CRUD пользователей, групп, OU, компьютеров
+2. ~~CRUD пользователей, групп, OU, компьютеров~~
 3. Доверия, FSMO, репликация, сайты
 4. DNS и базовый GPO
 5. Полный SSR/HTMX, локализация, RBAC, аудит
@@ -267,4 +269,8 @@ make docker
 
 ## Лицензия
 
-Пока не выбрана — уточняется. Исходный код публикуется для раннего ознакомления и обратной связи.
+[Apache License 2.0](LICENSE)
+
+Разработано **Кисловым Романом Сергеевичем**. См. [NOTICE](NOTICE).
+
+- GitHub: https://github.com/rkislov/sambaadm

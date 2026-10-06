@@ -97,14 +97,35 @@ func (s *Server) buildRouter() chi.Router {
 		r.Use(s.requireSession)
 		r.Get("/", s.handleDashboard)
 		r.Get("/users", s.handleUsers)
+		r.Get("/users/new", s.handleUserCreateForm)
+		r.Post("/users", s.handleUserCreatePost)
 		r.Get("/groups", s.handleGroups)
+		r.Get("/computers", s.handleComputers)
+		r.Get("/ou", s.handleOU)
 		r.Get("/domain", s.handleDomainPage)
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Get("/users", s.handleAPIUsers)
+		r.Post("/users", s.handleAPIUserCreate)
+		r.Get("/users/{login}", s.handleAPIUserGet)
+		r.Delete("/users/{login}", s.handleAPIUserDelete)
+		r.Post("/users/{login}/enable", s.handleAPIUserEnable)
+		r.Post("/users/{login}/disable", s.handleAPIUserDisable)
+		r.Post("/users/{login}/password", s.handleAPIUserPassword)
+
 		r.Get("/groups", s.handleAPIGroups)
+		r.Post("/groups", s.handleAPIGroupCreate)
+		r.Delete("/groups/{name}", s.handleAPIGroupDelete)
+
+		r.Get("/computers", s.handleAPIComputers)
+		r.Delete("/computers/{name}", s.handleAPIComputerDelete)
+
+		r.Get("/ou", s.handleAPIOUs)
+		r.Post("/ou", s.handleAPIOUCreate)
+		r.Delete("/ou", s.handleAPIOUDelete)
+
 		r.Get("/domain", s.handleAPIDomain)
 	})
 

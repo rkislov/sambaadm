@@ -1,4 +1,4 @@
-{{define "dashboard.html"}}
+{{define "ou/list.html"}}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -11,27 +11,37 @@
   <header class="topbar">
     <a class="brand" href="/">sambaadm</a>
     <nav>
-      <a href="/" class="active">Дашборд</a>
+      <a href="/">Дашборд</a>
       <a href="/users">Пользователи</a>
       <a href="/groups">Группы</a>
       <a href="/computers">Компьютеры</a>
-      <a href="/ou">OU</a>
+      <a href="/ou" class="active">OU</a>
       <a href="/domain">Домен</a>
     </nav>
     <div class="user">
-      <span>{{.User}} <small>({{.Role}})</small></span>
+      <span>{{.User}}</span>
       <form method="post" action="/logout" class="inline">
         <button type="submit" class="linkish">Выход</button>
       </form>
     </div>
   </header>
   <main class="container">
-    <h1>Дашборд</h1>
-    <p class="muted">Состояние подключения к контроллеру домена.</p>
-    <dl class="kv">
-      <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
-      <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>
-    </dl>
+    <h1>Организационные единицы</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <table>
+      <thead><tr><th>Имя</th><th>DN</th><th>Описание</th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td class="mono">{{.DN}}</td>
+          <td>{{.Description}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="3" class="muted">Нет данных</td></tr>
+      {{end}}
+      </tbody>
+    </table>
   </main>
 </body>
 </html>

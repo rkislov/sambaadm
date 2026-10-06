@@ -1,4 +1,4 @@
-{{define "dashboard.html"}}
+{{define "computers/list.html"}}
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -11,27 +11,38 @@
   <header class="topbar">
     <a class="brand" href="/">sambaadm</a>
     <nav>
-      <a href="/" class="active">Дашборд</a>
+      <a href="/">Дашборд</a>
       <a href="/users">Пользователи</a>
       <a href="/groups">Группы</a>
-      <a href="/computers">Компьютеры</a>
+      <a href="/computers" class="active">Компьютеры</a>
       <a href="/ou">OU</a>
       <a href="/domain">Домен</a>
     </nav>
     <div class="user">
-      <span>{{.User}} <small>({{.Role}})</small></span>
+      <span>{{.User}}</span>
       <form method="post" action="/logout" class="inline">
         <button type="submit" class="linkish">Выход</button>
       </form>
     </div>
   </header>
   <main class="container">
-    <h1>Дашборд</h1>
-    <p class="muted">Состояние подключения к контроллеру домена.</p>
-    <dl class="kv">
-      <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
-      <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>
-    </dl>
+    <h1>Компьютеры</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <table>
+      <thead><tr><th>Имя</th><th>DNS</th><th>OS</th><th>DN</th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.SAMAccountName}}</td>
+          <td>{{.DNSHostName}}</td>
+          <td>{{.OS}}</td>
+          <td class="mono">{{.DN}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="4" class="muted">Нет данных</td></tr>
+      {{end}}
+      </tbody>
+    </table>
   </main>
 </body>
 </html>

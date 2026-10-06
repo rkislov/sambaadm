@@ -1,0 +1,33 @@
+{{define "users/create.html"}}
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · sambaadm</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">sambaadm</a>
+    <nav>
+      <a href="/users" class="active">Пользователи</a>
+    </nav>
+    <div class="user"><span>{{.User}}</span></div>
+  </header>
+  <main class="container">
+    <h1>Новый пользователь</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <form method="post" action="/users" class="form-card">
+      <label>Логин <input name="login" required autocomplete="off"></label>
+      <label>Отображаемое имя <input name="display"></label>
+      <label>Пароль <input type="password" name="password" required autocomplete="new-password"></label>
+      <label>OU (DN) <input name="ou" placeholder="OU=People,DC=example,DC=com"></label>
+      <label>Email <input type="email" name="mail"></label>
+      <label class="check"><input type="checkbox" name="enabled" value="1" checked> Включить учётную запись</label>
+      <button type="submit">Создать</button>
+    </form>
+  </main>
+</body>
+</html>
+{{end}}

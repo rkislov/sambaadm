@@ -21,15 +21,22 @@ const (
 	AttrWhenChanged     = "whenChanged"
 	AttrDNSHostName     = "dNSHostName"
 	AttrOperatingSystem = "operatingSystem"
+	AttrUnicodePwd      = "unicodePwd"
+	AttrGroupType       = "groupType"
+	AttrOU              = "ou"
 )
 
 // UserAccountControl flags (subset).
 const (
-	UACAccountDisable     = 0x0002
-	UACNormalAccount      = 0x0200
-	UACPasswordNotReqd    = 0x0020
-	UACDontExpirePassword = 0x10000
+	UACAccountDisable          = 0x0002
+	UACNormalAccount           = 0x0200
+	UACPasswordNotReqd         = 0x0020
+	UACDontExpirePassword      = 0x10000
+	UACWorkstationTrustAccount = 0x1000
 )
+
+// GroupTypeGlobalSecurity is ADS_GROUP_TYPE_GLOBAL_GROUP | SECURITY_ENABLED.
+const GroupTypeGlobalSecurity = "-2147483646"
 
 // Default attribute sets for common object types.
 var (

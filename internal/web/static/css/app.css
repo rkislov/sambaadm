@@ -132,6 +132,44 @@ th {
   margin: 1rem 0 0;
 }
 
+.btn {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff !important;
+  border-radius: 6px;
+  padding: 0.5rem 0.9rem;
+  text-decoration: none !important;
+  font-size: 0.92rem;
+}
+
+.btn:hover { background: var(--accent-hover); }
+
+.actions { white-space: nowrap; }
+
+.form-card {
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.form-card label {
+  display: block;
+  margin: 0.85rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.form-card label.check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-card button { margin-top: 0.5rem; }
+
 input[type="text"],
 input[type="password"],
 input[type="search"] {

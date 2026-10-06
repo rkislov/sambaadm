@@ -70,6 +70,8 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 	rootCmd.AddCommand(userCmd)
 	rootCmd.AddCommand(groupCmd)
+	rootCmd.AddCommand(computerCmd)
+	rootCmd.AddCommand(ouCmd)
 	rootCmd.AddCommand(domainCmd)
 }
 
