@@ -55,16 +55,19 @@ Windows:
 Требуется Go 1.22+.
 
 ```bash
-git clone https://github.com/OWNER/sambaadm.git
+git clone https://github.com/rkislov/sambaadm.git
 cd sambaadm
 make build
 ./bin/sambaadm serve --listen=:8080
 ```
 
-Кросс-сборка Linux и Windows:
+Кросс-сборка Linux amd64 и Windows amd64:
 
 ```bash
-make release-github   # dist/sambaadm-linux-amd64, dist/sambaadm-windows-amd64.exe
+make release-github
+# → dist/sambaadm-linux-amd64
+# → dist/sambaadm-windows-amd64.exe
+# → dist/SHA256SUMS
 ```
 
 ---
