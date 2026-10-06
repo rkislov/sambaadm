@@ -1,0 +1,21 @@
+{{define "users/row.html"}}
+<tr id="user-row-{{.SAMAccountName}}">
+  <td>{{.SAMAccountName}}</td>
+  <td>{{.DisplayName}}</td>
+  <td>{{if .Enabled}}активен{{else}}отключён{{end}}</td>
+  <td class="mono">{{.DN}}</td>
+  <td class="actions">
+    {{if .Enabled}}
+    <button class="linkish"
+      hx-post="/api/v1/users/{{.SAMAccountName}}/disable"
+      hx-target="#user-row-{{.SAMAccountName}}"
+      hx-swap="outerHTML">Отключить</button>
+    {{else}}
+    <button class="linkish"
+      hx-post="/api/v1/users/{{.SAMAccountName}}/enable"
+      hx-target="#user-row-{{.SAMAccountName}}"
+      hx-swap="outerHTML">Включить</button>
+    {{end}}
+  </td>
+</tr>
+{{end}}

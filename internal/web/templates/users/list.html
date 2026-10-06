@@ -15,6 +15,8 @@
       <a href="/">Дашборд</a>
       <a href="/users" class="active">Пользователи</a>
       <a href="/groups">Группы</a>
+      <a href="/computers">Компьютеры</a>
+      <a href="/ou">OU</a>
       <a href="/domain">Домен</a>
     </nav>
     <div class="user">
@@ -25,24 +27,22 @@
     </div>
   </header>
   <main class="container">
-    <h1>Пользователи</h1>
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <h1 style="margin:0">Пользователи</h1>
+      <a class="btn" href="/users/new">Создать</a>
+    </div>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     <form class="toolbar" method="get" action="/users">
-      <input type="search" name="q" placeholder="Поиск…" hx-get="/users" hx-trigger="keyup changed delay:300ms" hx-target="body">
+      <input type="search" name="q" placeholder="Поиск…" value="">
       <button type="submit">Найти</button>
     </form>
     <table>
-      <thead><tr><th>Логин</th><th>Имя</th><th>Статус</th><th>DN</th></tr></thead>
+      <thead><tr><th>Логин</th><th>Имя</th><th>Статус</th><th>DN</th><th></th></tr></thead>
       <tbody>
       {{range .Content}}
-        <tr>
-          <td>{{.SAMAccountName}}</td>
-          <td>{{.DisplayName}}</td>
-          <td>{{if .Enabled}}активен{{else}}отключён{{end}}</td>
-          <td class="mono">{{.DN}}</td>
-        </tr>
+        {{template "users/row.html" .}}
       {{else}}
-        <tr><td colspan="4" class="muted">Нет данных</td></tr>
+        <tr><td colspan="5" class="muted">Нет данных</td></tr>
       {{end}}
       </tbody>
     </table>
