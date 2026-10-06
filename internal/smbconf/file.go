@@ -257,8 +257,8 @@ func (s *Section) ParamsMap() map[string]string {
 	return out
 }
 
-// WriteTo serializes the configuration.
-func (f *File) WriteTo(w io.Writer) error {
+// Write serializes the configuration to w.
+func (f *File) Write(w io.Writer) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	bw := bufio.NewWriter(w)
@@ -315,7 +315,7 @@ func (f *File) SaveAtomic(path string) error {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }()
 
-	if err := f.WriteTo(tmp); err != nil {
+	if err := f.Write(tmp); err != nil {
 		_ = tmp.Close()
 		return err
 	}
