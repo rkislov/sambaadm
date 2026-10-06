@@ -1,0 +1,25 @@
+{{define "printers/create.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <h1>{{t .Lang "printers.create"}}</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <form method="post" action="/printers" class="form-card">
+      {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
+      <label>Name <input name="name" required autocomplete="off"></label>
+      <label>CUPS queue <input name="cups_name" placeholder="same as name"></label>
+      <label>Spool path <input name="path" placeholder="/srv/samba/spool/name"></label>
+      <label>Comment <input name="comment"></label>
+      <label class="check"><input type="checkbox" name="guest_ok" value="1"> Guest ok</label>
+      <button type="submit">OK</button>
+    </form>
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

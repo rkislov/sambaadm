@@ -1,0 +1,50 @@
+{{define "shares/list.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <h1 style="margin:0">{{t .Lang "nav.shares"}}</h1>
+      {{if canAdmin .Role}}<a class="btn" href="/shares/new">+</a>{{end}}
+    </div>
+    <p class="muted">{{t .Lang "shares.hint"}}</p>
+    {{template "shares/tips" .}}
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    {{with .Content}}
+    <p class="muted mono">{{.SMBConf}} · root {{.SharesRoot}}</p>
+    <table>
+      <thead><tr><th>Name</th><th>Path</th><th>valid users</th><th>RO</th><th>Guest</th><th>Dir</th><th></th></tr></thead>
+      <tbody>
+      {{range .Shares}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td class="mono">{{.Path}}</td>
+          <td class="mono">{{.ValidUsers}}</td>
+          <td>{{.ReadOnly}}</td>
+          <td>{{.GuestOK}}</td>
+          <td>{{if .PathExists}}ok{{else}}missing{{end}}</td>
+          <td class="actions">
+            <a href="/shares/{{urlpath .Name}}/acl">{{t $.Lang "shares.acl"}}</a>
+            {{if canAdmin $.Role}}
+            <button class="linkish"
+              hx-delete="/api/v1/shares/{{urlpath .Name}}"
+              hx-confirm="Delete share «{{.Name}}»?"
+              hx-on::after-request="if(event.detail.successful) location.reload()">Del</button>
+            {{end}}
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="7" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+    {{end}}
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

@@ -1,39 +1,17 @@
 {{define "domain/info.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/">Дашборд</a>
-      <a href="/users">Пользователи</a>
-      <a href="/groups">Группы</a>
-      <a href="/computers">Компьютеры</a>
-      <a href="/ou">OU</a>
-      <a href="/trusts">Доверия</a>
-      <a href="/repl">Репликация</a>
-      <a href="/sites">Сайты</a>
-      <a href="/domain" class="active">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
-    <h1>Домен</h1>
+    <h1>{{t .Lang "nav.domain"}}</h1>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{with .Content}}
     {{with .Info}}
-    <h2>Информация</h2>
+    <h2>Info</h2>
     <dl class="kv">
       <dt>Base DN</dt><dd class="mono">{{.BaseDN}}</dd>
       <dt>DNS root</dt><dd>{{.DNSRoot}}</dd>
@@ -42,22 +20,23 @@
     </dl>
     {{end}}
     {{with .Level}}
-    <h2>Уровень</h2>
+    <h2>Level</h2>
     <pre class="panel">{{.Raw}}</pre>
     {{end}}
     <h2>FSMO</h2>
     <table>
-      <thead><tr><th>Роль</th><th>Владелец</th><th>Источник</th></tr></thead>
+      <thead><tr><th>Role</th><th>Owner</th><th>Source</th></tr></thead>
       <tbody>
       {{range .FSMO}}
         <tr><td>{{.Role}}</td><td class="mono">{{.Owner}}</td><td>{{.Source}}</td></tr>
       {{else}}
-        <tr><td colspan="3" class="muted">Нет данных</td></tr>
+        <tr><td colspan="3" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
     {{end}}
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

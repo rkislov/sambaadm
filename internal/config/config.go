@@ -17,6 +17,16 @@ type Config struct {
 	Audit   AuditConfig   `mapstructure:"audit"`
 	Logging LoggingConfig `mapstructure:"logging"`
 	GPO     GPOConfig     `mapstructure:"gpo"`
+	Samba   SambaConfig   `mapstructure:"samba"`
+}
+
+// SambaConfig controls local smb.conf / file-share administration.
+type SambaConfig struct {
+	SMBConf      string `mapstructure:"smb_conf"`
+	SharesRoot   string `mapstructure:"shares_root"`
+	CreateMode   string `mapstructure:"create_mode"` // octal, e.g. "0755"
+	AllowAnyPath bool   `mapstructure:"allow_any_path"`
+	ReloadCmd    string `mapstructure:"reload_cmd"` // e.g. "smbcontrol all reload-config"
 }
 
 // GPOConfig controls SYSVOL distribution to other DCs.
@@ -116,6 +126,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gpo.rsync_binary", "rsync")
 	v.SetDefault("gpo.ssh_binary", "ssh")
 	v.SetDefault("gpo.remote_sysvolreset", true)
+	v.SetDefault("samba.smb_conf", "/etc/samba/smb.conf")
+	v.SetDefault("samba.shares_root", "/srv/samba")
+	v.SetDefault("samba.create_mode", "0755")
+	v.SetDefault("samba.allow_any_path", false)
+	v.SetDefault("samba.reload_cmd", "smbcontrol all reload-config")
 }
 
 // BindPassword resolves the LDAP bind password from the configured env var.

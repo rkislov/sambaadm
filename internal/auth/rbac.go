@@ -20,9 +20,17 @@ func NewRBAC(roles config.RolesConfig) *RBAC {
 	}
 }
 
+// Configured reports whether any role groups are defined.
+func (r *RBAC) Configured() bool {
+	return r != nil && (len(r.adminDNs) > 0 || len(r.helpdeskDNs) > 0)
+}
+
 // Resolve returns the highest role matching memberOf groups.
 // Default is readonly when authenticated but not in elevated groups.
 func (r *RBAC) Resolve(memberOf []string) Role {
+	if r == nil || !r.Configured() {
+		return RoleAdmin
+	}
 	normalized := normalizeDNs(memberOf)
 	for _, g := range normalized {
 		for _, admin := range r.adminDNs {

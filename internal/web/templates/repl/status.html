@@ -1,41 +1,23 @@
 {{define "repl/status.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/">Дашборд</a>
-      <a href="/trusts">Доверия</a>
-      <a href="/repl" class="active">Репликация</a>
-      <a href="/sites">Сайты</a>
-      <a href="/domain">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
-    <h1>Репликация</h1>
+    <h1>{{t .Lang "nav.repl"}}</h1>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{with .Content}}
-    <h2>Партнёры</h2>
+    <h2>Partners</h2>
     <table>
-      <thead><tr><th>Имя</th><th>Статус</th><th>DN</th></tr></thead>
+      <thead><tr><th>Name</th><th>Status</th><th>DN</th></tr></thead>
       <tbody>
       {{range .Partners}}
         <tr><td>{{.Name}}</td><td>{{.Status}}</td><td class="mono">{{.DN}}</td></tr>
       {{else}}
-        <tr><td colspan="3" class="muted">Нет данных</td></tr>
+        <tr><td colspan="3" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
@@ -45,6 +27,7 @@
     {{end}}
     {{end}}
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

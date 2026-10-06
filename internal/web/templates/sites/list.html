@@ -1,57 +1,40 @@
 {{define "sites/list.html"}}
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="{{.Lang}}">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.Title}} · sambaadm</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  {{template "head" .}}
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/">sambaadm</a>
-    <nav>
-      <a href="/">Дашборд</a>
-      <a href="/trusts">Доверия</a>
-      <a href="/repl">Репликация</a>
-      <a href="/sites" class="active">Сайты</a>
-      <a href="/domain">Домен</a>
-    </nav>
-    <div class="user">
-      <span>{{.User}}</span>
-      <form method="post" action="/logout" class="inline">
-        <button type="submit" class="linkish">Выход</button>
-      </form>
-    </div>
-  </header>
+  {{template "nav" .}}
   <main class="container">
-    <h1>Сайты и подсети</h1>
+    <h1>{{t .Lang "nav.sites"}}</h1>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{with .Content}}
-    <h2>Сайты</h2>
+    <h2>Sites</h2>
     <table>
-      <thead><tr><th>Имя</th><th>DN</th></tr></thead>
+      <thead><tr><th>Name</th><th>DN</th></tr></thead>
       <tbody>
       {{range .Sites}}
         <tr><td>{{.Name}}</td><td class="mono">{{.DN}}</td></tr>
       {{else}}
-        <tr><td colspan="2" class="muted">Нет сайтов</td></tr>
+        <tr><td colspan="2" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
-    <h2>Подсети</h2>
+    <h2>Subnets</h2>
     <table>
-      <thead><tr><th>Подсеть</th><th>Сайт</th><th>DN</th></tr></thead>
+      <thead><tr><th>Subnet</th><th>Site</th><th>DN</th></tr></thead>
       <tbody>
       {{range .Subnets}}
         <tr><td>{{.Name}}</td><td class="mono">{{.Site}}</td><td class="mono">{{.DN}}</td></tr>
       {{else}}
-        <tr><td colspan="3" class="muted">Нет подсетей</td></tr>
+        <tr><td colspan="3" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
       {{end}}
       </tbody>
     </table>
     {{end}}
   </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>
 </html>
 {{end}}

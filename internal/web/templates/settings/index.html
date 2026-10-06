@@ -1,0 +1,27 @@
+{{define "settings/index.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <h1>{{t .Lang "settings.title"}}</h1>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}
+    <form method="post" action="/settings" class="form-card">
+      {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
+      <label>{{t .Lang "settings.lang"}}
+        <select name="lang">
+          <option value="ru" {{if eq .Lang "ru"}}selected{{end}}>Русский</option>
+          <option value="en" {{if eq .Lang "en"}}selected{{end}}>English</option>
+        </select>
+      </label>
+      <button type="submit">{{t .Lang "settings.save"}}</button>
+    </form>
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

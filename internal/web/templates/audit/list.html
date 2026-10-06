@@ -1,0 +1,49 @@
+{{define "audit/list.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <h1>{{t .Lang "audit.title"}}</h1>
+    <p class="muted">{{t .Lang "audit.hint"}}</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    {{with .Content}}
+      {{if .Path}}<p class="muted mono">{{.Path}}</p>{{end}}
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Target</th>
+            <th>Result</th>
+            <th>IP</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{range .Events}}
+          <tr>
+            <td class="mono">{{.Time.Format "2006-01-02 15:04:05"}}</td>
+            <td>{{.Actor}}</td>
+            <td>{{.Action}}</td>
+            <td class="mono">{{.Target}}</td>
+            <td>{{if eq .Result "failure"}}<span class="badge badge-failed">{{.Result}}</span>{{else}}<span class="badge badge-ok">{{.Result}}</span>{{end}}</td>
+            <td class="mono">{{.IP}}</td>
+          </tr>
+          {{if .Error}}
+          <tr><td colspan="6" class="muted">{{.Error}}</td></tr>
+          {{end}}
+        {{else}}
+          <tr><td colspan="6" class="muted">{{t $.Lang "audit.empty"}}</td></tr>
+        {{end}}
+        </tbody>
+      </table>
+    {{end}}
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

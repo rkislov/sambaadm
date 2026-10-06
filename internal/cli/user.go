@@ -207,7 +207,22 @@ func openServices() (*service.Services, func(), error) {
 			return nil, nil, err
 		}
 	}
-	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{GPO: rootCfg.GPO})
+	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{GPO: rootCfg.GPO, Samba: rootCfg.Samba})
+	cleanup := func() {
+		_ = client.Close()
+		_ = auditLog.Close()
+	}
+	return svcs, cleanup, nil
+}
+
+// openLocalServices builds services without LDAP bind (for smb.conf / ACL ops).
+func openLocalServices() (*service.Services, func(), error) {
+	auditLog, err := audit.New(rootCfg.Audit.File)
+	if err != nil {
+		return nil, nil, err
+	}
+	client := ldapproto.NewClient(rootCfg.LDAP)
+	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{GPO: rootCfg.GPO, Samba: rootCfg.Samba})
 	cleanup := func() {
 		_ = client.Close()
 		_ = auditLog.Close()

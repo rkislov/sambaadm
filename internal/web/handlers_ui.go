@@ -1,9 +1,11 @@
 package web
 
 import (
+	"log/slog"
 	"net/http"
 
 	"sambaadm/internal/auth"
+	"sambaadm/internal/i18n"
 	"sambaadm/internal/service"
 )
 
@@ -12,52 +14,71 @@ func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	s.render(w, "login.html", pageData{Title: "Вход"})
+	lang := langFrom(r)
+	s.render(w, "login.html", pageData{
+		Title: i18n.T(lang, "login.title"),
+		Lang:  lang,
+	})
 }
 
 func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
+	lang := langFrom(r)
+	loginPage := func(errKey string, extra string) {
+		msg := i18n.T(lang, errKey)
+		if extra != "" {
+			msg = msg + ": " + extra
+		}
+		s.render(w, "login.html", pageData{
+			Title: i18n.T(lang, "login.title"),
+			Lang:  lang,
+			Error: msg,
+		})
+	}
+
 	if err := r.ParseForm(); err != nil {
-		s.render(w, "login.html", pageData{Title: "Вход", Error: "Некорректная форма"})
+		loginPage("login.error.form", "")
 		return
 	}
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 	if username == "" || password == "" {
-		s.render(w, "login.html", pageData{Title: "Вход", Error: "Укажите логин и пароль"})
+		loginPage("login.error.empty", "")
 		return
 	}
 
-	// Bind as the user to verify credentials.
 	if err := s.ldap.Connect(r.Context()); err != nil {
-		s.render(w, "login.html", pageData{Title: "Вход", Error: "LDAP недоступен: " + err.Error()})
+		loginPage("login.error.ldap", err.Error())
 		return
 	}
 	if err := s.ldap.BindSimple(r.Context(), username, password); err != nil {
 		s.audit.Failure(username, "login", "", r.RemoteAddr, err)
-		s.render(w, "login.html", pageData{Title: "Вход", Error: "Неверный логин или пароль"})
+		loginPage("login.error.auth", "")
 		return
 	}
 
-	// Until memberOf → RBAC is wired, authenticated operators get admin.
-	// When role groups are configured, default to readonly (memberOf mapping later).
-	role := auth.RoleAdmin
-	if len(s.cfg.Auth.Roles.Admins) > 0 || len(s.cfg.Auth.Roles.Helpdesk) > 0 {
-		role = auth.RoleReadonly
+	dn, role, err := s.resolveLoginIdentity(r.Context(), username)
+	if err != nil {
+		slog.Warn("login identity lookup", "user", username, "err", err)
 	}
-	if s.cfg.LDAP.Bind.User != "" {
-		// Re-bind as service account for subsequent directory ops if configured.
-		pass := s.cfg.BindPassword()
-		_ = s.ldap.BindSimple(r.Context(), s.cfg.LDAP.Bind.User, pass)
+	if dn == "" {
+		dn = username
 	}
 
-	sess, err := s.sessions.Create(username, username, role)
+	if s.cfg.LDAP.Bind.User != "" {
+		pass := s.cfg.BindPassword()
+		if err := s.ldap.BindSimple(r.Context(), s.cfg.LDAP.Bind.User, pass); err != nil {
+			slog.Warn("service account rebind failed", "err", err)
+		}
+	}
+
+	sess, err := s.sessions.Create(username, dn, role)
 	if err != nil {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
 	secure := s.cfg.Server.TLS.Cert != ""
 	s.sessions.SetCookie(w, sess, secure)
-	s.audit.Success(username, "login", "", r.RemoteAddr)
+	s.audit.Success(username, "login", dn, r.RemoteAddr)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -71,177 +92,151 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
-	s.render(w, "dashboard.html", pageData{
-		Title: "Дашборд",
-		User:  sess.Username,
-		Role:  sess.Role,
-		Content: map[string]any{
-			"LDAP": s.cfg.LDAP.URI,
-			"Base": s.cfg.LDAP.BaseDN,
-		},
+	pd := s.page(r, "dashboard.title", map[string]any{
+		"LDAP": s.cfg.LDAP.URI,
+		"Base": s.cfg.LDAP.BaseDN,
 	})
+	s.render(w, "dashboard.html", pd)
 }
 
 func (s *Server) handleUsers(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
-	q := r.URL.Query().Get("q")
-	users, err := s.svcs.Users.List(r.Context(), "", q)
+	pd := s.page(r, "nav.users", nil)
+	users, err := s.svcs.Users.List(r.Context(), "", r.URL.Query().Get("q"))
 	if err != nil {
-		s.render(w, "users/list.html", pageData{
-			Title: "Пользователи", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "users/list.html", pd)
 		return
 	}
-	s.render(w, "users/list.html", pageData{
-		Title: "Пользователи", User: sess.Username, Role: sess.Role, Content: users,
-	})
+	pd.Content = users
+	s.render(w, "users/list.html", pd)
 }
 
 func (s *Server) handleGroups(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.groups", nil)
 	groups, err := s.svcs.Groups.List(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
-		s.render(w, "groups/list.html", pageData{
-			Title: "Группы", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "groups/list.html", pd)
 		return
 	}
-	s.render(w, "groups/list.html", pageData{
-		Title: "Группы", User: sess.Username, Role: sess.Role, Content: groups,
-	})
+	pd.Content = groups
+	s.render(w, "groups/list.html", pd)
 }
 
 func (s *Server) handleDomainPage(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.domain", nil)
 	info, err := s.svcs.Domain.Info(r.Context())
 	if err != nil {
-		s.render(w, "domain/info.html", pageData{
-			Title: "Домен", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "domain/info.html", pd)
 		return
 	}
 	fsmo, _ := s.svcs.Domain.FSMOShow(r.Context())
 	lvl, _ := s.svcs.Domain.LevelShow(r.Context())
-	s.render(w, "domain/info.html", pageData{
-		Title: "Домен", User: sess.Username, Role: sess.Role,
-		Content: map[string]any{"Info": info, "FSMO": fsmo, "Level": lvl},
-	})
+	pd.Content = map[string]any{"Info": info, "FSMO": fsmo, "Level": lvl}
+	s.render(w, "domain/info.html", pd)
 }
 
 func (s *Server) handleTrusts(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.trusts", nil)
 	trusts, err := s.svcs.Trusts.List(r.Context())
 	if err != nil {
-		s.render(w, "trusts/list.html", pageData{
-			Title: "Доверия", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "trusts/list.html", pd)
 		return
 	}
-	s.render(w, "trusts/list.html", pageData{
-		Title: "Доверия", User: sess.Username, Role: sess.Role, Content: trusts,
-	})
+	pd.Content = trusts
+	s.render(w, "trusts/list.html", pd)
 }
 
 func (s *Server) handleRepl(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.repl", nil)
 	st, err := s.svcs.Repl.Status(r.Context())
 	if err != nil {
-		s.render(w, "repl/status.html", pageData{
-			Title: "Репликация", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "repl/status.html", pd)
 		return
 	}
-	s.render(w, "repl/status.html", pageData{
-		Title: "Репликация", User: sess.Username, Role: sess.Role, Content: st,
-	})
+	pd.Content = st
+	s.render(w, "repl/status.html", pd)
 }
 
 func (s *Server) handleSites(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.sites", nil)
 	sites, err := s.svcs.Sites.List(r.Context())
 	subnets, _ := s.svcs.Subnets.List(r.Context())
 	if err != nil {
-		s.render(w, "sites/list.html", pageData{
-			Title: "Сайты", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "sites/list.html", pd)
 		return
 	}
-	s.render(w, "sites/list.html", pageData{
-		Title: "Сайты", User: sess.Username, Role: sess.Role,
-		Content: map[string]any{"Sites": sites, "Subnets": subnets},
-	})
+	pd.Content = map[string]any{"Sites": sites, "Subnets": subnets}
+	s.render(w, "sites/list.html", pd)
 }
 
 func (s *Server) handleComputers(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.computers", nil)
 	computers, err := s.svcs.Computers.List(r.Context(), r.URL.Query().Get("q"))
 	if err != nil {
-		s.render(w, "computers/list.html", pageData{
-			Title: "Компьютеры", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "computers/list.html", pd)
 		return
 	}
-	s.render(w, "computers/list.html", pageData{
-		Title: "Компьютеры", User: sess.Username, Role: sess.Role, Content: computers,
-	})
+	pd.Content = computers
+	s.render(w, "computers/list.html", pd)
 }
 
 func (s *Server) handleOU(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.ou", nil)
 	ous, err := s.svcs.OU.List(r.Context())
 	if err != nil {
-		s.render(w, "ou/list.html", pageData{
-			Title: "OU", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "ou/list.html", pd)
 		return
 	}
-	s.render(w, "ou/list.html", pageData{
-		Title: "OU", User: sess.Username, Role: sess.Role, Content: ous,
-	})
+	pd.Content = ous
+	s.render(w, "ou/list.html", pd)
 }
 
 func (s *Server) handleDNS(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.dns", nil)
 	zones, err := s.svcs.DNS.ListZones(r.Context())
 	if err != nil {
-		s.render(w, "dns/list.html", pageData{
-			Title: "DNS", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "dns/list.html", pd)
 		return
 	}
-	s.render(w, "dns/list.html", pageData{
-		Title: "DNS", User: sess.Username, Role: sess.Role, Content: zones,
-	})
+	pd.Content = zones
+	s.render(w, "dns/list.html", pd)
 }
 
 func (s *Server) handleGPO(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
+	pd := s.page(r, "nav.gpo", nil)
 	gpos, err := s.svcs.GPO.List(r.Context())
 	if err != nil {
-		s.render(w, "gpo/list.html", pageData{
-			Title: "GPO", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "gpo/list.html", pd)
 		return
 	}
-	s.render(w, "gpo/list.html", pageData{
-		Title: "GPO", User: sess.Username, Role: sess.Role, Content: gpos,
-	})
+	pd.Content = gpos
+	s.render(w, "gpo/list.html", pd)
 }
 
 func (s *Server) handleUserCreateForm(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
-	s.render(w, "users/create.html", pageData{Title: "Новый пользователь", User: sess.Username, Role: sess.Role})
+	pd := s.page(r, "nav.users", nil)
+	s.render(w, "users/create.html", pd)
 }
 
 func (s *Server) handleUserCreatePost(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
+	pd := s.page(r, "nav.users", nil)
 	if !auth.CanAdmin(sess.Role) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		s.render(w, "users/create.html", pageData{Title: "Новый пользователь", User: sess.Username, Role: sess.Role, Error: "Некорректная форма"})
+		pd.Error = i18n.T(pd.Lang, "login.error.form")
+		s.render(w, "users/create.html", pd)
 		return
 	}
 	_, err := s.svcs.Users.Create(r.Context(), service.CreateUserInput{
@@ -253,10 +248,49 @@ func (s *Server) handleUserCreatePost(w http.ResponseWriter, r *http.Request) {
 		Enabled:     r.FormValue("enabled") == "on" || r.FormValue("enabled") == "1",
 	}, sess.Username, r.RemoteAddr)
 	if err != nil {
-		s.render(w, "users/create.html", pageData{
-			Title: "Новый пользователь", User: sess.Username, Role: sess.Role, Error: err.Error(),
-		})
+		pd.Error = err.Error()
+		s.render(w, "users/create.html", pd)
 		return
 	}
 	http.Redirect(w, r, "/users", http.StatusSeeOther)
+}
+
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	pd := s.page(r, "audit.title", nil)
+	events, err := s.audit.Recent(200)
+	if err != nil {
+		pd.Error = err.Error()
+		s.render(w, "audit/list.html", pd)
+		return
+	}
+	// Newest first for UI.
+	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
+		events[i], events[j] = events[j], events[i]
+	}
+	pd.Content = map[string]any{
+		"Events": events,
+		"Path":   s.audit.Path(),
+	}
+	s.render(w, "audit/list.html", pd)
+}
+
+func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	pd := s.page(r, "settings.title", map[string]any{
+		"Lang": langFrom(r),
+	})
+	s.render(w, "settings/index.html", pd)
+}
+
+func (s *Server) handleSettingsPost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	lang := i18n.Normalize(r.FormValue("lang"))
+	secure := s.cfg.Server.TLS.Cert != ""
+	setLangCookie(w, lang, secure)
+	if sess := sessionFrom(r); sess != nil {
+		s.audit.Success(sess.Username, "settings.lang", string(lang), r.RemoteAddr)
+	}
+	http.Redirect(w, r, "/settings", http.StatusSeeOther)
 }

@@ -1,0 +1,44 @@
+{{define "printers/list.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container">
+    <div class="toolbar" style="justify-content:space-between;align-items:center">
+      <h1 style="margin:0">{{t .Lang "nav.printers"}}</h1>
+      {{if canAdmin .Role}}<a class="btn" href="/printers/new">+</a>{{end}}
+    </div>
+    <p class="muted">{{t .Lang "printers.hint"}}</p>
+    {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    <table>
+      <thead><tr><th>Name</th><th>CUPS</th><th>SMB</th><th>Path</th><th>Comment</th><th></th></tr></thead>
+      <tbody>
+      {{range .Content}}
+        <tr>
+          <td>{{.Name}}</td>
+          <td>{{.CUPS}}</td>
+          <td>{{.InSMBConf}}</td>
+          <td class="mono">{{.Path}}</td>
+          <td>{{.Comment}}</td>
+          <td class="actions">
+            {{if and .InSMBConf (canAdmin $.Role)}}
+            <button class="linkish"
+              hx-delete="/api/v1/printers/{{urlpath .Name}}"
+              hx-confirm="Delete printer «{{.Name}}»?"
+              hx-on::after-request="if(event.detail.successful) location.reload()">Del</button>
+            {{end}}
+          </td>
+        </tr>
+      {{else}}
+        <tr><td colspan="6" class="muted">{{t $.Lang "common.no_data"}}</td></tr>
+      {{end}}
+      </tbody>
+    </table>
+  </main>
+  <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
+</body>
+</html>
+{{end}}

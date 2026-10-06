@@ -73,3 +73,13 @@ sambaadm [global flags] <command>
 - `sambaadm gpo link|unlink --container=DN --gpo=GUID`
 - `sambaadm gpo backup|restore <gpo> --path=DIR`
 - `sambaadm gpo distribute <gpo>` — доставить SYSVOL на все DC (DRS + rsync + ACL), со статусом шагов
+
+### Локальные шары / smb.conf
+- `sambaadm share list|show|create|delete|set|reload`
+- `sambaadm share create --name=docs [--path=/srv/samba/docs] [--valid-users=@staff] [--owner=root:root] [--mode=0755] [--acl=u:alice:rwx]`
+- `sambaadm share delete docs [--remove-dir]`
+- `sambaadm printer list|create|delete`
+- `sambaadm acl get <path>`
+- `sambaadm acl set <path> [--owner=u:g] [--mode=0755] [--acl=...] [--default-acl=...] [--recursive]`
+
+Пути по умолчанию ограничены `samba.shares_root` (см. `configs/config.example.yaml`). Перед записью `smb.conf` сохраняется `.bak`.

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +18,7 @@ import (
 	"sambaadm/internal/audit"
 	"sambaadm/internal/auth"
 	"sambaadm/internal/config"
+	"sambaadm/internal/i18n"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/service"
 )
@@ -48,14 +50,6 @@ type Server struct {
 
 // New constructs the web server and router.
 func New(opts Options) (*Server, error) {
-	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"year":    func() int { return time.Now().Year() },
-		"urlpath": url.PathEscape,
-	}).ParseFS(assets, "templates/*.html", "templates/*/*.html")
-	if err != nil {
-		return nil, fmt.Errorf("parse templates: %w", err)
-	}
-
 	s := &Server{
 		cfg:      opts.Config,
 		svcs:     opts.Services,
@@ -63,8 +57,28 @@ func New(opts Options) (*Server, error) {
 		rbac:     opts.RBAC,
 		ldap:     opts.LDAP,
 		audit:    opts.Audit,
-		tmpl:     tmpl,
 	}
+	tmpl, err := template.New("").Funcs(template.FuncMap{
+		"year":        func() int { return time.Now().Year() },
+		"urlpath":     url.PathEscape,
+		"t":           func(lang i18n.Lang, key string) string { return i18n.T(lang, key) },
+		"eq":          func(a, b any) bool { return a == b },
+		"canAdmin":    auth.CanAdmin,
+		"canHelpdesk": auth.CanHelpdesk,
+		"navClass": func(active, href string) string {
+			if active == href {
+				return "active"
+			}
+			if href != "/" && strings.HasPrefix(active, href) {
+				return "active"
+			}
+			return ""
+		},
+	}).ParseFS(assets, "templates/*.html", "templates/*/*.html")
+	if err != nil {
+		return nil, fmt.Errorf("parse templates: %w", err)
+	}
+	s.tmpl = tmpl
 	s.router = s.buildRouter()
 	return s, nil
 }
@@ -80,6 +94,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(chimw.RealIP)
 	r.Use(chimw.Recoverer)
 	r.Use(s.requestLogger)
+	r.Use(s.withLang)
 
 	staticFS, err := fs.Sub(assets, "static")
 	if err == nil {
@@ -93,10 +108,11 @@ func (s *Server) buildRouter() chi.Router {
 
 	r.Get("/login", s.handleLoginGet)
 	r.Post("/login", s.handleLoginPost)
-	r.Post("/logout", s.handleLogout)
+	r.With(s.requireSession, s.csrfProtect).Post("/logout", s.handleLogout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireSession)
+		r.Use(s.csrfProtect)
 		r.Get("/", s.handleDashboard)
 		r.Get("/users", s.handleUsers)
 		r.Get("/users/new", s.handleUserCreateForm)
@@ -110,10 +126,22 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/dns", s.handleDNS)
 		r.Get("/gpo", s.handleGPO)
 		r.Get("/domain", s.handleDomainPage)
+		r.Get("/shares", s.handleShares)
+		r.Get("/shares/new", s.handleShareCreateForm)
+		r.Post("/shares", s.handleShareCreatePost)
+		r.Get("/shares/{name}/acl", s.handleShareACL)
+		r.Post("/shares/{name}/acl", s.handleShareACLPost)
+		r.Get("/printers", s.handlePrinters)
+		r.Get("/printers/new", s.handlePrinterCreateForm)
+		r.Post("/printers", s.handlePrinterCreatePost)
+		r.Get("/audit", s.handleAudit)
+		r.Get("/settings", s.handleSettings)
+		r.Post("/settings", s.handleSettingsPost)
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
+		r.Use(s.csrfProtect)
 		r.Get("/users", s.handleAPIUsers)
 		r.Post("/users", s.handleAPIUserCreate)
 		r.Get("/users/{login}", s.handleAPIUserGet)
@@ -169,6 +197,20 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/{gpo}/restore", s.handleAPIGPORestore)
 		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
 		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
+
+		r.Get("/shares", s.handleAPIShares)
+		r.Post("/shares", s.handleAPIShareCreate)
+		r.Get("/shares/{name}", s.handleAPIShareGet)
+		r.Delete("/shares/{name}", s.handleAPIShareDelete)
+		r.Get("/shares/{name}/acl", s.handleAPIShareACLGet)
+		r.Post("/shares/{name}/acl", s.handleAPIShareACLSet)
+
+		r.Get("/printers", s.handleAPIPrinters)
+		r.Post("/printers", s.handleAPIPrinterCreate)
+		r.Delete("/printers/{name}", s.handleAPIPrinterDelete)
+
+		r.Get("/acl", s.handleAPIACLGet)
+		r.Post("/acl", s.handleAPIACLSet)
 	})
 
 	return r
@@ -202,10 +244,30 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	}
 }
 
+func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
+	lang := langFrom(r)
+	sess := sessionFrom(r)
+	pd := pageData{
+		Title:   i18n.T(lang, titleKey),
+		Lang:    lang,
+		Content: content,
+		Active:  r.URL.Path,
+	}
+	if sess != nil {
+		pd.User = sess.Username
+		pd.Role = sess.Role
+		pd.CSRF = sess.CSRFToken
+	}
+	return pd
+}
+
 type pageData struct {
 	Title   string
 	User    string
 	Role    auth.Role
+	Lang    i18n.Lang
+	CSRF    string
+	Active  string
 	Content any
 	Flash   string
 	Error   string

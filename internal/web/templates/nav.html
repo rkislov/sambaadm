@@ -1,0 +1,41 @@
+{{define "head"}}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · sambaadm</title>
+{{if .CSRF}}<meta name="csrf-token" content="{{.CSRF}}">{{end}}
+<link rel="stylesheet" href="/static/css/app.css">
+<script src="/static/js/htmx.min.js" defer></script>
+<script src="/static/js/app.js" defer></script>
+{{end}}
+
+{{define "nav"}}
+<header class="topbar">
+  <a class="brand" href="/">sambaadm</a>
+  {{if .User}}
+  <nav class="nav-links">
+    <a href="/" class="{{navClass .Active "/"}}">{{t .Lang "nav.dashboard"}}</a>
+    <a href="/users" class="{{navClass .Active "/users"}}">{{t .Lang "nav.users"}}</a>
+    <a href="/groups" class="{{navClass .Active "/groups"}}">{{t .Lang "nav.groups"}}</a>
+    <a href="/computers" class="{{navClass .Active "/computers"}}">{{t .Lang "nav.computers"}}</a>
+    <a href="/ou" class="{{navClass .Active "/ou"}}">{{t .Lang "nav.ou"}}</a>
+    <a href="/trusts" class="{{navClass .Active "/trusts"}}">{{t .Lang "nav.trusts"}}</a>
+    <a href="/repl" class="{{navClass .Active "/repl"}}">{{t .Lang "nav.repl"}}</a>
+    <a href="/sites" class="{{navClass .Active "/sites"}}">{{t .Lang "nav.sites"}}</a>
+    <a href="/dns" class="{{navClass .Active "/dns"}}">{{t .Lang "nav.dns"}}</a>
+    <a href="/gpo" class="{{navClass .Active "/gpo"}}">{{t .Lang "nav.gpo"}}</a>
+    <a href="/domain" class="{{navClass .Active "/domain"}}">{{t .Lang "nav.domain"}}</a>
+    <a href="/shares" class="{{navClass .Active "/shares"}}">{{t .Lang "nav.shares"}}</a>
+    <a href="/printers" class="{{navClass .Active "/printers"}}">{{t .Lang "nav.printers"}}</a>
+    <a href="/audit" class="{{navClass .Active "/audit"}}">{{t .Lang "nav.audit"}}</a>
+    <a href="/settings" class="{{navClass .Active "/settings"}}">{{t .Lang "nav.settings"}}</a>
+  </nav>
+  <div class="user">
+    <span>{{.User}} <small>({{.Role}})</small></span>
+    <form method="post" action="/logout" class="inline">
+      {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
+      <button type="submit" class="linkish">{{t .Lang "nav.logout"}}</button>
+    </form>
+  </div>
+  {{end}}
+</header>
+{{end}}
