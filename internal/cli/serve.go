@@ -57,7 +57,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer auditLog.Close()
 
-		ldapClient := ldapproto.NewClient(cfg.LDAP)
+		ldapClient := ldapproto.NewServiceClient(cfg.LDAP, cfg.BindPassword)
 		svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{GPO: cfg.GPO, Samba: cfg.Samba})
 		sessions := auth.NewStore(cfg.Auth.SessionTTL)
 		rbac := auth.NewRBAC(cfg.Auth.Roles)

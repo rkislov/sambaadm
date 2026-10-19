@@ -12,7 +12,7 @@ sudo mkdir -p /etc/sambaadm /var/log/sambaadm
 sudo cp configs/config.example.yaml /etc/sambaadm/config.yaml
 ```
 
-3. Задайте LDAP URI / Base DN и роли. Пароль bind — только через ENV:
+3. Задайте LDAP URI / Base DN, служебную учётную запись `ldap.bind.user` и роли. Служебная запись обязательна для веб-входа. Пароль bind — только через ENV:
 
 ```bash
 export SAMBAADM_PASSWORD='...'

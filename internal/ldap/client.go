@@ -15,11 +15,14 @@ import (
 	"sambaadm/internal/config"
 )
 
-// Client wraps an LDAP connection with reconnect and basic pooling.
+// Client owns one LDAP connection. Service clients bind before publishing any
+// connection and never allow callers to change its authentication identity.
 type Client struct {
-	cfg  config.LDAPConfig
-	mu   sync.Mutex
-	conn *ldap.Conn
+	cfg      config.LDAPConfig
+	mu       sync.Mutex
+	conn     *ldap.Conn
+	service  bool
+	password func() string
 }
 
 // NewClient creates an LDAP client from config. Connection is lazy.
@@ -35,61 +38,43 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 func (c *Client) connectLocked(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if c.conn != nil && !c.conn.IsClosing() {
 		return nil
 	}
 
-	uri := c.cfg.URI
-	u, err := url.Parse(uri)
-	if err != nil {
-		return fmt.Errorf("parse ldap uri: %w", err)
+	if c.conn != nil {
+		c.conn.Close()
+		c.conn = nil
 	}
-
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	var conn *ldap.Conn
-
-	switch strings.ToLower(u.Scheme) {
-	case "ldapi":
-		path, err := url.PathUnescape(u.Path)
-		if err != nil {
-			path = u.Path
+	var servicePassword string
+	if c.service {
+		if c.cfg.Bind.Type != "" && c.cfg.Bind.Type != "simple" {
+			return fmt.Errorf("unsupported LDAP service bind type %q", c.cfg.Bind.Type)
 		}
-		if path == "" {
-			path = "/var/run/samba/ldapi"
+		if strings.TrimSpace(c.cfg.Bind.User) == "" || c.password == nil {
+			return fmt.Errorf("LDAP service account is not configured")
 		}
-		raw, err := dialer.DialContext(ctx, "unix", path)
-		if err != nil {
-			return fmt.Errorf("ldapi dial %s: %w", path, err)
+		servicePassword = c.password()
+		if servicePassword == "" {
+			return fmt.Errorf("LDAP service account password is not configured")
 		}
-		conn = ldap.NewConn(raw, false)
-		conn.Start()
-	case "ldaps":
-		host := u.Host
-		if !strings.Contains(host, ":") {
-			host += ":636"
+	}
+	conn, err := dial(ctx, c.cfg.URI)
+	if err != nil {
+		return err
+	}
+	if c.service {
+		if err := conn.Bind(c.cfg.Bind.User, servicePassword); err != nil {
+			conn.Close()
+			return fmt.Errorf("LDAP service bind: %w", err)
 		}
-		tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
-		raw, err := tls.DialWithDialer(dialer, "tcp", host, tlsCfg)
-		if err != nil {
-			return fmt.Errorf("ldaps dial %s: %w", host, err)
-		}
-		conn = ldap.NewConn(raw, true)
-		conn.Start()
-	case "ldap", "":
-		host := u.Host
-		if host == "" {
-			host = "localhost:389"
-		} else if !strings.Contains(host, ":") {
-			host += ":389"
-		}
-		raw, err := dialer.DialContext(ctx, "tcp", host)
-		if err != nil {
-			return fmt.Errorf("ldap dial %s: %w", host, err)
-		}
-		conn = ldap.NewConn(raw, false)
-		conn.Start()
-	default:
-		return fmt.Errorf("unsupported ldap scheme: %s", u.Scheme)
+	}
+	if err := ctx.Err(); err != nil {
+		conn.Close()
+		return err
 	}
 
 	c.conn = conn
@@ -125,4 +110,63 @@ func (c *Client) BaseDN() string {
 // URI returns the configured LDAP URI.
 func (c *Client) URI() string {
 	return c.cfg.URI
+}
+
+// NewServiceClient creates an immutable service identity with lazy connection.
+// password is resolved anew on reconnect; browser credentials never enter it.
+func NewServiceClient(cfg config.LDAPConfig, password func() string) *Client {
+	return &Client{cfg: cfg, service: true, password: password}
+}
+
+func dial(ctx context.Context, uri string) (*ldap.Conn, error) {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	var raw net.Conn
+	var err error
+	secure := false
+	if strings.HasPrefix(strings.ToLower(uri), "ldapi://") {
+		path, e := url.PathUnescape(uri[len("ldapi://"):])
+		if e != nil {
+			return nil, fmt.Errorf("parse ldapi path: %w", e)
+		}
+		if path == "" {
+			path = "/var/run/samba/ldapi"
+		}
+		if !strings.HasPrefix(path, "/") {
+			return nil, fmt.Errorf("ldapi requires an absolute socket path")
+		}
+		raw, err = dialer.DialContext(ctx, "unix", path)
+	} else {
+		u, e := url.Parse(uri)
+		if e != nil {
+			return nil, fmt.Errorf("parse LDAP URI: %w", e)
+		}
+		host := u.Hostname()
+		if host == "" {
+			host = "localhost"
+		}
+		port := u.Port()
+		switch strings.ToLower(u.Scheme) {
+		case "ldap", "":
+			if port == "" {
+				port = "389"
+			}
+			raw, err = dialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
+		case "ldaps":
+			if port == "" {
+				port = "636"
+			}
+			secure = true
+			tlsDialer := &tls.Dialer{NetDialer: dialer, Config: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}}
+			raw, err = tlsDialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
+		default:
+			return nil, fmt.Errorf("unsupported LDAP scheme: %s", u.Scheme)
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("LDAP dial: %w", err)
+	}
+	conn := ldap.NewConn(raw, secure)
+	conn.SetTimeout(10 * time.Second)
+	conn.Start()
+	return conn, nil
 }
