@@ -29,6 +29,8 @@ Linux-first: на контроллере домена удобно работа�
 
 ---
 
+Иллюстрированное [руководство администратора в Word](docs/admin-guide/sambaadm-admin-guide.docx): установка, подключение, пользователи и OU, DNS, GPO, общие папки и диагностика.
+
 ## Быстрый старт
 
 ### Готовый бинарник
@@ -41,6 +43,25 @@ chmod +x sambaadm-linux-amd64
 ./sambaadm-linux-amd64 serve --listen=:8080
 ```
 
+### ALT SP Workstation 10.2.2 (x86-64)
+
+Используйте `sambaadm-linux-amd64`. Сборки через `make build`, `make release`
+и `make release-github` выполняются с `CGO_ENABLED=0`: Linux-бинарник статический
+и не требует glibc, в том числе `GLIBC_2.34`. Обновлять системную glibc для запуска
+не нужно. Для пересборки на другой ОС:
+
+```bash
+make release-github
+# Перенесите dist/sambaadm-linux-amd64 на ALT Linux, затем:
+chmod +x sambaadm-linux-amd64
+./sambaadm-linux-amd64 version
+./sambaadm-linux-amd64 serve --listen=:8081
+```
+
+Откройте http://localhost:8081/login. Для работы с доменом настройте LDAP;
+операции Samba, ACL и печати используют внешние системные утилиты
+(`samba-tool`, `getfacl`/`setfacl`, `getfattr`/`setfattr`, `lpstat`).
+
 Windows:
 
 ```powershell
@@ -52,7 +73,7 @@ Windows:
 
 ### Сборка из исходников
 
-Требуется Go 1.24+ (модуль собирается с `go 1.26` toolchain).
+Требуется Go 1.26 или новее.
 
 ```bash
 git clone https://github.com/rkislov/sambaadm.git

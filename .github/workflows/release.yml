@@ -23,6 +23,16 @@ jobs:
         run: |
           make release
           cd dist && shasum -a 256 sambaadm-* > SHA256SUMS
+      - name: Verify static Linux binaries
+        run: |
+          for binary in dist/sambaadm-linux-*; do
+            file "$binary"
+            if readelf -lW "$binary" | grep -Eq 'INTERP|DYNAMIC'; then
+              echo "Linux release must not depend on a dynamic loader or glibc"
+              exit 1
+            fi
+          done
+          ./dist/sambaadm-linux-amd64 version
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
