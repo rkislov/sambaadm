@@ -3,6 +3,7 @@ package ldap
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/go-ldap/ldap/v3"
 )
@@ -10,6 +11,12 @@ import (
 // BindSimple performs a simple bind with DN/username and password.
 // Prefer ldaps:// or ldapi:// — never send credentials over plain ldap:// in production.
 func (c *Client) BindSimple(ctx context.Context, user, password string) error {
+	if c.service {
+		return fmt.Errorf("cannot rebind an LDAP service client")
+	}
+	if strings.TrimSpace(user) == "" || password == "" {
+		return fmt.Errorf("LDAP username and password are required")
+	}
 	conn, err := c.Conn(ctx)
 	if err != nil {
 		return err
@@ -22,6 +29,9 @@ func (c *Client) BindSimple(ctx context.Context, user, password string) error {
 
 // BindAnonymous binds anonymously (useful for health checks / public reads).
 func (c *Client) BindAnonymous(ctx context.Context) error {
+	if c.service {
+		return fmt.Errorf("cannot rebind an LDAP service client")
+	}
 	conn, err := c.Conn(ctx)
 	if err != nil {
 		return err

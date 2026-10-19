@@ -13,7 +13,7 @@ import (
 
 // resolveLoginIdentity looks up DN and memberOf for an authenticated user
 // and maps groups to an RBAC role.
-func (s *Server) resolveLoginIdentity(ctx context.Context, username string) (dn string, role auth.Role, err error) {
+func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Client, username string) (dn string, role auth.Role, err error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return "", auth.RoleReadonly, fmt.Errorf("empty username")
@@ -26,7 +26,7 @@ func (s *Server) resolveLoginIdentity(ctx context.Context, username string) (dn 
 	)
 	// Bare login without @ — also try UPN with domain from base DN.
 	if !strings.Contains(username, "@") {
-		if domain := dnsFromBaseDN(s.ldap.BaseDN()); domain != "" {
+		if domain := dnsFromBaseDN(client.BaseDN()); domain != "" {
 			upn := ldap.EscapeFilter(username + "@" + domain)
 			filter = fmt.Sprintf(
 				"(&(objectCategory=person)(objectClass=user)(|(sAMAccountName=%s)(userPrincipalName=%s)))",
@@ -35,13 +35,13 @@ func (s *Server) resolveLoginIdentity(ctx context.Context, username string) (dn 
 		}
 	}
 
-	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{
+	entry, err := client.SearchOne(ctx, ldapproto.SearchOptions{
 		Filter:     filter,
 		Attributes: []string{ldapproto.AttrSAMAccountName, ldapproto.AttrMemberOf, ldapproto.AttrDN},
 	})
 	if err != nil {
-		// Bind succeeded but directory lookup failed — fall back safely.
-		return username, s.rbac.Resolve(nil), fmt.Errorf("identity lookup: %w", err)
+		// An authenticated bind alone does not establish an application role.
+		return "", auth.RoleReadonly, fmt.Errorf("identity lookup: %w", err)
 	}
 	role = s.rbac.Resolve(entry.GetAttributeValues(ldapproto.AttrMemberOf))
 	return entry.DN, role, nil

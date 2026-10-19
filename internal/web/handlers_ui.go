@@ -3,9 +3,11 @@ package web
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"sambaadm/internal/auth"
 	"sambaadm/internal/i18n"
+	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/service"
 )
 
@@ -39,36 +41,40 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		loginPage("login.error.form", "")
 		return
 	}
-	username := r.FormValue("username")
+	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if username == "" || password == "" {
 		loginPage("login.error.empty", "")
 		return
 	}
 
-	if err := s.ldap.Connect(r.Context()); err != nil {
+	loginLDAP := ldapproto.NewClient(s.cfg.LDAP)
+	defer loginLDAP.Close()
+	if err := loginLDAP.Connect(r.Context()); err != nil {
 		loginPage("login.error.ldap", err.Error())
 		return
 	}
-	if err := s.ldap.BindSimple(r.Context(), username, password); err != nil {
+	if err := loginLDAP.BindSimple(r.Context(), username, password); err != nil {
 		s.audit.Failure(username, "login", "", r.RemoteAddr, err)
 		loginPage("login.error.auth", "")
 		return
 	}
 
-	dn, role, err := s.resolveLoginIdentity(r.Context(), username)
-	if err != nil {
-		slog.Warn("login identity lookup", "user", username, "err", err)
-	}
-	if dn == "" {
-		dn = username
-	}
+	dn, role, err := s.resolveLoginIdentity(r.Context(), loginLDAP, username)
 
-	if s.cfg.LDAP.Bind.User != "" {
-		pass := s.cfg.BindPassword()
-		if err := s.ldap.BindSimple(r.Context(), s.cfg.LDAP.Bind.User, pass); err != nil {
-			slog.Warn("service account rebind failed", "err", err)
-		}
+	if err != nil || dn == "" {
+		slog.Warn("login identity lookup failed", "user", username, "err", err)
+		s.audit.Failure(username, "login.identity", "", r.RemoteAddr, err)
+		loginPage("login.error.identity", "")
+		return
+	}
+	// Ensure operations are bound to their own configured service identity.
+	// A failed service bind must never leave a browser identity on that connection.
+	if err := s.ldap.Connect(r.Context()); err != nil {
+		slog.Warn("LDAP service connection failed", "err", err)
+		s.audit.Failure(username, "login.service", "", r.RemoteAddr, err)
+		loginPage("login.error.service", "")
+		return
 	}
 
 	sess, err := s.sessions.Create(username, dn, role)
