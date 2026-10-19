@@ -1,95 +1,1976 @@
-openapi: 3.0.3
-info:
-  title: sambaadm API
-  version: "1.0"
-  description: REST API for Samba4 AD administration (session cookie + CSRF for mutating methods).
-servers:
-  - url: /api/v1
-paths:
-  /users:
-    get:
-      summary: List users
-      parameters:
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: ou
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
-    post:
-      summary: Create user
-      responses:
-        "201": { description: Created }
-  /users/{login}:
-    get:
-      summary: Get user
-      parameters:
-        - in: path
-          name: login
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
-    delete:
-      summary: Delete user
-      parameters:
-        - in: path
-          name: login
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
-  /groups:
-    get:
-      summary: List groups
-      responses:
-        "200": { description: OK }
-  /domain:
-    get:
-      summary: Domain info
-      responses:
-        "200": { description: OK }
-  /dns/zones:
-    get:
-      summary: List DNS zones
-      responses:
-        "200": { description: OK }
-  /gpo:
-    get:
-      summary: List GPOs
-      responses:
-        "200": { description: OK }
-  /shares:
-    get:
-      summary: List local smb.conf file shares
-      responses:
-        "200": { description: OK }
-    post:
-      summary: Create share (+ directory/ACL)
-      responses:
-        "201": { description: Created }
-  /printers:
-    get:
-      summary: List printer shares / CUPS
-      responses:
-        "200": { description: OK }
-  /acl:
-    get:
-      summary: Get POSIX ACL for path
-      parameters:
-        - in: query
-          name: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200": { description: OK }
-components:
-  securitySchemes:
-    cookieAuth:
-      type: apiKey
-      in: cookie
-      name: sambaadm_session
-security:
-  - cookieAuth: []
+"openapi": "3.0.3"
+"info":
+    "title": "sambaadm API"
+    "version": "1.1"
+    "description": "Session cookie authentication. Mutations require X-CSRF-Token. System operations require installed Samba utilities and OS permissions."
+"servers":
+    - "url": "/api/v1"
+"paths":
+    "/directory/tree":
+        "get":
+            "summary": "Directory Tree"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "kind"
+                  "required": false
+                  "schema":
+                    "type": "string"
+    "/groups/{name}":
+        "get":
+            "summary": "Group Get"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "delete":
+            "summary": "Group Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/groups/{name}/members":
+        "get":
+            "summary": "Group Members"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "Group Member Add"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "memberDN":
+                                    "type": "string"
+                            "required":
+                                - "memberDN"
+        "delete":
+            "summary": "Group Member Remove"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "memberDN":
+                                    "type": "string"
+                            "required":
+                                - "memberDN"
+    "/users/{login}/move":
+        "post":
+            "summary": "User Move"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "toOU":
+                                    "type": "string"
+                            "required":
+                                - "toOU"
+    "/computers/{name}/move":
+        "post":
+            "summary": "Computer Move"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "toOU":
+                                    "type": "string"
+                            "required":
+                                - "toOU"
+    "/computers/{name}":
+        "get":
+            "summary": "Computer Get"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "delete":
+            "summary": "Computer Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/ou/move":
+        "post":
+            "summary": "OUMove"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "dn":
+                                    "type": "string"
+                                "toParent":
+                                    "type": "string"
+                            "required":
+                                - "dn"
+                                - "toParent"
+    "/subnets/delete":
+        "post":
+            "summary": "Subnet Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "subnet":
+                                    "type": "string"
+                            "required":
+                                - "subnet"
+    "/domain/fsmo/seize":
+        "post":
+            "summary": "FSMOSeize"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "role":
+                                    "type": "string"
+                            "required":
+                                - "role"
+    "/domain/level/raise":
+        "post":
+            "summary": "Level Raise"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "domain":
+                                    "type": "string"
+                                "forest":
+                                    "type": "string"
+    "/gpo/{gpo}":
+        "get":
+            "summary": "GPOGet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "delete":
+            "summary": "GPODelete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/gpo/links":
+        "get":
+            "summary": "GPOLinks"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "container"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/dns/zones/{zone}/records":
+        "put":
+            "summary": "DNSRecord Update"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "type":
+                                    "type": "string"
+                                "oldData":
+                                    "type": "string"
+                                "newData":
+                                    "type": "string"
+                            "required":
+                                - "name"
+                                - "type"
+                                - "oldData"
+                                - "newData"
+        "get":
+            "summary": "DNSRecords"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "name"
+                  "required": false
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "type"
+                  "required": false
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "DNSRecord Add"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "type":
+                                    "type": "string"
+                                "data":
+                                    "type": "string"
+                            "required":
+                                - "name"
+                                - "type"
+                                - "data"
+        "delete":
+            "summary": "DNSRecord Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "type":
+                                    "type": "string"
+                                "data":
+                                    "type": "string"
+                            "required":
+                                - "name"
+                                - "type"
+                                - "data"
+    "/shares/reload":
+        "post":
+            "summary": "Share Reload"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/shares/{name}/param":
+        "post":
+            "summary": "Share Param"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "key":
+                                    "type": "string"
+                                "value":
+                                    "type": "string"
+                            "required":
+                                - "key"
+                                - "value"
+    "/users":
+        "get":
+            "summary": "Users"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "ou"
+                  "required": false
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "q"
+                  "required": false
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "User Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "login":
+                                    "type": "string"
+                                "password":
+                                    "type": "string"
+                                    "format": "password"
+                                "displayName":
+                                    "type": "string"
+                                "ou":
+                                    "type": "string"
+                                "mail":
+                                    "type": "string"
+                                "description":
+                                    "type": "string"
+                                "enabled":
+                                    "type": "boolean"
+                            "required":
+                                - "login"
+                                - "password"
+    "/users/{login}":
+        "get":
+            "summary": "User Get"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "delete":
+            "summary": "User Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/users/{login}/enable":
+        "post":
+            "summary": "User Enable"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/users/{login}/disable":
+        "post":
+            "summary": "User Disable"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/users/{login}/password":
+        "post":
+            "summary": "User Password"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "password":
+                                    "type": "string"
+                                    "format": "password"
+                            "required":
+                                - "password"
+    "/groups":
+        "get":
+            "summary": "Groups"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "q"
+                  "required": false
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "Group Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "ou":
+                                    "type": "string"
+                                "description":
+                                    "type": "string"
+                            "required":
+                                - "name"
+    "/computers":
+        "get":
+            "summary": "Computers"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "q"
+                  "required": false
+                  "schema":
+                    "type": "string"
+    "/ou":
+        "get":
+            "summary": "OUs"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "dn"
+                  "required": false
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "OUCreate"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "query"
+                  "name": "dn"
+                  "required": false
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "parentDN":
+                                    "type": "string"
+                                "description":
+                                    "type": "string"
+                            "required":
+                                - "name"
+        "delete":
+            "summary": "OUDelete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "dn"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/trusts":
+        "get":
+            "summary": "Trusts"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "Trust Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "domain":
+                                    "type": "string"
+                                "direction":
+                                    "type": "string"
+                                "type":
+                                    "type": "string"
+                                "password":
+                                    "type": "string"
+                                    "format": "password"
+                            "required":
+                                - "domain"
+                                - "direction"
+                                - "type"
+    "/trusts/{domain}":
+        "delete":
+            "summary": "Trust Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "domain"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/trusts/{domain}/validate":
+        "post":
+            "summary": "Trust Validate"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "domain"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/domain":
+        "get":
+            "summary": "Domain"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+    "/domain/fsmo":
+        "get":
+            "summary": "FSMO"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+    "/domain/fsmo/transfer":
+        "post":
+            "summary": "FSMOTransfer"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "role":
+                                    "type": "string"
+                            "required":
+                                - "role"
+    "/domain/level":
+        "get":
+            "summary": "Domain Level"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+    "/repl/partners":
+        "get":
+            "summary": "Repl Partners"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+    "/repl/status":
+        "get":
+            "summary": "Repl Status"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+    "/repl/sync":
+        "post":
+            "summary": "Repl Sync"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "from":
+                                    "type": "string"
+                                "dest":
+                                    "type": "string"
+                                "nc":
+                                    "type": "string"
+                            "required":
+                                - "from"
+    "/sites":
+        "get":
+            "summary": "Sites"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "Site Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                            "required":
+                                - "name"
+    "/sites/{name}":
+        "delete":
+            "summary": "Site Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/subnets":
+        "get":
+            "summary": "Subnets"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "Subnet Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "subnet":
+                                    "type": "string"
+                                "site":
+                                    "type": "string"
+                            "required":
+                                - "subnet"
+                                - "site"
+    "/dns/zones":
+        "get":
+            "summary": "DNSZones"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "DNSZone Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                            "required":
+                                - "name"
+    "/dns/zones/{zone}":
+        "delete":
+            "summary": "DNSZone Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/dns/zones/{zone}/nodes":
+        "get":
+            "summary": "DNSNodes"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/gpo":
+        "get":
+            "summary": "GPOs"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "GPOCreate"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                            "required":
+                                - "name"
+    "/gpo/{gpo}/link":
+        "post":
+            "summary": "GPOLink"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "container":
+                                    "type": "string"
+                            "required":
+                                - "container"
+    "/gpo/{gpo}/unlink":
+        "post":
+            "summary": "GPOUnlink"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "container":
+                                    "type": "string"
+                            "required":
+                                - "container"
+    "/gpo/{gpo}/backup":
+        "post":
+            "summary": "GPOBackup"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "path":
+                                    "type": "string"
+                            "required":
+                                - "path"
+    "/gpo/{gpo}/restore":
+        "post":
+            "summary": "GPORestore"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "path":
+                                    "type": "string"
+                            "required":
+                                - "path"
+    "/gpo/{gpo}/distribute":
+        "post":
+            "summary": "GPODistribute"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "202":
+                    "description": "Distribution job started"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/gpo/distribute/{jobID}":
+        "get":
+            "summary": "GPODistribute Status"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "jobID"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/shares":
+        "get":
+            "summary": "Shares"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "Share Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/shares/{name}":
+        "get":
+            "summary": "Share Get"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "remove_dir"
+                  "required": false
+                  "schema":
+                    "type": "string"
+        "delete":
+            "summary": "Share Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "remove_dir"
+                  "required": false
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/shares/{name}/acl":
+        "get":
+            "summary": "Share ACLGet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "Share ACLSet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/printers":
+        "get":
+            "summary": "Printers"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+        "post":
+            "summary": "Printer Create"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "201":
+                    "description": "Created"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/printers/{name}":
+        "delete":
+            "summary": "Printer Delete"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+    "/acl":
+        "get":
+            "summary": "ACLGet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "query"
+                  "name": "path"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "post":
+            "summary": "ACLSet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+"components":
+    "securitySchemes":
+        "cookieAuth":
+            "type": "apiKey"
+            "in": "cookie"
+            "name": "sambaadm_session"
+"security":
+    - "cookieAuth": []

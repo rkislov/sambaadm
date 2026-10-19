@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
+
+	"github.com/go-ldap/ldap/v3"
 
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
@@ -170,23 +174,90 @@ func (s *DNSService) DeleteRecord(ctx context.Context, in AddDNSRecordInput, act
 	return nil
 }
 
-func (s *DNSService) listZonesLDAP(ctx context.Context) ([]DNSZone, error) {
-	entries, err := s.ldap.Search(ctx, ldapproto.SearchOptions{
-		Filter:     "(objectClass=dnsZone)",
-		Attributes: []string{"name", "dc"},
-	})
+// dnsPartitions discovers application partitions as AD-integrated zones are not
+// descendants of the default naming context.
+func (s *DNSService) dnsPartitions(ctx context.Context) ([]string, error) {
+	conn, err := s.ldap.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]DNSZone, 0, len(entries))
-	for _, e := range entries {
-		name := e.GetAttributeValue("name")
-		if name == "" {
-			name = e.GetAttributeValue("dc")
-		}
-		out = append(out, DNSZone{Name: name, DN: e.DN, Source: "ldap"})
+	result, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false, "(objectClass=*)", []string{"namingContexts"}, nil))
+	if err != nil {
+		return nil, err
 	}
+	bases := []string{s.ldap.BaseDN()}
+	seen := map[string]bool{strings.ToLower(s.ldap.BaseDN()): true}
+	for _, entry := range result.Entries {
+		for _, base := range entry.GetAttributeValues("namingContexts") {
+			key := strings.ToLower(base)
+			if strings.Contains(key, "dnszones") && !seen[key] {
+				bases = append(bases, base)
+				seen[key] = true
+			}
+		}
+	}
+	return bases, nil
+}
+func (s *DNSService) listZonesLDAP(ctx context.Context) ([]DNSZone, error) {
+	bases, err := s.dnsPartitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []DNSZone{}
+	seen := map[string]bool{}
+	var failures []error
+	for _, base := range bases {
+		entries, e := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: base, Filter: "(objectClass=dnsZone)", Attributes: []string{"name", "dc"}})
+		if e != nil {
+			failures = append(failures, e)
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.GetAttributeValue("name")
+			if name == "" {
+				name = entry.GetAttributeValue("dc")
+			}
+			key := strings.ToLower(name)
+			if !seen[key] {
+				out = append(out, DNSZone{Name: name, DN: entry.DN, Source: "ldap"})
+				seen[key] = true
+			}
+		}
+	}
+	if len(out) == 0 && len(failures) > 0 {
+		return nil, errors.Join(failures...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// Nodes lists live names in one zone for lazy navigation in the DNS tree.
+func (s *DNSService) Nodes(ctx context.Context, zone string) ([]string, error) {
+	zones, err := s.listZonesLDAP(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, z := range zones {
+		if strings.EqualFold(z.Name, zone) {
+			entries, e := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: z.DN, Filter: "(&(objectClass=dnsNode)(!(dNSTombstoned=TRUE)))", Attributes: []string{"name", "dc"}})
+			if e != nil {
+				return nil, e
+			}
+			names := []string{}
+			for _, entry := range entries {
+				name := entry.GetAttributeValue("name")
+				if name == "" {
+					name = entry.GetAttributeValue("dc")
+				}
+				if name != "" {
+					names = append(names, name)
+				}
+			}
+			sort.Strings(names)
+			return names, nil
+		}
+	}
+	return nil, fmt.Errorf("DNS zone %q was not found in readable LDAP partitions", zone)
 }
 
 func (s *DNSService) dnsServer() string {

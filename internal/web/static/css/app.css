@@ -438,3 +438,48 @@ button.linkish {
   .topbar { flex-wrap: wrap; }
   .kv { grid-template-columns: 1fr; }
 }
+
+/* Full administration workspace */
+.workspace {width:min(1680px,100%)}
+.workspace-head,.workspace-tools,.workspace-filter {display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.workspace-head {justify-content:space-between;margin-bottom:.75rem}
+.workspace-tools button,.workspace-actions button {font:inherit;padding:.45rem .7rem}
+.workspace-filter {margin:1rem 0}
+.workspace-filter input {flex:1;min-width:12rem}
+.workspace input:not([type=checkbox]),.workspace-dialog input:not([type=checkbox]) {width:100%;padding:.6rem;border:1px solid var(--border);border-radius:6px;font:inherit}
+.workspace-columns {display:grid;grid-template-columns:minmax(220px,290px) minmax(0,1fr);gap:1rem;align-items:start}
+.workspace-tree,.workspace-list {background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;min-width:0}
+.workspace-tree {max-height:75vh;overflow:auto}
+.workspace-tree h2 {font-size:1rem}
+.directory-tree,.directory-tree ul {list-style:none;padding-left:1rem}
+.directory-tree {padding-left:0}
+.directory-tree li {margin:.3rem 0}
+.directory-tree summary {display:list-item;cursor:pointer}
+.directory-tree button {background:transparent;color:var(--ink);border:0;text-align:left;max-width:100%;overflow-wrap:anywhere;padding:.25rem .35rem;font:inherit}
+.directory-tree button.selected {background:#d7ecec;color:var(--accent);font-weight:600}
+.directory-tree button:hover {background:#edf4f4}
+.workspace-table {overflow:auto}
+.workspace-table table {margin:0;min-width:620px}
+.workspace-table td {overflow-wrap:anywhere;max-width:28rem;vertical-align:top}
+.workspace-actions {min-width:185px}
+.workspace-actions button,.workspace-actions a {margin:.15rem;display:inline-block;font-size:.8rem}
+.workspace-selection {margin-top:0;overflow-wrap:anywhere}
+.workspace-message {min-height:1.4em;margin:.5rem 0}
+.workspace-message.error {color:var(--error-ink)}
+button.danger {background:#9b1c1c;color:white}
+button:disabled {opacity:.55;cursor:wait}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible {outline:3px solid #228baf;outline-offset:2px}
+.workspace-dialog {width:min(760px,94vw);max-height:90vh;overflow:auto;border:1px solid var(--border);border-radius:10px;padding:1.5rem;color:var(--ink)}
+.workspace-dialog::backdrop {background:rgba(10,25,40,.45)}
+.workspace-dialog h2 {margin-top:0}
+.workspace-dialog .mono {overflow-wrap:anywhere}
+.workspace-form {display:grid;gap:.85rem}
+.workspace-form label {display:grid;gap:.35rem}
+.workspace-form label:has(input[type=checkbox]) {display:flex;align-items:center;gap:.5rem}
+.workspace-properties {display:grid;grid-template-columns:minmax(100px,1fr) minmax(0,3fr);gap:.5rem;border-bottom:1px solid var(--border);padding-bottom:.75rem}
+.workspace-properties dt {font-weight:600;overflow-wrap:anywhere}
+.workspace-properties dd {margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.workspace-output {white-space:pre-wrap;overflow-wrap:anywhere}
+.workspace-result {margin-top:1rem}
+.workspace-result progress {width:100%}
+@media(max-width:850px){.workspace-columns{grid-template-columns:1fr}.workspace-tree{max-height:300px}.topbar{flex-wrap:wrap}.workspace-head{align-items:flex-start}.workspace-properties{grid-template-columns:1fr}}

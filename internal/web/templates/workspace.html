@@ -1,0 +1,8 @@
+{{define "workspace.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/workspace.js" defer></script></head>
+<body>{{template "nav" .}}
+<main class="container workspace" id="workspace" data-module="{{.Content.Module}}" data-role="{{.Role}}" data-base-dn="{{.Content.BaseDN}}">
+ <noscript><p>Для управления объектами включите JavaScript / Enable JavaScript to manage objects.</p></noscript>
+</main><footer class="footer">sambaadm · Samba4 AD</footer>
+</body></html>
+{{end}}
