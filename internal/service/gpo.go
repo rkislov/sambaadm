@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/go-ldap/ldap/v3"
@@ -78,7 +79,7 @@ func (s *GPOService) Delete(ctx context.Context, gpo, actor, ip string) error {
 	if err := s.requireTool(); err != nil {
 		return err
 	}
-	if _, err := s.tool.Run(ctx, "gpo", "delete", gpo); err != nil {
+	if _, err := s.tool.Run(ctx, "gpo", "del", gpo); err != nil {
 		s.audit.Failure(actor, "gpo.delete", gpo, ip, err)
 		return err
 	}
@@ -134,8 +135,15 @@ func (s *GPOService) Backup(ctx context.Context, gpo, path, actor, ip string) er
 	if path == "" {
 		return fmt.Errorf("backup path is required")
 	}
+	guid, err := s.resolveGUID(ctx, gpo)
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(path, 0700); err != nil {
+		return fmt.Errorf("create GPO backup directory: %w", err)
+	}
 	target := gpo + " -> " + path
-	if _, err := s.tool.Run(ctx, "gpo", "backup", gpo, path); err != nil {
+	if _, err := s.tool.Run(ctx, "gpo", "backup", braceGUID(guid), "--tmpdir="+path); err != nil {
 		s.audit.Failure(actor, "gpo.backup", target, ip, err)
 		return err
 	}
@@ -143,17 +151,27 @@ func (s *GPOService) Backup(ctx context.Context, gpo, path, actor, ip string) er
 	return nil
 }
 
-// Restore restores a GPO from a backup path.
-func (s *GPOService) Restore(ctx context.Context, gpo, path, actor, ip string) error {
+// Restore creates a new GPO with displayName from a policy/<GUID> backup directory.
+func (s *GPOService) Restore(ctx context.Context, displayName, path, actor, ip string) error {
 	if err := s.requireTool(); err != nil {
 		return err
 	}
 	if path == "" {
 		return fmt.Errorf("restore path is required")
 	}
-	target := path + " -> " + gpo
-	// samba-tool gpo restore <gpo> <path> (versions differ; try restore then create)
-	if _, err := s.tool.Run(ctx, "gpo", "restore", gpo, path); err != nil {
+	displayName = strings.TrimSpace(displayName)
+	if displayName == "" {
+		return fmt.Errorf("new GPO display name is required")
+	}
+	// Samba 4.17 removes its implicit temporary directory during create,
+	// before restore copies the backup. Supply and own the directory explicitly.
+	tmp, err := os.MkdirTemp("", "sambaadm-gpo-restore-*")
+	if err != nil {
+		return fmt.Errorf("create GPO restore directory: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+	target := path + " -> " + displayName
+	if _, err := s.tool.Run(ctx, "gpo", "restore", displayName, path, "--tmpdir="+tmp); err != nil {
 		s.audit.Failure(actor, "gpo.restore", target, ip, err)
 		return err
 	}

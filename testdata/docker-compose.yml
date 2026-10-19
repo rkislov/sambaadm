@@ -1,26 +1,20 @@
-# Lab Samba AD DC for integration smoke-tests (NOT for production).
-# Usage:
-#   docker compose -f testdata/docker-compose.yml up -d
-# Default domain: SAMBAADM.TEST / Administrator / Passw0rd
+# Disposable Samba AD domain. No host network or privileged/SYS_ADMIN access.
+# Run with: docker compose -p sambaadm-it -f testdata/docker-compose.yml up -d --build
 services:
   dc:
-    image: nowsci/samba-domain:latest
+    build: ./samba
     hostname: dc1
+    domainname: sambaadm.test
     environment:
-      DOMAIN: SAMBAADM.TEST
-      DOMAINPASS: Passw0rd
-      DNSFORWARDER: "1.1.1.1"
-      HOSTIP: "127.0.0.1"
+      SAMBAADM_LAB_PASSWORD: "Lab-Only-Adm1n-Pass!"
     ports:
-      - "389:389"
-      - "636:636"
-      - "88:88"
-      - "445:445"
-    volumes:
-      - samba-data:/var/lib/samba
-    cap_add:
-      - SYS_ADMIN
-    restart: unless-stopped
-
-volumes:
-  samba-data:
+      - "127.0.0.1:${SAMBAADM_LDAP_PORT:-0}:389"
+      - "127.0.0.1:${SAMBAADM_LDAPS_PORT:-0}:636"
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://127.0.0.1", "-b", "", "-s", "base", "defaultNamingContext"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 10s
+    mem_limit: 1g
+    cpus: 2

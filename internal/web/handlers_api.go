@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -634,24 +635,25 @@ func (s *Server) handleAPIGPOBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "backed_up"})
 }
 
+// Restore always creates a new GPO; it never overwrites the selected policy.
 func (s *Server) handleAPIGPORestore(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, auth.CanAdmin) {
 		return
 	}
-	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
 	var body struct {
+		Name string `json:"name"`
 		Path string `json:"path"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Path == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "path required"})
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body) != nil || strings.TrimSpace(body.Name) == "" || strings.TrimSpace(body.Path) == "" {
+		writeJSON(w, 400, map[string]string{"error": "new policy name and backup path required"})
 		return
 	}
 	sess := sessionFrom(r)
-	if err := s.svcs.GPO.Restore(r.Context(), gpo, body.Path, sess.Username, r.RemoteAddr); err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	if err := s.svcs.GPO.Restore(r.Context(), body.Name, body.Path, sess.Username, r.RemoteAddr); err != nil {
+		writeJSON(w, 502, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "restored"})
+	writeJSON(w, 200, map[string]string{"status": "restored", "name": body.Name})
 }
 
 func (s *Server) handleAPIGPODistribute(w http.ResponseWriter, r *http.Request) {

@@ -143,8 +143,8 @@ var gpoBackupCmd = &cobra.Command{
 }
 
 var gpoRestoreCmd = &cobra.Command{
-	Use:   "restore <gpo>",
-	Short: "Restore a GPO from a backup directory",
+	Use:   "restore <displayname>",
+	Short: "Restore a backup into a new GPO with the given display name",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		path, _ := cmd.Flags().GetString("path")

@@ -71,7 +71,8 @@ sambaadm [global flags] <command>
 ### GPO (samba-tool)
 - `sambaadm gpo list|show|create|delete`
 - `sambaadm gpo link|unlink --container=DN --gpo=GUID`
-- `sambaadm gpo backup|restore <gpo> --path=DIR`
+- `sambaadm gpo backup <gpo> --path=DIR` — копия в `DIR/policy/{GUID}`
+- `sambaadm gpo restore "Новое имя" --path=DIR/policy/{GUID}` — создаёт новую GPO из копии
 - `sambaadm gpo distribute <gpo>` — доставить SYSVOL на все DC (DRS + rsync + ACL), со статусом шагов
 
 ### Прочее

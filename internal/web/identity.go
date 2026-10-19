@@ -35,12 +35,19 @@ func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Cli
 		}
 	}
 
-	entry, err := client.SearchOne(ctx, ldapproto.SearchOptions{
+	opts := ldapproto.SearchOptions{
 		Filter:     filter,
 		Attributes: []string{ldapproto.AttrSAMAccountName, ldapproto.AttrMemberOf, ldapproto.AttrDN},
-	})
+	}
+	entry, err := client.SearchOne(ctx, opts)
+	// AD accepts a domain UPN for built-in accounts without a stored UPN.
+	// Only use this fallback for the configured domain after an empty search.
+	if local, domain, ok := strings.Cut(username, "@"); ok && local != "" &&
+		strings.EqualFold(domain, dnsFromBaseDN(client.BaseDN())) && ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+		opts.Filter = fmt.Sprintf("(&(objectCategory=person)(objectClass=user)(sAMAccountName=%s))", ldap.EscapeFilter(local))
+		entry, err = client.SearchOne(ctx, opts)
+	}
 	if err != nil {
-		// An authenticated bind alone does not establish an application role.
 		return "", auth.RoleReadonly, fmt.Errorf("identity lookup: %w", err)
 	}
 	role = s.rbac.Resolve(entry.GetAttributeValues(ldapproto.AttrMemberOf))

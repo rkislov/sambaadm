@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -14,8 +15,10 @@ const DefaultBinary = "samba-tool"
 
 // Runner executes samba-tool subcommands.
 type Runner struct {
-	Binary string
-	Timeout time.Duration
+	Binary   string
+	Timeout  time.Duration
+	Username string
+	Password func() string
 }
 
 // NewRunner creates a samba-tool runner.
@@ -41,7 +44,50 @@ func (r *Runner) Run(ctx context.Context, args ...string) (*Result, error) {
 		defer cancel()
 	}
 
+	// Bind tool operations to the same configured service identity as LDAP.
+	// PASSWD_FILE is supported by Samba credentials guessing; never put a
+	// service password in argv, inherited PASSWD, or diagnostic arguments.
+	var credentialPath string
+	if r.Username != "" {
+		if strings.Contains(r.Username, "%") {
+			return nil, fmt.Errorf("samba-tool username must not contain an inline password")
+		}
+		if r.Password == nil {
+			return nil, fmt.Errorf("samba-tool service password is not configured")
+		}
+		password := r.Password()
+		if password == "" {
+			return nil, fmt.Errorf("samba-tool service password is not configured")
+		}
+		if strings.ContainsAny(password, "\r\n") {
+			return nil, fmt.Errorf("samba-tool password must not contain line breaks")
+		}
+		file, err := os.CreateTemp("", "sambaadm-credentials-*")
+		if err != nil {
+			return nil, fmt.Errorf("create Samba credential file: %w", err)
+		}
+		credentialPath = file.Name()
+		defer os.Remove(credentialPath)
+		if _, err = file.WriteString(password); err != nil {
+			file.Close()
+			return nil, fmt.Errorf("write Samba credential file: %w", err)
+		}
+		if err = file.Close(); err != nil {
+			return nil, fmt.Errorf("close Samba credential file: %w", err)
+		}
+		args = append(append([]string(nil), args...), "--username="+r.Username)
+	}
 	cmd := exec.CommandContext(ctx, r.Binary, args...)
+	if credentialPath != "" {
+		env := []string{}
+		for _, value := range os.Environ() {
+			key, _, _ := strings.Cut(value, "=")
+			if key != "PASSWD" && key != "PASSWD_FD" && key != "PASSWD_FILE" {
+				env = append(env, value)
+			}
+		}
+		cmd.Env = append(env, "PASSWD_FILE="+credentialPath)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

@@ -1543,6 +1543,40 @@
                                     "type": "string"
                             "required":
                                 - "name"
+    "/gpo/restore":
+        "post":
+            "summary": "GPORestore"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "name":
+                                    "type": "string"
+                                "path":
+                                    "type": "string"
+                            "required":
+                                - "name"
+                                - "path"
     "/gpo/{gpo}/link":
         "post":
             "summary": "GPOLink"
@@ -1683,9 +1717,12 @@
                         "schema":
                             "type": "object"
                             "properties":
+                                "name":
+                                    "type": "string"
                                 "path":
                                     "type": "string"
                             "required":
+                                - "name"
                                 - "path"
     "/gpo/{gpo}/distribute":
         "post":

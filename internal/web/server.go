@@ -210,6 +210,7 @@ func (s *Server) buildRouter() chi.Router {
 
 		r.Get("/gpo", s.handleAPIGPOs)
 		r.Post("/gpo", s.handleAPIGPOCreate)
+		r.Post("/gpo/restore", s.handleAPIGPORestore)
 		r.Delete("/gpo/{gpo}", s.handleAPIGPODelete)
 		r.Post("/gpo/{gpo}/link", s.handleAPIGPOLink)
 		r.Post("/gpo/{gpo}/unlink", s.handleAPIGPOUnlink)

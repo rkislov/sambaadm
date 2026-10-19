@@ -183,3 +183,25 @@ func TestServiceBindFailureDeniesLoginAndLeavesNoUserIdentity(t *testing.T) {
 		t.Fatalf("identities were not isolated: %+v", binds)
 	}
 }
+
+func TestBuiltinUPNIdentityFallback(t *testing.T) {
+	for _, domain := range []string{"example.com", "foreign.test"} {
+		t.Run(domain, func(t *testing.T) {
+			user := "Administrator@" + domain
+			fake := testldap.New(t, map[string]string{user: "test-password", "service": "service-password"}, func(q testldap.Search) ([]testldap.Entry, int64) {
+				if bytes.Contains(q.Filter.Bytes(), []byte("@")) {
+					return nil, 0
+				}
+				return []testldap.Entry{{DN: "CN=Administrator,CN=Users,DC=example,DC=com", Attributes: map[string][]string{"memberOf": {testAdminDN}}}}, 0
+			})
+			s := newLoginTestServer(t, fake.URI(), config.RolesConfig{Admins: []string{testAdminDN}}, "service-password")
+			response := loginRequest(s, user, "test-password")
+			if domain == "example.com" && response.Code != 303 {
+				t.Fatalf("built-in account login failed: %d", response.Code)
+			}
+			if domain != "example.com" && response.Code == 303 {
+				t.Fatal("foreign UPN must not fall back to local account")
+			}
+		})
+	}
+}

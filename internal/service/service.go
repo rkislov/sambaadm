@@ -29,9 +29,11 @@ type Services struct {
 
 // ServiceOptions configures optional dependencies.
 type ServiceOptions struct {
-	SambaTool string
-	GPO       config.GPOConfig
-	Samba     config.SambaConfig
+	SambaTool    string
+	ToolUser     string
+	ToolPassword func() string
+	GPO          config.GPOConfig
+	Samba        config.SambaConfig
 }
 
 // New builds the service layer on top of an LDAP client.
@@ -42,6 +44,8 @@ func New(ldap *ldapproto.Client, auditLog *audit.Logger) *Services {
 // NewWithOptions builds services with optional samba-tool path and GPO sync settings.
 func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts ServiceOptions) *Services {
 	tool := samba.NewRunner(opts.SambaTool)
+	tool.Username = opts.ToolUser
+	tool.Password = opts.ToolPassword
 	shares := newShareService(auditLog, opts.Samba)
 	return &Services{
 		Users:     &UserService{ldap: ldap, audit: auditLog},
