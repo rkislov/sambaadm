@@ -219,18 +219,22 @@ func parseDomainLevel(stdout string) *DomainLevel {
 }
 
 func normalizeFSMORole(role string) string {
-	r := strings.ToLower(strings.TrimSpace(role))
+	r := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(role)), "role")
 	switch r {
 	case "schema", "schemamaster", "schema_master":
 		return "schema"
-	case "naming", "domainnaming", "domain_naming", "domainnamingmaster":
+	case "naming", "domainnaming", "domain_naming", "domainnamingmaster", "namingmaster":
 		return "naming"
-	case "pdc", "pdcemulator", "pdc_emulator":
+	case "pdc", "pdcemulator", "pdc_emulator", "pdcemulationmaster":
 		return "pdc"
-	case "rid", "ridmaster", "rid_master":
+	case "rid", "ridmaster", "rid_master", "ridallocationmaster":
 		return "rid"
 	case "infrastructure", "im", "infrastructuremaster":
 		return "infrastructure"
+	case "domaindnszonesmaster":
+		return "domaindns"
+	case "forestdnszonesmaster":
+		return "forestdns"
 	case "all":
 		return "all"
 	default:

@@ -26,3 +26,11 @@ func TestConfigDN(t *testing.T) {
 		t.Fatal("bad config dn")
 	}
 }
+
+func TestNormalizeDisplayedFSMORoles(t *testing.T) {
+	for input, want := range map[string]string{"SchemaMasterRole": "schema", "DomainNamingMasterRole": "naming", "PdcEmulationMasterRole": "pdc", "RidAllocationMasterRole": "rid", "InfrastructureMasterRole": "infrastructure", "DomainDnsZonesMasterRole": "domaindns", "ForestDnsZonesMasterRole": "forestdns", "pdc": "pdc"} {
+		if got := normalizeFSMORole(input); got != want {
+			t.Errorf("%s: %s, want %s", input, got, want)
+		}
+	}
+}
