@@ -32,3 +32,11 @@ jobs:
           go-version-file: go.mod
       - name: Cross-compile (github set)
         run: make release-github
+      - name: Verify static Linux binary
+        run: |
+          file dist/sambaadm-linux-amd64
+          if readelf -lW dist/sambaadm-linux-amd64 | grep -Eq 'INTERP|DYNAMIC'; then
+            echo "Linux release must not depend on a dynamic loader or glibc"
+            exit 1
+          fi
+          ./dist/sambaadm-linux-amd64 version

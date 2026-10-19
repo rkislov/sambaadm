@@ -9,7 +9,7 @@ LDFLAGS  := -s -w -X sambaadm/internal/version.Version=$(VERSION) -X sambaadm/in
 
 build:
 	@mkdir -p bin
-	go build -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/sambaadm
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/sambaadm
 
 test:
 	go test ./...
@@ -25,17 +25,17 @@ clean:
 
 release:
 	@mkdir -p dist
-	GOOS=linux   GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-amd64   ./cmd/sambaadm
-	GOOS=linux   GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-arm64   ./cmd/sambaadm
-	GOOS=darwin  GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-darwin-amd64  ./cmd/sambaadm
-	GOOS=darwin  GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-darwin-arm64  ./cmd/sambaadm
-	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-amd64   ./cmd/sambaadm
+	GOOS=linux   GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-arm64   ./cmd/sambaadm
+	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-darwin-amd64  ./cmd/sambaadm
+	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-darwin-arm64  ./cmd/sambaadm
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
 
 # Linux amd64 + Windows amd64 for GitHub Releases
 release-github:
 	@mkdir -p dist
-	CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-amd64 ./cmd/sambaadm
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
+	GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-amd64 ./cmd/sambaadm
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
 	$(MAKE) checksums
 
 checksums:
