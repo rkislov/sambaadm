@@ -1,0 +1,31 @@
+#!/bin/sh
+# Run only against a disposable domain owned by this invocation.
+set -eu
+cd "$(dirname "$0")/../.."
+project="sambaadm-it-$$"
+work=$(mktemp -d)
+compose() { docker compose -p "$project" -f testdata/docker-compose.yml "$@"; }
+cleanup() {
+    result=$?
+    trap - EXIT
+    if [ "$result" -ne 0 ]; then compose logs --tail=100 || true; fi
+    compose down --volumes >/dev/null 2>&1 || true
+    rm -rf "$work"
+    exit "$result"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+compose up -d --build --wait --wait-timeout 180
+case "$(compose exec -T dc uname -m | tr -d '\r')" in
+    aarch64) arch=arm64 ;;
+    x86_64) arch=amd64 ;;
+    *) echo 'Unsupported container architecture' >&2; exit 1 ;;
+esac
+for package in service web; do
+    CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go test -c -o "$work/$package.test" "./internal/$package"
+    compose cp "$work/$package.test" "dc:/tmp/$package.test"
+    compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST \
+        -e SAMBAADM_IT_URI=ldaps://127.0.0.1:636 \
+        -e SAMBAADM_IT_USER=Administrator@sambaadm.test dc \
+        sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run Integration -test.v -test.timeout 4m' sh "$package"
+done

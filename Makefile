@@ -47,4 +47,4 @@ docker:
 
 # Optional live Samba DC tests (see testdata/README.md)
 integration:
-	SAMBAADM_IT=1 go test ./internal/service -run Integration -count=1 -timeout 60s
+	./testdata/samba/run-integration.sh
