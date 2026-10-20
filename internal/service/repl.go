@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-ldap/ldap/v3"
 	"net/url"
+	"sambaadm/internal/adremote"
 	"strings"
+	"time"
 
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // ReplPartner is a replication partner / DSA summary.
@@ -30,9 +32,9 @@ type ReplStatus struct {
 
 // ReplService manages AD replication.
 type ReplService struct {
-	ldap  *ldapproto.Client
-	audit *audit.Logger
-	tool  *samba.Runner
+	ldap   *ldapproto.Client
+	audit  *audit.Logger
+	remote *adremote.Client
 }
 
 // Partners returns known nTDSDSA objects from the configuration partition.
@@ -48,26 +50,35 @@ func (s *ReplService) Partners(ctx context.Context) ([]ReplPartner, error) {
 	return out, nil
 }
 
-// Status returns replication status via samba-tool drs showrepl when available.
+// Status returns replication status through native DRS RPC.
 func (s *ReplService) Status(ctx context.Context) (*ReplStatus, error) {
 	return s.StatusFor(ctx, "")
 }
 
-// Sync triggers replication from a source DC via samba-tool drs replicate.
+// Sync triggers replication from a source DC through native DRS RPC.
 // Naming context defaults to the domain NC (base DN).
 func (s *ReplService) Sync(ctx context.Context, destDC, sourceDC, nc, actor, ip string) error {
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available on this host")
-	}
+
 	if destDC == "" || sourceDC == "" || strings.ContainsAny(destDC+sourceDC, " /\\\t\r\n") || strings.HasPrefix(destDC, "-") || strings.HasPrefix(sourceDC, "-") {
 		return fmt.Errorf("destination and source DC are required")
 	}
 	if nc == "" {
 		nc = s.ldap.BaseDN()
 	}
-	args := []string{"drs", "replicate", destDC, sourceDC, nc}
+	destination, err := s.remoteFor(ctx, destDC)
+	if err != nil {
+		return err
+	}
+	source, err := (&SiteService{ldap: s.ldap}).controller(ctx, sourceDC)
+	if err != nil {
+		return err
+	}
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: source.NTDS, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=nTDSDSA)", Attributes: []string{"objectGUID"}})
+	if err != nil {
+		return err
+	}
 	target := fmt.Sprintf("%s <- %s (%s)", destDC, sourceDC, nc)
-	if _, err := s.tool.Run(ctx, args...); err != nil {
+	if err := destination.Sync(ctx, nc, entry.GetRawAttributeValue("objectGUID")); err != nil {
 		s.audit.Failure(actor, "repl.sync", target, ip, err)
 		return err
 	}
@@ -104,33 +115,38 @@ type ReplNeighbor struct {
 }
 
 func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus, error) {
-	if s.tool == nil || !s.tool.Available() {
-		return nil, fmt.Errorf("samba-tool is not available")
+	remote, err := s.remoteFor(ctx, server)
+	if err != nil {
+		return nil, err
 	}
-	if server == "" {
-		server = hostnameFromURI(s.ldap.URI())
+	neighbors, err := remote.Neighbors(ctx)
+	if err != nil {
+		return nil, err
 	}
-	if server == "" {
-		server = "localhost"
-	}
-	// Explicit targets must be configured DCs; do not accept arbitrary RPC hosts.
-	if server != "localhost" && server != hostnameFromURI(s.ldap.URI()) {
-		dc, e := (&SiteService{ldap: s.ldap}).controller(ctx, server)
-		if e != nil {
-			return nil, e
+	st := &ReplStatus{Server: remote.Host, Health: "no-partners", Neighbors: []ReplNeighbor{}}
+	for _, n := range neighbors {
+		item := ReplNeighbor{Direction: "inbound", Partition: n.NamingContext, Partner: n.SourceDSADN, Failures: int(n.ConsecutiveSyncFailuresCount), Result: fmt.Sprintf("%d", n.LastSyncResult), Health: "healthy"}
+		if n.LastSyncAttempt != nil && !n.LastSyncAttempt.IsZero() {
+			item.LastAttempt = n.LastSyncAttempt.AsTime().Format(time.RFC3339)
 		}
-		server = dc.DNS
+		if n.LastSyncSuccess != nil && !n.LastSyncSuccess.IsZero() {
+			item.LastSuccess = n.LastSyncSuccess.AsTime().Format(time.RFC3339)
+		}
+		if item.Failures > 0 || n.LastSyncResult != 0 || item.LastSuccess == "" {
+			item.Health = "degraded"
+		}
+		st.Neighbors = append(st.Neighbors, item)
+		if st.Health == "no-partners" {
+			st.Health = "healthy"
+		}
+		if item.Health == "degraded" {
+			st.Health = "degraded"
+		}
 	}
-	res, e := s.tool.Run(ctx, "drs", "showrepl", server, "--json")
-	if e != nil {
-		return nil, e
+	st.Partners, err = s.Partners(ctx)
+	if err != nil {
+		return nil, err
 	}
-	st, e := parseReplStatus(res.Stdout)
-	if e != nil {
-		return nil, e
-	}
-	st.Server = server
-	st.Partners, _ = s.Partners(ctx)
 	return st, nil
 }
 func parseReplStatus(raw string) (*ReplStatus, error) {
@@ -189,18 +205,15 @@ func parseReplStatus(raw string) (*ReplStatus, error) {
 	return st, nil
 }
 func (s *ReplService) KCC(ctx context.Context, server, actor, ip string) error {
-	dc, e := (&SiteService{ldap: s.ldap}).controller(ctx, server)
+	remote, e := s.remoteFor(ctx, server)
 	if e != nil {
 		return e
 	}
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available")
-	}
-	_, e = s.tool.Run(ctx, "drs", "kcc", dc.DNS)
+	e = remote.KCC(ctx)
 	if e != nil {
-		s.audit.Failure(actor, "repl.kcc", dc.DNS, ip, e)
+		s.audit.Failure(actor, "repl.kcc", remote.Host, ip, e)
 	} else {
-		s.audit.Success(actor, "repl.kcc", dc.DNS, ip)
+		s.audit.Success(actor, "repl.kcc", remote.Host, ip)
 	}
 	return e
 }
@@ -210,4 +223,30 @@ func (s *ReplService) DefaultDestination() string {
 		return host
 	}
 	return "localhost"
+}
+
+func (s *ReplService) remoteFor(ctx context.Context, server string) (*adremote.Client, error) {
+	remote := *s.remote
+	if server == "" || server == remote.Host {
+		return &remote, nil
+	}
+	dc, err := (&SiteService{ldap: s.ldap}).controller(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	conn, err := s.ldap.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dNSHostName"}, nil))
+	if err != nil {
+		return nil, err
+	}
+	if len(root.Entries) != 1 {
+		return nil, fmt.Errorf("missing RootDSE")
+	}
+	if !strings.EqualFold(dc.DNS, root.Entries[0].GetEqualFoldAttributeValue("dNSHostName")) {
+		remote.Host = dc.DNS
+	}
+	return &remote, nil
 }

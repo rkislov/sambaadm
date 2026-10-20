@@ -3,16 +3,15 @@ package service
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 
 	"github.com/go-ldap/ldap/v3"
 
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // GPO is a Group Policy Object summary.
@@ -23,162 +22,73 @@ type GPO struct {
 	Source      string `json:"source,omitempty"`
 }
 
-// GPOService manages GPOs (LDAP list + samba-tool mutations).
+// GPOService manages GPOs over LDAP and SMB.
 type GPOService struct {
 	editorMu sync.Mutex
+	remote   *adremote.Client
 	ldap     *ldapproto.Client
 	audit    *audit.Logger
-	tool     *samba.Runner
 	gpoCfg   config.GPOConfig
 	jobs     *jobStore
 }
 
-// List returns GPOs (samba-tool listall preferred, LDAP fallback).
+// List returns GPOs through LDAP.
 func (s *GPOService) List(ctx context.Context) ([]GPO, error) {
-	if s.tool != nil && s.tool.Available() {
-		res, err := s.tool.Run(ctx, "gpo", "listall")
-		if err == nil {
-			if parsed := parseGPOListAll(res.Stdout); len(parsed) > 0 {
-				return parsed, nil
-			}
-		}
-	}
+
 	return s.listLDAP(ctx)
 }
 
-// Show returns details for a GPO (GUID or display name) via samba-tool.
+// Show returns details for a GPO (GUID or display name) through native protocols.
 func (s *GPOService) Show(ctx context.Context, gpo string) (string, error) {
-	if err := s.requireTool(); err != nil {
-		return "", err
-	}
-	res, err := s.tool.Run(ctx, "gpo", "show", gpo)
+	entry, err := s.policyEntry(ctx, gpo)
 	if err != nil {
 		return "", err
 	}
-	return res.Stdout, nil
+	var out strings.Builder
+	fmt.Fprintf(&out, "dn: %s\n", entry.DN)
+	for _, attr := range entry.Attributes {
+		fmt.Fprintf(&out, "%s: %s\n", attr.Name, strings.Join(attr.Values, ", "))
+	}
+	return out.String(), nil
 }
 
 // Create creates a GPO with the given display name.
 func (s *GPOService) Create(ctx context.Context, displayName, actor, ip string) (string, error) {
-	if err := s.requireTool(); err != nil {
-		return "", err
-	}
-	displayName = strings.TrimSpace(displayName)
-	if displayName == "" {
-		return "", fmt.Errorf("display name is required")
-	}
-	res, err := s.tool.Run(ctx, "gpo", "create", displayName)
-	if err != nil {
-		s.audit.Failure(actor, "gpo.create", displayName, ip, err)
-		return "", err
-	}
-	s.audit.Success(actor, "gpo.create", displayName, ip)
-	return res.Stdout, nil
+	return s.createNative(ctx, displayName, actor, ip)
 }
 
 // Delete deletes a GPO by GUID or name.
 func (s *GPOService) Delete(ctx context.Context, gpo, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	if _, err := s.tool.Run(ctx, "gpo", "del", gpo); err != nil {
-		s.audit.Failure(actor, "gpo.delete", gpo, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "gpo.delete", gpo, ip)
-	return nil
+	return s.deleteNative(ctx, gpo, actor, ip)
 }
 
 // Link links a GPO to a container DN.
 func (s *GPOService) Link(ctx context.Context, containerDN, gpo, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	target := containerDN + " <- " + gpo
-	if _, err := s.tool.Run(ctx, "gpo", "setlink", containerDN, gpo); err != nil {
-		s.audit.Failure(actor, "gpo.link", target, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "gpo.link", target, ip)
-	return nil
+	return s.changeLink(ctx, containerDN, gpo, actor, ip, false)
 }
 
 // Unlink removes a GPO link from a container DN.
 func (s *GPOService) Unlink(ctx context.Context, containerDN, gpo, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	target := containerDN + " -/ " + gpo
-	if _, err := s.tool.Run(ctx, "gpo", "dellink", containerDN, gpo); err != nil {
-		s.audit.Failure(actor, "gpo.unlink", target, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "gpo.unlink", target, ip)
-	return nil
+	return s.changeLink(ctx, containerDN, gpo, actor, ip, true)
 }
 
 // GetLinks returns GPO links on a container.
 func (s *GPOService) GetLinks(ctx context.Context, containerDN string) (string, error) {
-	if err := s.requireTool(); err != nil {
-		return "", err
-	}
-	res, err := s.tool.Run(ctx, "gpo", "getlink", containerDN)
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: containerDN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: []string{"gPLink"}})
 	if err != nil {
 		return "", err
 	}
-	return res.Stdout, nil
+	return entry.GetAttributeValue("gPLink"), nil
 }
 
 // Backup backs up a GPO to a directory path.
 func (s *GPOService) Backup(ctx context.Context, gpo, path, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	if path == "" {
-		return fmt.Errorf("backup path is required")
-	}
-	guid, err := s.resolveGUID(ctx, gpo)
-	if err != nil {
-		return err
-	}
-	if err = os.MkdirAll(path, 0700); err != nil {
-		return fmt.Errorf("create GPO backup directory: %w", err)
-	}
-	target := gpo + " -> " + path
-	if _, err := s.tool.Run(ctx, "gpo", "backup", braceGUID(guid), "--tmpdir="+path); err != nil {
-		s.audit.Failure(actor, "gpo.backup", target, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "gpo.backup", target, ip)
-	return nil
+	return s.backupNative(ctx, gpo, path, actor, ip)
 }
 
 // Restore creates a new GPO with displayName from a policy/<GUID> backup directory.
 func (s *GPOService) Restore(ctx context.Context, displayName, path, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	if path == "" {
-		return fmt.Errorf("restore path is required")
-	}
-	displayName = strings.TrimSpace(displayName)
-	if displayName == "" {
-		return fmt.Errorf("new GPO display name is required")
-	}
-	// Samba 4.17 removes its implicit temporary directory during create,
-	// before restore copies the backup. Supply and own the directory explicitly.
-	tmp, err := os.MkdirTemp("", "sambaadm-gpo-restore-*")
-	if err != nil {
-		return fmt.Errorf("create GPO restore directory: %w", err)
-	}
-	defer os.RemoveAll(tmp)
-	target := path + " -> " + displayName
-	if _, err := s.tool.Run(ctx, "gpo", "restore", displayName, path, "--tmpdir="+tmp); err != nil {
-		s.audit.Failure(actor, "gpo.restore", target, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "gpo.restore", target, ip)
-	return nil
+	return s.restoreNative(ctx, displayName, path, actor, ip)
 }
 
 func (s *GPOService) listLDAP(ctx context.Context) ([]GPO, error) {
@@ -196,13 +106,6 @@ func (s *GPOService) listLDAP(ctx context.Context) ([]GPO, error) {
 	return out, nil
 }
 
-func (s *GPOService) requireTool() error {
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available on this host")
-	}
-	return nil
-}
-
 func entryToGPO(e *ldap.Entry) GPO {
 	return GPO{
 		DisplayName: e.GetAttributeValue("displayName"),
@@ -210,45 +113,4 @@ func entryToGPO(e *ldap.Entry) GPO {
 		DN:          e.DN,
 		Source:      "ldap",
 	}
-}
-
-func parseGPOListAll(stdout string) []GPO {
-	var out []GPO
-	var cur GPO
-	flush := func() {
-		if cur.GUID != "" || cur.DisplayName != "" {
-			cur.Source = "samba-tool"
-			out = append(out, cur)
-			cur = GPO{}
-		}
-	}
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			flush()
-			continue
-		}
-		lower := strings.ToLower(line)
-		if i := strings.Index(line, ":"); i >= 0 {
-			key := strings.ReplaceAll(strings.TrimSpace(lower[:i]), " ", "")
-			val := strings.TrimSpace(line[i+1:])
-			switch {
-			case strings.Contains(key, "displayname"), key == "name":
-				if cur.DisplayName != "" && cur.GUID != "" {
-					flush()
-				}
-				cur.DisplayName = val
-			case strings.Contains(key, "guid"), key == "gpo":
-				if cur.GUID != "" && cur.DisplayName != "" {
-					flush()
-				}
-				cur.GUID = val
-			case strings.Contains(key, "dn"), strings.Contains(key, "path"):
-				cur.DN = val
-			}
-			continue
-		}
-	}
-	flush()
-	return out
 }

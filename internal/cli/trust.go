@@ -54,7 +54,7 @@ var trustShowCmd = &cobra.Command{
 
 var trustCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a trust (requires samba-tool)",
+	Short: "Create a trust (native RPC)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		domain, _ := cmd.Flags().GetString("domain")
 		direction, _ := cmd.Flags().GetString("direction")
@@ -75,13 +75,14 @@ var trustCreateCmd = &cobra.Command{
 		defer cleanup()
 		return svcs.Trusts.Create(context.Background(), service.CreateTrustInput{
 			Domain: domain, Direction: direction, Type: typ, Password: password,
+			NetBIOS: cmd.Flag("netbios").Value.String(), SID: cmd.Flag("sid").Value.String(),
 		}, actorName(), "cli")
 	},
 }
 
 var trustDeleteCmd = &cobra.Command{
 	Use:   "delete <domain>",
-	Short: "Delete a trust (requires samba-tool)",
+	Short: "Delete a trust (native RPC)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()
@@ -95,7 +96,7 @@ var trustDeleteCmd = &cobra.Command{
 
 var trustValidateCmd = &cobra.Command{
 	Use:   "validate <domain>",
-	Short: "Validate a trust (requires samba-tool)",
+	Short: "Validate a trust (native RPC)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()
@@ -113,6 +114,8 @@ var trustValidateCmd = &cobra.Command{
 }
 
 func init() {
+	trustCreateCmd.Flags().String("netbios", "", "remote NetBIOS domain name")
+	trustCreateCmd.Flags().String("sid", "", "remote domain SID")
 	trustCreateCmd.Flags().String("domain", "", "trusted domain (required)")
 	trustCreateCmd.Flags().String("direction", "both", "incoming|outgoing|both")
 	trustCreateCmd.Flags().String("type", "external", "external|forest")

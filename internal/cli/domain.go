@@ -71,7 +71,7 @@ var domainFSMOShowCmd = &cobra.Command{
 
 var domainFSMOTransferCmd = &cobra.Command{
 	Use:   "transfer",
-	Short: "Transfer an FSMO role to this DC (samba-tool)",
+	Short: "Transfer an FSMO role to this DC (native protocols)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		role, _ := cmd.Flags().GetString("role")
 		svcs, cleanup, err := openServices()
@@ -85,7 +85,7 @@ var domainFSMOTransferCmd = &cobra.Command{
 
 var domainFSMOSeizeCmd = &cobra.Command{
 	Use:   "seize",
-	Short: "Seize an FSMO role (samba-tool, last resort)",
+	Short: "Seize an FSMO role (native LDAP, last resort)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		role, _ := cmd.Flags().GetString("role")
 		svcs, cleanup, err := openServices()
@@ -129,7 +129,7 @@ var domainLevelShowCmd = &cobra.Command{
 
 var domainLevelRaiseCmd = &cobra.Command{
 	Use:   "raise",
-	Short: "Raise domain/forest level (samba-tool)",
+	Short: "Raise domain/forest level (native protocols)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dom, _ := cmd.Flags().GetString("domain-level")
 		forest, _ := cmd.Flags().GetString("forest-level")

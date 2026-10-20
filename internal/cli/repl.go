@@ -42,7 +42,7 @@ var replPartnersCmd = &cobra.Command{
 
 var replStatusCmd = &cobra.Command{
 	Use:   "status",
-	Short: "Show replication status (samba-tool drs showrepl)",
+	Short: "Show replication status (native DRS RPC)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()
 		if err != nil {
@@ -71,7 +71,7 @@ var replStatusCmd = &cobra.Command{
 
 var replSyncCmd = &cobra.Command{
 	Use:   "sync",
-	Short: "Trigger replication (samba-tool drs replicate)",
+	Short: "Trigger replication (native DRS RPC)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		from, _ := cmd.Flags().GetString("from")
 		dest, _ := cmd.Flags().GetString("dest")

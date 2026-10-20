@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"io"
 	"os"
 	"path/filepath"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/policy"
-	"sambaadm/internal/samba"
 	"strconv"
 	"strings"
 )
@@ -83,29 +83,19 @@ func policyChild(root *os.Root, parent, name string, optional bool) (string, err
 // Create over SMB so Samba assigns the inherited NT ACL, ownership and DOS
 // attributes. Local POSIX creation would bypass Samba ACL inheritance.
 func (s *GPOService) createRegistry(ctx context.Context, root *os.Root, path string, entry *ldap.Entry) error {
-	if s.tool == nil || s.tool.Username == "" || s.tool.Password == nil {
-		return fmt.Errorf("configured Samba service credentials required to create Registry.pol")
-	}
-	runner := samba.NewRunner("python3")
-	runner.Username = s.tool.Username
-	runner.Password = s.tool.Password
 	unc := strings.Split(strings.TrimPrefix(entry.GetAttributeValue("gPCFileSysPath"), `\\`), `\`)
+	if len(unc) < 5 {
+		return fmt.Errorf("invalid SYSVOL path")
+	}
 	remote := strings.Join(append(unc[2:], strings.Split(filepath.ToSlash(path), "/")...), `\`)
-	script := `import os,sys
-from samba.param import LoadParm
-from samba.credentials import Credentials
-from samba.netcmd.gpo import smb_connection
-from samba.dcerpc import security
-lp=LoadParm();lp.load_default()
-creds=Credentials();creds.guess(lp)
-creds.parse_string(next(a.split("=",1)[1] for a in sys.argv if a.startswith("--username=")))
-with open(os.environ["PASSWD_FILE"]) as password: creds.set_password(password.read())
-conn=smb_connection(sys.argv[1],"sysvol",lp=lp,creds=creds)
-handle=conn.create(sys.argv[2],CreateDisposition=2,DesiredAccess=security.SEC_FILE_WRITE_DATA)
-conn.close(handle)
-`
-	if _, e := runner.Run(ctx, "-c", script, s.localDCName(), remote); e != nil {
-		return fmt.Errorf("create Registry.pol with inherited Samba ACL: %w", e)
+	if err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+		file, err := share.OpenFile(remote, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		return file.Close()
+	}); err != nil {
+		return fmt.Errorf("create Registry.pol with inherited SMB ACL: %w", err)
 	}
 	f, e := root.Open(path)
 	if e != nil {

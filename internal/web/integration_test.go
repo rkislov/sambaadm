@@ -43,13 +43,13 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer auditLog.Close()
-	svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{ToolUser: cfg.LDAP.Bind.User, ToolPassword: cfg.BindPassword})
+	svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword})
 	templatePath := filepath.Join(t.TempDir(), "ALT.admx")
 	if e = os.WriteFile(templatePath, []byte(`<policyDefinitions><policies><policy name="chronyd.service" class="Machine" key="Software\BaseALT\Policies\SystemdUnits" valueName="chronyd.service"><enabledValue><decimal value="1"/></enabledValue><disabledValue><decimal value="0"/></disabledValue></policy></policies></policyDefinitions>`), 0600); e != nil {
 		t.Fatal(e)
 	}
 	cfg.GPO = config.GPOConfig{EditorEnabled: true, ADMXPath: templatePath}
-	svcs = service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{ToolUser: cfg.LDAP.Bind.User, ToolPassword: cfg.BindPassword, GPO: cfg.GPO})
+	svcs = service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword, GPO: cfg.GPO})
 	app, e := New(Options{Config: cfg, LDAP: ldapClient, Services: svcs, Sessions: auth.NewStore(time.Hour), RBAC: auth.NewRBAC(cfg.Auth.Roles), Audit: auditLog})
 	if e != nil {
 		t.Fatal(e)

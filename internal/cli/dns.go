@@ -49,7 +49,7 @@ var dnsZoneListCmd = &cobra.Command{
 
 var dnsZoneCreateCmd = &cobra.Command{
 	Use:   "create <zone>",
-	Short: "Create a DNS zone (samba-tool)",
+	Short: "Create a DNS zone (native protocols)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()
@@ -63,7 +63,7 @@ var dnsZoneCreateCmd = &cobra.Command{
 
 var dnsZoneDeleteCmd = &cobra.Command{
 	Use:   "delete <zone>",
-	Short: "Delete a DNS zone (samba-tool)",
+	Short: "Delete a DNS zone (native protocols)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()

@@ -45,7 +45,7 @@ var gpoListCmd = &cobra.Command{
 
 var gpoShowCmd = &cobra.Command{
 	Use:   "show <gpo>",
-	Short: "Show GPO details (samba-tool)",
+	Short: "Show GPO details (native protocols)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()
@@ -64,7 +64,7 @@ var gpoShowCmd = &cobra.Command{
 
 var gpoCreateCmd = &cobra.Command{
 	Use:   "create",
-	Short: "Create a GPO (samba-tool)",
+	Short: "Create a GPO (native protocols)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, _ := cmd.Flags().GetString("name")
 		svcs, cleanup, err := openServices()
@@ -85,7 +85,7 @@ var gpoCreateCmd = &cobra.Command{
 
 var gpoDeleteCmd = &cobra.Command{
 	Use:   "delete <gpo>",
-	Short: "Delete a GPO (samba-tool)",
+	Short: "Delete a GPO (native protocols)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		svcs, cleanup, err := openServices()

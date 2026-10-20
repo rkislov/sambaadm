@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	smb2 "github.com/cloudsoda/go-smb2"
+	"github.com/go-ldap/ldap/v3"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"sambaadm/internal/adremote"
 	"strings"
 	"sync"
 	"time"
@@ -38,12 +41,12 @@ type DomainController struct {
 
 // DistributeStep is one visible step in a distribute job.
 type DistributeStep struct {
-	ID      string `json:"id"`
-	Title   string `json:"title"`
-	Detail  string `json:"detail,omitempty"`
-	DC      string `json:"dc,omitempty"`
-	Status  string `json:"status"`
-	Message string `json:"message,omitempty"`
+	ID      string    `json:"id"`
+	Title   string    `json:"title"`
+	Detail  string    `json:"detail,omitempty"`
+	DC      string    `json:"dc,omitempty"`
+	Status  string    `json:"status"`
+	Message string    `json:"message,omitempty"`
 	Started time.Time `json:"started,omitempty"`
 	Ended   time.Time `json:"ended,omitempty"`
 }
@@ -166,15 +169,27 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		return nil, fmt.Errorf("no domain controllers found")
 	}
 
-	local := s.localDCName()
-	dnsRoot := dnsFromBaseDN(s.ldap.BaseDN())
-	sysvol := s.gpoCfg.SysvolPath
-	if sysvol == "" {
-		sysvol = "/var/lib/samba/sysvol"
+	conn, err := s.ldap.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dNSHostName"}, nil))
+	if err != nil {
+		return nil, err
+	}
+	if len(root.Entries) != 1 {
+		return nil, fmt.Errorf("missing RootDSE")
+	}
+	local := root.Entries[0].GetEqualFoldAttributeValue("dNSHostName")
+	if local == "" {
+		return nil, fmt.Errorf("missing source DC name")
 	}
 	syncMode := strings.ToLower(s.gpoCfg.SyncMode)
 	if syncMode == "" {
 		syncMode = "both"
+	}
+	if syncMode != "both" && syncMode != "drs" && syncMode != "smb" && syncMode != "rsync" {
+		return nil, fmt.Errorf("unsupported GPO sync mode")
 	}
 
 	id := randomJobID()
@@ -188,14 +203,7 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	job.Steps = append(job.Steps, DistributeStep{
-		ID: "resolve", Title: "Проверка GPO и пути SYSVOL", Detail: filepath.Join(sysvol, dnsRoot, "Policies", braceGUID(guid)),
-		Status: StepPending,
-	})
-	job.Steps = append(job.Steps, DistributeStep{
-		ID: "acl-local", Title: "Применение ACL SYSVOL (локально)", Detail: "samba-tool ntacl sysvolreset",
-		DC: local, Status: StepPending,
-	})
+	job.Steps = append(job.Steps, DistributeStep{ID: "resolve", Title: "Чтение GPO и SYSVOL по SMB", Status: StepPending})
 
 	for _, dc := range dcs {
 		host := dc.DNS
@@ -209,25 +217,16 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 			job.Steps = append(job.Steps, DistributeStep{
 				ID:     "drs-" + host,
 				Title:  "Репликация AD (DRS) → " + host,
-				Detail: "samba-tool drs replicate",
+				Detail: "MS-DRSR RPC",
 				DC:     host,
 				Status: StepPending,
 			})
 		}
-		if syncMode == "rsync" || syncMode == "both" {
+		if syncMode == "rsync" || syncMode == "smb" || syncMode == "both" {
 			job.Steps = append(job.Steps, DistributeStep{
 				ID:     "rsync-" + host,
-				Title:  "Копирование SYSVOL (rsync) → " + host,
+				Title:  "Копирование SYSVOL (SMB) → " + host,
 				Detail: "Policies/" + braceGUID(guid),
-				DC:     host,
-				Status: StepPending,
-			})
-		}
-		if s.gpoCfg.RemoteSysvolReset && (syncMode == "rsync" || syncMode == "both") {
-			job.Steps = append(job.Steps, DistributeStep{
-				ID:     "acl-" + host,
-				Title:  "Сброс ACL SYSVOL на " + host,
-				Detail: "ssh … samba-tool ntacl sysvolreset",
 				DC:     host,
 				Status: StepPending,
 			})
@@ -241,7 +240,7 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 	s.jobs.put(job)
 	s.audit.Success(actor, "gpo.distribute.start", gpo, ip)
 
-	go s.runDistribute(id, local, dnsRoot, sysvol, syncMode)
+	go s.runDistribute(id, local)
 
 	out, _ := s.jobs.get(id)
 	return out, nil
@@ -255,7 +254,7 @@ func (s *GPOService) GetDistributeJob(id string) (*DistributeJob, bool) {
 	return s.jobs.get(id)
 }
 
-func (s *GPOService) runDistribute(jobID, local, dnsRoot, sysvol, syncMode string) {
+func (s *GPOService) runDistribute(jobID, local string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
@@ -273,64 +272,53 @@ func (s *GPOService) runDistribute(jobID, local, dnsRoot, sysvol, syncMode strin
 	if job == nil {
 		return
 	}
-	guid := braceGUID(job.GUID)
-	policyPath := filepath.Join(sysvol, dnsRoot, "Policies", guid)
-
-	// Step resolve
+	var snapshot policyBackup
+	var remotePath string
 	if err := s.runStep(jobID, "resolve", func() error {
-		if s.tool == nil || !s.tool.Available() {
-			return fmt.Errorf("samba-tool is not available")
+		tmp, e := os.MkdirTemp("", "sambaadm-distribute-")
+		if e != nil {
+			return e
 		}
-		if _, err := os.Stat(policyPath); err != nil {
-			return fmt.Errorf("local policy path not found: %s (%v)", policyPath, err)
+		defer os.RemoveAll(tmp)
+		if e = s.backupNative(ctx, job.GUID, tmp, job.Actor, ""); e != nil {
+			return e
 		}
-		return nil
+		data, e := os.ReadFile(filepath.Join(tmp, "policy", braceGUID(job.GUID), "sambaadm-backup.json"))
+		if e != nil {
+			return e
+		}
+		if e = json.Unmarshal(data, &snapshot); e != nil {
+			return e
+		}
+		entry, e := s.policyEntry(ctx, job.GUID)
+		if e != nil {
+			return e
+		}
+		remotePath, e = s.policyPath(ctx, entry)
+		return e
 	}); err != nil {
 		fail(err.Error())
 		s.markRemainingSkipped(jobID)
 		return
 	}
-
-	// Local ACL
-	if err := s.runStep(jobID, "acl-local", func() error {
-		_, err := s.tool.Run(ctx, "ntacl", "sysvolreset")
-		return err
-	}); err != nil {
-		// non-fatal warning: continue but record failure on step
-		// actually runStep already marks failed; decide: continue distribution
-	}
-
-	// Per-DC steps from current job snapshot
+	repl := &ReplService{ldap: s.ldap, audit: s.audit, remote: s.remote}
 	job, _ = s.jobs.get(jobID)
-	for _, st := range job.Steps {
-		if st.Status != StepPending {
+	for _, step := range job.Steps {
+		if step.Status != StepPending || step.ID == "done" {
 			continue
 		}
-		if st.ID == "done" {
-			continue
-		}
-		stepID := st.ID
-		host := st.DC
-		switch {
-		case strings.HasPrefix(stepID, "drs-"):
-			_ = s.runStep(jobID, stepID, func() error {
-				src := local
-				if src == "" || src == "localhost" {
-					if h, _ := os.Hostname(); h != "" {
-						src = h
-					}
-				}
-				_, err := s.tool.Run(ctx, "drs", "replicate", host, src, s.ldap.BaseDN())
-				return err
-			})
-		case strings.HasPrefix(stepID, "rsync-"):
-			_ = s.runStep(jobID, stepID, func() error {
-				return s.rsyncPolicy(ctx, policyPath, host, dnsRoot, guid)
-			})
-		case strings.HasPrefix(stepID, "acl-") && stepID != "acl-local":
-			_ = s.runStep(jobID, stepID, func() error {
-				return s.remoteSysvolReset(ctx, host)
-			})
+		err := s.runStep(jobID, step.ID, func() error {
+			if strings.HasPrefix(step.ID, "drs-") {
+				return repl.Sync(ctx, step.DC, local, s.ldap.BaseDN(), job.Actor, "")
+			}
+			remote := *s.remote
+			remote.Host = step.DC
+			return remote.SYSVOL(ctx, 445, func(share *smb2.Share) error { return installPolicySnapshot(share, remotePath, snapshot) })
+		})
+		if err != nil {
+			fail(err.Error())
+			s.markRemainingSkipped(jobID)
+			return
 		}
 	}
 
@@ -413,35 +401,6 @@ func (s *GPOService) markRemainingSkipped(jobID string) {
 		}
 		j.Progress = 100
 	})
-}
-
-func (s *GPOService) rsyncPolicy(ctx context.Context, localPolicy, host, dnsRoot, guid string) error {
-	rsync := s.gpoCfg.RsyncBinary
-	if rsync == "" {
-		rsync = "rsync"
-	}
-	remotePath := fmt.Sprintf("%s:%s/%s/Policies/%s/", host, strings.TrimRight(s.sysvol(), "/"), dnsRoot, guid)
-	src := strings.TrimRight(localPolicy, "/") + "/"
-	cmd := exec.CommandContext(ctx, rsync, "-XAavz", "--delete-after", src, remotePath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
-}
-
-func (s *GPOService) remoteSysvolReset(ctx context.Context, host string) error {
-	ssh := s.gpoCfg.SSHBinary
-	if ssh == "" {
-		ssh = "ssh"
-	}
-	cmd := exec.CommandContext(ctx, ssh, "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
-		host, "samba-tool", "ntacl", "sysvolreset")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
-	}
-	return nil
 }
 
 func (s *GPOService) sysvol() string {
@@ -531,3 +490,59 @@ func randomJobID() string {
 	return hex.EncodeToString(b)
 }
 
+// Stage a complete policy before replacing the target; retain old files if swap fails.
+func installPolicySnapshot(share *smb2.Share, target string, snapshot policyBackup) error {
+	if i := strings.LastIndex(target, "\\"); i > 0 {
+		if err := share.MkdirAll(target[:i], 0755); err != nil {
+			return err
+		}
+	}
+	stage := target + ".sambaadm-" + randomJobID()
+	old := stage + ".old"
+	if err := share.Mkdir(stage, 0755); err != nil {
+		return err
+	}
+	defer share.RemoveAll(stage)
+	if err := share.SetSecurityInfoRaw(stage, smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation|0x80000000, adremote.SecurityBytes(snapshot.ACL)); err != nil {
+		return err
+	}
+	for _, part := range []string{"Machine", "User"} {
+		if err := share.Mkdir(stage+"\\"+part, 0755); err != nil {
+			return err
+		}
+	}
+	for name, data := range snapshot.Files {
+		path := stage + "\\" + strings.ReplaceAll(name, "/", "\\")
+		i := strings.LastIndex(path, "\\")
+		if err := share.MkdirAll(path[:i], 0755); err != nil {
+			return err
+		}
+		if err := share.WriteFile(path, data, 0644); err != nil {
+			return err
+		}
+	}
+	if err := applySnapshotPermissions(share, stage, snapshot); err != nil {
+		return err
+	}
+	exists := false
+	if _, err := share.Stat(target); err == nil {
+		exists = true
+		if err = share.Rename(target, old); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := share.Rename(stage, target); err != nil {
+		if exists {
+			if rollback := share.Rename(old, target); rollback != nil {
+				return fmt.Errorf("swap failed: %v; recover original from %s: %w", err, old, rollback)
+			}
+		}
+		return err
+	}
+	if exists {
+		return share.RemoveAll(old)
+	}
+	return nil
+}

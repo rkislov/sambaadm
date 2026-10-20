@@ -9,16 +9,16 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // DNSZone is a DNS zone.
 type DNSZone struct {
 	Name   string `json:"name"`
 	DN     string `json:"dn,omitempty"`
-	Source string `json:"source,omitempty"` // ldap | samba-tool
+	Source string `json:"source,omitempty"` // ldap
 }
 
 // DNSRecord is a DNS resource record summary.
@@ -46,35 +46,27 @@ type UpdateDNSRecordInput struct {
 	NewData string `json:"newData"`
 }
 
-// DNSService manages AD-integrated DNS via samba-tool (+ LDAP list fallback).
+// DNSService manages AD-integrated DNS over native DNS RPC and LDAP.
 type DNSService struct {
-	ldap  *ldapproto.Client
-	audit *audit.Logger
-	tool  *samba.Runner
+	ldap   *ldapproto.Client
+	audit  *audit.Logger
+	remote *adremote.Client
 }
 
-// ListZones returns DNS zones (samba-tool preferred, LDAP fallback).
+// ListZones returns DNS zones through LDAP.
 func (s *DNSService) ListZones(ctx context.Context) ([]DNSZone, error) {
-	if s.tool != nil && s.tool.Available() {
-		server := s.dnsServer()
-		res, err := s.tool.Run(ctx, "dns", "zonelist", server)
-		if err == nil {
-			return parseDNSZoneList(res.Stdout), nil
-		}
-	}
+
 	return s.listZonesLDAP(ctx)
 }
 
-// CreateZone creates a DNS zone via samba-tool.
+// CreateZone creates a DNS zone through native protocols.
 func (s *DNSService) CreateZone(ctx context.Context, zone, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
+
 	zone = strings.TrimSpace(zone)
 	if zone == "" {
 		return fmt.Errorf("zone is required")
 	}
-	if _, err := s.tool.Run(ctx, "dns", "zonecreate", s.dnsServer(), zone); err != nil {
+	if err := s.remote.DNSZone(ctx, zone, false); err != nil {
 		s.audit.Failure(actor, "dns.zone.create", zone, ip, err)
 		return err
 	}
@@ -82,12 +74,10 @@ func (s *DNSService) CreateZone(ctx context.Context, zone, actor, ip string) err
 	return nil
 }
 
-// DeleteZone deletes a DNS zone via samba-tool.
+// DeleteZone deletes a DNS zone through native protocols.
 func (s *DNSService) DeleteZone(ctx context.Context, zone, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	if _, err := s.tool.Run(ctx, "dns", "zonedelete", s.dnsServer(), zone); err != nil {
+
+	if err := s.remote.DNSZone(ctx, zone, true); err != nil {
 		s.audit.Failure(actor, "dns.zone.delete", zone, ip, err)
 		return err
 	}
@@ -95,36 +85,34 @@ func (s *DNSService) DeleteZone(ctx context.Context, zone, actor, ip string) err
 	return nil
 }
 
-// QueryRecords queries records in a zone (samba-tool dns query).
+// QueryRecords queries records in a zone through native DNS RPC.
 func (s *DNSService) QueryRecords(ctx context.Context, zone, name, typ string) ([]DNSRecord, error) {
-	if err := s.requireTool(); err != nil {
-		return nil, err
-	}
+
 	if name == "" {
 		name = "@"
 	}
 	if typ == "" {
 		typ = "ALL"
 	}
-	res, err := s.tool.Run(ctx, "dns", "query", s.dnsServer(), zone, name, typ)
+	records, err := s.remote.DNSQuery(ctx, zone, name, typ)
 	if err != nil {
 		return nil, err
 	}
-	return parseDNSQuery(res.Stdout, name, typ), nil
+	out := make([]DNSRecord, 0, len(records))
+	for _, r := range records {
+		out = append(out, DNSRecord{Name: r.Name, Type: r.Type, Data: r.Data, Raw: r.Raw})
+	}
+	return out, nil
 }
 
 // AddRecord adds a DNS record.
 func (s *DNSService) AddRecord(ctx context.Context, in AddDNSRecordInput, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
+
 	if err := validateDNSRecord(in.Zone, in.Name, in.Type, in.Data); err != nil {
 		return err
 	}
 	target := fmt.Sprintf("%s/%s %s %s", in.Zone, in.Name, in.Type, in.Data)
-	args := append([]string{"dns", "add", s.dnsServer(), in.Zone, in.Name, strings.ToUpper(in.Type)},
-		splitDNSData(in.Data)...)
-	if _, err := s.tool.Run(ctx, args...); err != nil {
+	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, "", in.Data); err != nil {
 		s.audit.Failure(actor, "dns.record.add", target, ip, err)
 		return err
 	}
@@ -134,9 +122,7 @@ func (s *DNSService) AddRecord(ctx context.Context, in AddDNSRecordInput, actor,
 
 // UpdateRecord updates a DNS record.
 func (s *DNSService) UpdateRecord(ctx context.Context, in UpdateDNSRecordInput, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
+
 	if err := validateDNSRecord(in.Zone, in.Name, in.Type, in.NewData); err != nil {
 		return err
 	}
@@ -144,10 +130,7 @@ func (s *DNSService) UpdateRecord(ctx context.Context, in UpdateDNSRecordInput, 
 		return fmt.Errorf("oldData is required")
 	}
 	target := fmt.Sprintf("%s/%s %s", in.Zone, in.Name, in.Type)
-	args := []string{"dns", "update", s.dnsServer(), in.Zone, in.Name, strings.ToUpper(in.Type)}
-	args = append(args, splitDNSData(in.OldData)...)
-	args = append(args, splitDNSData(in.NewData)...)
-	if _, err := s.tool.Run(ctx, args...); err != nil {
+	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, in.OldData, in.NewData); err != nil {
 		s.audit.Failure(actor, "dns.record.update", target, ip, err)
 		return err
 	}
@@ -157,16 +140,12 @@ func (s *DNSService) UpdateRecord(ctx context.Context, in UpdateDNSRecordInput, 
 
 // DeleteRecord deletes a DNS record.
 func (s *DNSService) DeleteRecord(ctx context.Context, in AddDNSRecordInput, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
+
 	if err := validateDNSRecord(in.Zone, in.Name, in.Type, in.Data); err != nil {
 		return err
 	}
 	target := fmt.Sprintf("%s/%s %s %s", in.Zone, in.Name, in.Type, in.Data)
-	args := append([]string{"dns", "delete", s.dnsServer(), in.Zone, in.Name, strings.ToUpper(in.Type)},
-		splitDNSData(in.Data)...)
-	if _, err := s.tool.Run(ctx, args...); err != nil {
+	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, in.Data, ""); err != nil {
 		s.audit.Failure(actor, "dns.record.delete", target, ip, err)
 		return err
 	}
@@ -267,13 +246,6 @@ func (s *DNSService) dnsServer() string {
 	return "localhost"
 }
 
-func (s *DNSService) requireTool() error {
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available on this host")
-	}
-	return nil
-}
-
 func validateDNSRecord(zone, name, typ, data string) error {
 	if strings.TrimSpace(zone) == "" {
 		return fmt.Errorf("zone is required")
@@ -288,61 +260,4 @@ func validateDNSRecord(zone, name, typ, data string) error {
 		return fmt.Errorf("data is required")
 	}
 	return nil
-}
-
-// splitDNSData splits record data for samba-tool (SRV needs multiple args).
-func splitDNSData(data string) []string {
-	fields := strings.Fields(data)
-	if len(fields) == 0 {
-		return []string{data}
-	}
-	return fields
-}
-
-func parseDNSZoneList(stdout string) []DNSZone {
-	var out []DNSZone
-	for _, line := range strings.Split(stdout, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
-		}
-		lower := strings.ToLower(trimmed)
-		// Common: "pszZoneName                 : example.com"
-		if i := strings.Index(trimmed, ":"); i >= 0 && (strings.Contains(lower, "zonename") || strings.Contains(lower, "psz")) {
-			name := strings.TrimSpace(trimmed[i+1:])
-			if name != "" {
-				out = append(out, DNSZone{Name: name, Source: "samba-tool"})
-			}
-		}
-	}
-	if len(out) > 0 {
-		return out
-	}
-	// Fallback: simple one-zone-per-line output
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasSuffix(line, ":") {
-			continue
-		}
-		if strings.Contains(line, " ") && !strings.Contains(line, ".") {
-			continue
-		}
-		out = append(out, DNSZone{Name: line, Source: "samba-tool"})
-	}
-	return out
-}
-
-func parseDNSQuery(stdout, name, typ string) []DNSRecord {
-	var out []DNSRecord
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		out = append(out, DNSRecord{Name: name, Type: typ, Raw: line, Data: line})
-	}
-	if len(out) == 0 && strings.TrimSpace(stdout) != "" {
-		out = append(out, DNSRecord{Name: name, Type: typ, Raw: stdout, Data: stdout})
-	}
-	return out
 }

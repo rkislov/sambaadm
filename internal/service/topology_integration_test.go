@@ -6,12 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sambaadm/internal/samba"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestIntegrationTwoDCTopology(t *testing.T) {
+	oracle := samba.NewRunner("")
+	oracle.Username = os.Getenv("SAMBAADM_IT_USER")
+	oracle.Password = func() string { return os.Getenv("SAMBAADM_PASSWORD") }
 	if os.Getenv("SAMBAADM_IT_SECOND_DC") == "" {
 		t.Skip("requires disposable two-DC domain")
 	}
@@ -113,7 +117,7 @@ func TestIntegrationTwoDCTopology(t *testing.T) {
 		t.Fatalf("Samba NDR schedule oracle: %s: %v", out, err)
 	}
 	// The integration container owns this path; no host files or production AD are used.
-	_, e = s.Tool.Run(ctx, "drs", "showrepl", "dc1.sambaadm.test", "--json")
+	_, e = oracle.Run(ctx, "drs", "showrepl", "dc1.sambaadm.test", "--json")
 	must(e)
 	_, e = s.Subnets.Create(ctx, "192.0.2.0/24", original, actor, ip)
 	must(e)
@@ -196,7 +200,7 @@ func TestIntegrationTwoDCTopology(t *testing.T) {
 	must(e)
 	t.Cleanup(func() { s.Users.Delete(context.Background(), login, actor, ip) })
 	must(s.Repl.Sync(ctx, dc2.DNS, "dc1.sambaadm.test", cfg.BaseDN, actor, ip))
-	res, e := s.Tool.Run(ctx, "user", "show", login, "--URL=ldap://"+dc2.DNS)
+	res, e := oracle.Run(ctx, "user", "show", login, "--URL=ldap://"+dc2.DNS)
 	must(e)
 	if !strings.Contains(res.Stdout, login) {
 		t.Fatal("object did not replicate to DC2")

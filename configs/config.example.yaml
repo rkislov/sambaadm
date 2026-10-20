@@ -8,6 +8,8 @@ server:
 ldap:
   uri: "ldaps://dc1.example.com:636"
   # uri: "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi"
+  # Дополнительный доверенный CA только для LDAP (без изменения системного хранилища).
+  # ca_cert: /etc/sambaadm/domain-ca.pem
   base_dn: "DC=example,DC=com"
   # Обязательная служебная запись для операций веб-сервера.
   # Пароли пользователей проверяются на отдельных соединениях.
@@ -29,12 +31,10 @@ gpo:
   editor_enabled: false
   admx_path: /usr/share/PolicyDefinitions/BaseALTSystemdUnits.admx
   sysvol_path: /var/lib/samba/sysvol
-  # drs | rsync | both — как доставлять GPO на остальные DC
+  # drs | smb | both — AD replication and/or native SMB SYSVOL delivery.
   sync_mode: both
-  rsync_binary: rsync
-  ssh_binary: ssh
-  # после rsync: ssh <dc> samba-tool ntacl sysvolreset
-  remote_sysvolreset: true
+  # Standard SMB port; use 1445 only for the loopback macOS lab.
+  smb_port: 445
 
 # Локальные файловые шары / принтеры (smb.conf на этой машине)
 samba:
