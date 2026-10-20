@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"github.com/go-ldap/ldap/v3"
 	"os"
 	"path/filepath"
 	"sambaadm/internal/policy"
@@ -78,5 +79,38 @@ func TestPolicyFilenameCase(t *testing.T) {
 	missing, e := policyChild(root, machine, "Registry.pol", true)
 	if e != nil || missing != filepath.Join("MACHINE", "Registry.pol") {
 		t.Fatalf("new registry path %q %v", missing, e)
+	}
+}
+
+func TestALTPolicyMixedSettingsAndDisabledSection(t *testing.T) {
+	definitions := []policy.Definition{
+		{ID: "enabled", Key: policy.SystemdKey, Value: "one.service", Scope: "Machine"},
+		{ID: "disabled", Key: policy.SystemdKey, Value: "two.service", Scope: "Machine"},
+		{ID: "absent", Key: policy.SystemdKey, Value: "three.service", Scope: "Machine"},
+		{ID: "foreign", Key: policy.SystemdKey, Value: "four.service", Scope: "Machine"},
+	}
+	records := []policy.Record{
+		{Key: policy.SystemdKey, Name: "ONE.SERVICE", Type: 4, Data: []byte{1, 0, 0, 0}},
+		{Key: policy.SystemdKey, Name: "two.service", Type: 4, Data: []byte{0, 0, 0, 0}},
+		{Key: policy.SystemdKey, Name: "four.service", Type: 1, Data: []byte{49, 0, 0, 0}},
+	}
+	for _, flags := range []string{"0", "1", "2", "3"} {
+		snap := editorSnapshot{entry: ldap.NewEntry("CN=test", map[string][]string{"flags": {flags}}), definitions: definitions, records: records, version: 65539, revision: "expected-revision"}
+		view := snap.view()
+		if view.MachineDisabled != (flags == "2" || flags == "3") {
+			t.Fatalf("wrong machine section state for flags %s", flags)
+		}
+		want := []string{"enabled", "disabled", "not-configured", "unsupported"}
+		for i, state := range want {
+			if view.Settings[i].State != state {
+				t.Fatalf("setting %d: got %q want %q", i, view.Settings[i].State, state)
+			}
+		}
+		if view.Version != 65539 || view.Revision != "expected-revision" {
+			t.Fatal("client concurrency metadata lost")
+		}
+	}
+	if len(records) != 3 || records[2].Type != 1 || !bytes.Equal(records[2].Data, []byte{49, 0, 0, 0}) {
+		t.Fatal("view changed an unsupported record")
 	}
 }

@@ -68,6 +68,7 @@ func testWorkspaceServer(t *testing.T) *Server {
 // Service pointers are intentionally nil: rejected requests must never reach a mutation.
 func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 	routes := []struct{ method, path string }{
+		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/alt-settings"},
 		{"POST", "/api/v1/users/alice/move"}, {"POST", "/api/v1/computers/pc/move"},
 		{"POST", "/api/v1/groups/Finance/members"}, {"DELETE", "/api/v1/groups/Finance/members"},
 		{"POST", "/api/v1/ou/move"}, {"POST", "/api/v1/subnets/delete"},
