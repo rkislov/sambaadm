@@ -1,14 +1,19 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"sambaadm/internal/policy"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-ldap/ldap/v3"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
@@ -251,6 +256,114 @@ func TestIntegrationGPOLifecycle(t *testing.T) {
 	sysvol := filepath.Join("/var/lib/samba/sysvol/sambaadm.test/Policies", guid)
 	marker := []byte("sambaadm integration backup content")
 	if e = os.WriteFile(filepath.Join(sysvol, "Machine", "integration.txt"), marker, 0644); e != nil {
+		t.Fatal(e)
+	}
+	// Editing is explicitly enabled only for this disposable local DC.
+	s.GPO.gpoCfg.EditorEnabled = true
+	s.GPO.gpoCfg.ADMXPath = editorTemplate(t)
+	original := []policy.Record{{Key: `Software\Unrelated`, Name: "Preserve", Type: 3, Data: []byte{0, 59, 0, 93, 255}}}
+	originalBytes, _ := policy.Encode(original)
+	userPolicy := filepath.Join(sysvol, "User", "Registry.pol")
+	if e = os.WriteFile(userPolicy, originalBytes, 0640); e != nil {
+		t.Fatal(e)
+	}
+	polPath := filepath.Join(sysvol, "Machine", "Registry.pol")
+	if e = os.WriteFile(polPath, originalBytes, 0640); e != nil {
+		t.Fatal(e)
+	}
+	// Preserve the user half of the version and unrelated CSE metadata.
+	existingExtension := "[{00000000-0000-0000-0000-000000000001}{00000000-0000-0000-0000-000000000002}]"
+	seed := ldap.NewModifyRequest("CN="+guid+",CN=Policies,CN=System,"+s.GPO.ldap.BaseDN(), nil)
+	seed.Replace("versionNumber", []string{"65536"})
+	seed.Replace("gPCMachineExtensionNames", []string{existingExtension})
+	if e = s.GPO.ldap.Modify(ctx, seed); e != nil {
+		t.Fatal(e)
+	}
+	if e = os.WriteFile(filepath.Join(sysvol, "GPT.INI"), []byte("[General]\r\nVersion=65536\r\n"), 0644); e != nil {
+		t.Fatal(e)
+	}
+	before, e := s.GPO.ALTSettings(ctx, guid)
+	if e != nil {
+		t.Fatal(e)
+	}
+	saved, e := s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "enabled", Revision: before.Revision}, actor, ip)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if saved.Version != before.Version+1 || saved.Settings[0].State != "enabled" {
+		t.Fatalf("editor save %+v", saved)
+	}
+	if _, e = s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "disabled", Revision: before.Revision}, actor, ip); !errors.Is(e, ErrPolicyConflict) {
+		t.Fatalf("stale save: %v", e)
+	}
+	metadata, e := s.GPO.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: seed.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: []string{"gPCMachineExtensionNames", "versionNumber"}})
+	if e != nil || metadata.GetAttributeValue("gPCMachineExtensionNames") != existingExtension+registryCSE || metadata.GetAttributeValue("versionNumber") != "65537" {
+		t.Fatalf("metadata preservation: %+v %v", metadata, e)
+	}
+	bytesAfter, e := os.ReadFile(polPath)
+	if e != nil {
+		t.Fatal(e)
+	}
+	parsed, e := policy.Parse(bytesAfter)
+	if e != nil || len(parsed) != 2 || !bytes.Equal(parsed[0].Data, original[0].Data) {
+		t.Fatalf("unrelated registry data lost: %+v %v", parsed, e)
+	}
+	info, _ := os.Stat(polPath)
+	if info.Mode().Perm() != 0640 {
+		t.Fatalf("file mode changed: %v", info.Mode())
+	}
+	python := `from samba.dcerpc import preg
+from samba.ndr import ndr_unpack
+import sys
+p=ndr_unpack(preg.file,open(sys.argv[1],"rb").read())
+assert p.num_entries==2
+assert p.entries[1].valuename=="chronyd.service"
+assert p.entries[1].type==4
+print("Samba preg accepted generated Registry.pol")`
+	if output, err := exec.Command("/usr/bin/python3", "-c", python, polPath).CombinedOutput(); err != nil {
+		t.Fatalf("Samba parser: %s %v", output, err)
+	} else {
+		t.Log(string(output))
+	}
+	disabled, e := s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "disabled", Revision: saved.Revision}, actor, ip)
+	if e != nil || disabled.Settings[0].State != "disabled" {
+		t.Fatalf("disable setting: %+v %v", disabled, e)
+	}
+	cleared, e := s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "not-configured", Revision: disabled.Revision}, actor, ip)
+	if e != nil || cleared.Settings[0].State != "not-configured" {
+		t.Fatalf("clear setting: %+v %v", cleared, e)
+	}
+	if contents, _ := os.ReadFile(polPath); !bytes.Equal(contents, originalBytes) {
+		t.Fatal("clearing setting changed existing records")
+	}
+	// A definitive LDAP access denial must restore both files and version.
+	viewerLogin := "gpedit" + fmt.Sprint(time.Now().UnixNano())
+	if _, e = s.Users.Create(ctx, CreateUserInput{Login: viewerLogin, Password: "Editor-Viewer-Pass1!", OU: ou.DN, Enabled: true}, actor, ip); e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { s.Users.Delete(context.Background(), viewerLogin, actor, ip) })
+	viewerConfig := config.LDAPConfig{URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: "DC=sambaadm,DC=test", Bind: config.BindConfig{Type: "simple", User: viewerLogin + "@sambaadm.test"}}
+	viewerLDAP := ldapproto.NewServiceClient(viewerConfig, func() string { return "Editor-Viewer-Pass1!" })
+	defer viewerLDAP.Close()
+	deniedEditor := &GPOService{ldap: viewerLDAP, audit: s.GPO.audit, gpoCfg: s.GPO.gpoCfg}
+	if _, e = deniedEditor.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "enabled", Revision: cleared.Revision}, actor, ip); e == nil {
+		t.Fatal("read-only LDAP identity wrote GPO")
+	}
+	afterDenied, e := s.GPO.ALTSettings(ctx, guid)
+	if e != nil || afterDenied.Revision != cleared.Revision {
+		t.Fatalf("failed LDAP save was not rolled back: %+v %v", afterDenied, e)
+	}
+	if contents, _ := os.ReadFile(userPolicy); !bytes.Equal(contents, originalBytes) {
+		t.Fatal("user registry file changed")
+	}
+	journalPath := filepath.Join(sysvol, editorJournal)
+	if e = os.WriteFile(journalPath, []byte("interrupted test save"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = s.GPO.ALTSettings(ctx, guid); e == nil {
+		t.Fatal("ignored pending recovery journal")
+	}
+	if e = os.Remove(journalPath); e != nil {
 		t.Fatal(e)
 	}
 	backupRoot := t.TempDir()

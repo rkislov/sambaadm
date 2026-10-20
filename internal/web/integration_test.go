@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -43,6 +44,12 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 	}
 	defer auditLog.Close()
 	svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{ToolUser: cfg.LDAP.Bind.User, ToolPassword: cfg.BindPassword})
+	templatePath := filepath.Join(t.TempDir(), "ALT.admx")
+	if e = os.WriteFile(templatePath, []byte(`<policyDefinitions><policies><policy name="chronyd.service" class="Machine" key="Software\BaseALT\Policies\SystemdUnits" valueName="chronyd.service"><enabledValue><decimal value="1"/></enabledValue><disabledValue><decimal value="0"/></disabledValue></policy></policies></policyDefinitions>`), 0600); e != nil {
+		t.Fatal(e)
+	}
+	cfg.GPO = config.GPOConfig{EditorEnabled: true, ADMXPath: templatePath}
+	svcs = service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{ToolUser: cfg.LDAP.Bind.User, ToolPassword: cfg.BindPassword, GPO: cfg.GPO})
 	app, e := New(Options{Config: cfg, LDAP: ldapClient, Services: svcs, Sessions: auth.NewStore(time.Hour), RBAC: auth.NewRBAC(cfg.Auth.Roles), Audit: auditLog})
 	if e != nil {
 		t.Fatal(e)
@@ -148,6 +155,49 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 	guid := findGUID(policy)
 	defer func() { request(admin, token, "DELETE", "/gpo/"+url.PathEscape(guid), nil, 200) }()
 	gpoPath := "/gpo/" + url.PathEscape(guid)
+	altPath := gpoPath + "/alt-settings"
+	var alt service.ALTPolicy
+	if e = json.Unmarshal(request(viewer, viewerToken, "GET", altPath, nil, 200), &alt); e != nil {
+		t.Fatal(e)
+	}
+	change := service.ALTChange{ID: "chronyd.service", State: "enabled", Revision: alt.Revision}
+	request(viewer, viewerToken, "PUT", altPath, change, 403)
+	request(admin, "", "PUT", altPath, change, 403)
+	result := request(admin, token, "PUT", altPath, change, 200)
+	var saved service.ALTPolicy
+	if e = json.Unmarshal(result, &saved); e != nil || saved.Settings[0].State != "enabled" || saved.Version != alt.Version+1 {
+		t.Fatalf("HTTP ALT editor: %s %v", result, e)
+	}
+	request(admin, token, "PUT", altPath, change, 409)
+	// A fresh Registry.pol must have Samba-inherited ACLs: ordinary domain
+	// users can read it, and a separate Domain Admin can edit it over SMB.
+	editorAdmin := "ga" + id
+	var account service.User
+	created := request(admin, token, "POST", "/users", map[string]any{"login": editorAdmin, "password": "Editor-Admin-Pass1!", "ou": ouDN, "enabled": true}, 201)
+	if e = json.Unmarshal(created, &account); e != nil {
+		t.Fatal(e)
+	}
+	defer func() { request(admin, token, "DELETE", "/users/"+editorAdmin, nil, 200) }()
+	request(admin, token, "POST", "/groups/Domain%20Admins/members", map[string]string{"memberDN": account.DN}, 200)
+	script := `import os,sys
+from samba.param import LoadParm
+from samba.credentials import Credentials
+from samba.netcmd.gpo import smb_connection
+lp=LoadParm();lp.load_default()
+creds=Credentials();creds.guess(lp);creds.set_domain("SAMBAADM")
+creds.set_username(os.environ["EDITOR_TEST_USER"]);creds.set_password(os.environ["EDITOR_TEST_PASSWORD"])
+conn=smb_connection("127.0.0.1","sysvol",lp=lp,creds=creds)
+data=conn.loadfile(sys.argv[1]);assert data[:4]==b"PReg"
+if os.environ["EDITOR_TEST_WRITE"]=="1": conn.savefile(sys.argv[1],data)
+`
+	for _, who := range []struct{ user, password, write string }{{user, "Web-User-New-Pass2!", "0"}, {editorAdmin, "Editor-Admin-Pass1!", "1"}} {
+		cmd := exec.Command("/usr/bin/python3", "-c", script, `sambaadm.test\Policies\`+guid+`\Machine\Registry.pol`)
+		cmd.Env = append(os.Environ(), "EDITOR_TEST_USER="+who.user, "EDITOR_TEST_PASSWORD="+who.password, "EDITOR_TEST_WRITE="+who.write)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("inherited SMB policy permissions: %s %v", output, err)
+		}
+	}
+	t.Log("new Registry.pol is readable by domain user and writable by a separate Domain Admin over SMB")
 	request(admin, token, "POST", gpoPath+"/link", map[string]string{"container": ouDN}, 200)
 	links := request(admin, token, "GET", "/gpo/links?container="+url.QueryEscape(ouDN), nil, 200)
 	if !strings.Contains(strings.ToLower(string(links)), strings.ToLower(strings.Trim(guid, "{}"))) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/go-ldap/ldap/v3"
 
@@ -24,11 +25,12 @@ type GPO struct {
 
 // GPOService manages GPOs (LDAP list + samba-tool mutations).
 type GPOService struct {
-	ldap   *ldapproto.Client
-	audit  *audit.Logger
-	tool   *samba.Runner
-	gpoCfg config.GPOConfig
-	jobs   *jobStore
+	editorMu sync.Mutex
+	ldap     *ldapproto.Client
+	audit    *audit.Logger
+	tool     *samba.Runner
+	gpoCfg   config.GPOConfig
+	jobs     *jobStore
 }
 
 // List returns GPOs (samba-tool listall preferred, LDAP fallback).

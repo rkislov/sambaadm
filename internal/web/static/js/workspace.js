@@ -61,6 +61,7 @@
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
       toolbar:[view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
+ {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
         action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[dn('container')]),
         action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[dn('container')],{confirm:true}),
         action(t('Резервная копия','Back up'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/backup',[text('path','Каталог на сервере','Directory on server')]),
@@ -216,7 +217,34 @@
   }
   function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
+  async function openALTEditor(a,row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики systemd для компьютеров ALT. Включение задаёт автозапуск службы; применение проверяется на клиенте.','ALT computer systemd policies. Enabled configures service startup; verify application on the client.')));
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const content=el('div');dialog.append(notice,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const path=a.path(row);let model;
+    const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Другое значение — используйте GPUI','Other value — use GPUI')}[s]||s);
+    function render(){
+      content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · Machine'));
+      if(model.machineDisabled)content.append(el('p','alert error',t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
+      for(const setting of model.settings){
+        const form=el('form','workspace-form');const label=el('label','',setting.label);const select=el('select');
+        const states=setting.state==='unsupported'?['unsupported']:['not-configured','enabled','disabled'];
+        for(const state of states){const option=el('option','',stateLabel(state));option.value=state;select.append(option);}select.value=setting.state;select.disabled=!admin||setting.state==='unsupported';select.id='alt-setting-'+model.settings.indexOf(setting);label.htmlFor=select.id;form.append(label,select);
+        if(admin&&setting.state!=='unsupported'){
+          const confirmLabel=el('label','workspace-confirm',t('Подтверждаю изменение этой политики','I confirm this policy change'));const confirm=el('input');confirm.type='checkbox';confirm.required=true;confirmLabel.prepend(confirm);form.append(confirmLabel);
+          const save=el('button','',t('Сохранить','Save'));save.type='submit';form.append(save);
+          form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;content.querySelectorAll('button,select,input').forEach(x=>x.disabled=true);message(notice,t('Сохранение…','Saving…'));
+            try{const result=await request(path,'PUT',{id:setting.id,state:select.value,revision:model.revision});if(generation!==dialogGeneration)return;model=result;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
+            catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);content.replaceChildren(button(t('Перезагрузить параметры','Reload settings'),()=>refresh()));}
+          });
+        }content.append(form);
+      }
+    }
+    async function refresh(){message(notice,t('Загрузка…','Loading…'));try{const result=await request(path);if(generation!==dialogGeneration)return;model=result;render();message(notice,'');}catch(err){if(generation===dialogGeneration){message(notice,err.message,true);content.replaceChildren(button(t('Повторить','Retry'),refresh));}}}
+    await refresh();
+  }
   async function openOperation(a,row) {
+    if(a.editor)return openALTEditor(a,row);
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
     if(row)dialog.append(el('p','mono',cfg.id(row)||row.dn||''));
