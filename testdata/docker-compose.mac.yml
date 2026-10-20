@@ -1,0 +1,16 @@
+# Loopback-only native macOS client lab. Keep ports identical for RPC endpoint mapping.
+services:
+  dc:
+    ports:
+      - "127.0.0.1:135:135"
+      - "127.0.0.1:1445:445"
+      - "127.0.0.1:49152-49162:49152-49162"
+    volumes:
+      - mac-domain:/var/lib/samba
+      - mac-config:/etc/samba
+    environment:
+      SAMBAADM_RPC_PORT_RANGE: "49152-49162"
+
+volumes:
+  mac-domain:
+  mac-config:

@@ -7,9 +7,10 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
+	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // Trust describes a domain trust relationship.
@@ -22,19 +23,21 @@ type Trust struct {
 	RawType   string `json:"rawType,omitempty"`
 }
 
-// CreateTrustInput parameters for samba-tool domain trust create.
+// CreateTrustInput parameters for native local trust creation.
 type CreateTrustInput struct {
 	Domain    string `json:"domain"`
+	NetBIOS   string `json:"netbios"`
+	SID       string `json:"sid"`
 	Direction string `json:"direction"` // incoming|outgoing|both
 	Type      string `json:"type"`      // external|forest
 	Password  string `json:"password,omitempty"`
 }
 
-// TrustService manages domain trusts (LDAP read + samba-tool mutate).
+// TrustService manages domain trusts over LDAP and LSA/Netlogon RPC.
 type TrustService struct {
-	ldap  *ldapproto.Client
-	audit *audit.Logger
-	tool  *samba.Runner
+	ldap   *ldapproto.Client
+	audit  *audit.Logger
+	remote *adremote.Client
 }
 
 // List returns trust objects from LDAP.
@@ -68,40 +71,38 @@ func (s *TrustService) Show(ctx context.Context, domain string) (*Trust, error) 
 	return &t, nil
 }
 
-// Create establishes a trust via samba-tool.
+// Create establishes a trust through native RPC.
 func (s *TrustService) Create(ctx context.Context, in CreateTrustInput, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	domain := strings.TrimSpace(in.Domain)
-	if domain == "" {
-		return fmt.Errorf("domain is required")
-	}
-	direction := normalizeTrustDirection(in.Direction)
+	direction := map[string]uint32{"incoming": 1, "outgoing": 2, "both": 3}[normalizeTrustDirection(in.Direction)]
 	typ := normalizeTrustType(in.Type)
-	args := []string{
-		"domain", "trust", "create", domain,
-		"--type=" + typ,
-		"--direction=" + direction,
-		"--create-location=local",
+	if typ != "external" && typ != "forest" {
+		return fmt.Errorf("unsupported trust type")
 	}
-	if in.Password != "" {
-		args = append(args, "--password="+in.Password)
-	}
-	if _, err := s.tool.Run(ctx, args...); err != nil {
-		s.audit.Failure(actor, "trust.create", domain, ip, err)
+	err := s.remote.CreateTrust(ctx, in.Domain, in.NetBIOS, in.SID, in.Password, direction, typ == "forest")
+	if err != nil {
+		s.audit.Failure(actor, "trust.create", in.Domain, ip, err)
 		return err
 	}
-	s.audit.Success(actor, "trust.create", domain, ip)
+	s.audit.Success(actor, "trust.create", in.Domain, ip)
 	return nil
 }
 
-// Delete removes a trust via samba-tool.
+// Delete removes a trust through native RPC.
 func (s *TrustService) Delete(ctx context.Context, domain, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
+	trust, err := s.Show(ctx, domain)
+	if err != nil {
 		return err
 	}
-	if _, err := s.tool.Run(ctx, "domain", "trust", "delete", domain); err != nil {
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: trust.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=trustedDomain)", Attributes: []string{"securityIdentifier"}})
+	if err != nil {
+		return err
+	}
+	var sid dtyp.SID
+	if err = sid.DecodeBinary(entry.GetRawAttributeValue("securityIdentifier")); err != nil {
+		return err
+	}
+	err = s.remote.DeleteTrust(ctx, sid.String())
+	if err != nil {
 		s.audit.Failure(actor, "trust.delete", domain, ip, err)
 		return err
 	}
@@ -109,25 +110,18 @@ func (s *TrustService) Delete(ctx context.Context, domain, actor, ip string) err
 	return nil
 }
 
-// Validate checks a trust via samba-tool.
+// Validate checks a trust through native RPC.
 func (s *TrustService) Validate(ctx context.Context, domain, actor, ip string) (string, error) {
-	if err := s.requireTool(); err != nil {
+	if _, err := s.Show(ctx, domain); err != nil {
 		return "", err
 	}
-	res, err := s.tool.Run(ctx, "domain", "trust", "validate", domain)
+	result, err := s.remote.ValidateTrust(ctx, domain)
 	if err != nil {
 		s.audit.Failure(actor, "trust.validate", domain, ip, err)
-		return "", err
+		return result, err
 	}
 	s.audit.Success(actor, "trust.validate", domain, ip)
-	return res.Stdout, nil
-}
-
-func (s *TrustService) requireTool() error {
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available on this host")
-	}
-	return nil
+	return result, nil
 }
 
 func entryToTrust(e *ldap.Entry) Trust {

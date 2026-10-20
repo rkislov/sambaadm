@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -37,19 +36,9 @@ func startupDiagnostics(cfg *config.Config, client *ldapproto.Client) error {
 	}
 	cwd, _ := os.Getwd()
 	slog.Debug("startup configuration", "version", version.String(), "platform", runtime.GOOS+"/"+runtime.GOARCH, "config", source, "cwd", cwd, "pid", os.Getpid(), "listen", cfg.Server.Listen, "log_level", cfg.Logging.Level, "http_tls", cfg.Server.TLS.Cert != "" && cfg.Server.TLS.Key != "", "tls_cert", cfg.Server.TLS.Cert, "tls_key_configured", cfg.Server.TLS.Key != "", "audit_file", cfg.Audit.File)
-	slog.Debug("LDAP configuration", "uri", diagnosticURI(cfg.LDAP.URI), "base_dn", cfg.LDAP.BaseDN, "bind_type", cfg.LDAP.Bind.Type, "bind_user", cfg.LDAP.Bind.User, "password_env", cfg.LDAP.Bind.PasswordEnv, "password_set", cfg.BindPassword() != "")
+	slog.Debug("LDAP configuration", "uri", diagnosticURI(cfg.LDAP.URI), "base_dn", cfg.LDAP.BaseDN, "ca_cert", cfg.LDAP.CACert, "bind_type", cfg.LDAP.Bind.Type, "bind_user", cfg.LDAP.Bind.User, "password_env", cfg.LDAP.Bind.PasswordEnv, "password_set", cfg.BindPassword() != "")
 	slog.Debug("feature configuration", "smb_conf", cfg.Samba.SMBConf, "sysvol", cfg.GPO.SysvolPath, "gpo_editor", cfg.GPO.EditorEnabled, "admx", cfg.GPO.ADMXPath, "gpo_sync_mode", cfg.GPO.SyncMode, "session_ttl", cfg.Auth.SessionTTL)
-	for _, name := range []string{"samba-tool", cfg.GPO.RsyncBinary, cfg.GPO.SSHBinary} {
-		if name == "" {
-			continue
-		}
-		path, err := exec.LookPath(name)
-		if err != nil {
-			slog.Warn("dependency unavailable", "tool", name, "effect", "operations requiring this utility will fail")
-		} else {
-			slog.Debug("dependency available", "tool", name, "path", path)
-		}
-	}
+
 	var problems []string
 	if cfg.LDAP.BaseDN == "" {
 		problems = append(problems, "LDAP base DN missing: set ldap.base_dn or SAMBAADM_LDAP_BASE_DN")

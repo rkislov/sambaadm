@@ -3,9 +3,11 @@ package ldap
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -62,7 +64,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 			return fmt.Errorf("LDAP service account password is not configured")
 		}
 	}
-	conn, err := dial(ctx, c.cfg.URI)
+	conn, err := dial(ctx, c.cfg.URI, c.cfg.CACert)
 	if err != nil {
 		return err
 	}
@@ -118,7 +120,7 @@ func NewServiceClient(cfg config.LDAPConfig, password func() string) *Client {
 	return &Client{cfg: cfg, service: true, password: password}
 }
 
-func dial(ctx context.Context, uri string) (*ldap.Conn, error) {
+func dial(ctx context.Context, uri string, caFile string) (*ldap.Conn, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	var raw net.Conn
 	var err error
@@ -156,7 +158,22 @@ func dial(ctx context.Context, uri string) (*ldap.Conn, error) {
 				port = "636"
 			}
 			secure = true
-			tlsDialer := &tls.Dialer{NetDialer: dialer, Config: &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}}
+			tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
+			if caFile != "" {
+				pem, e := os.ReadFile(caFile)
+				if e != nil {
+					return nil, fmt.Errorf("read LDAP CA certificate: %w", e)
+				}
+				roots, e := x509.SystemCertPool()
+				if e != nil {
+					roots = x509.NewCertPool()
+				}
+				if !roots.AppendCertsFromPEM(pem) {
+					return nil, fmt.Errorf("LDAP CA certificate contains no valid PEM certificates")
+				}
+				tlsConfig.RootCAs = roots
+			}
+			tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
 			raw, err = tlsDialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))
 		default:
 			return nil, fmt.Errorf("unsupported LDAP scheme: %s", u.Scheme)
@@ -169,4 +186,12 @@ func dial(ctx context.Context, uri string) (*ldap.Conn, error) {
 	conn.SetTimeout(10 * time.Second)
 	conn.Start()
 	return conn, nil
+}
+
+// ServicePeer keeps the configured service identity and trust roots while dialing
+// another validated domain controller. Browser credentials are never reused.
+func (c *Client) ServicePeer(uri string) *Client {
+	cfg := c.cfg
+	cfg.URI = uri
+	return &Client{cfg: cfg, service: c.service, password: c.password}
 }

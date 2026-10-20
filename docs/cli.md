@@ -47,7 +47,7 @@ sambaadm [global flags] <command>
 - `sambaadm ou delete <dn>`
 - `sambaadm ou move <dn> --to=DN`
 
-### Доверия (мутации — samba-tool на DC)
+### Доверия (мутации — LSA RPC)
 - `sambaadm trust list|show|create|delete|validate`
 
 ### Домен / FSMO
@@ -63,12 +63,12 @@ sambaadm [global flags] <command>
 - `sambaadm site list|create|delete`
 - `sambaadm subnet list|create|delete`
 
-### DNS (samba-tool)
+### DNS (MS-DNSP RPC)
 - `sambaadm dns zone list|create|delete`
 - `sambaadm dns record query --zone=... [--name=@] [--type=A]`
 - `sambaadm dns record add|update|delete --zone=... --name=... --type=A --data=...`
 
-### GPO (samba-tool)
+### GPO (LDAP и SMB)
 - `sambaadm gpo list|show|create|delete`
 - `sambaadm gpo link|unlink --container=DN --gpo=GUID`
 - `sambaadm gpo backup <gpo> --path=DIR` — копия в `DIR/policy/{GUID}`

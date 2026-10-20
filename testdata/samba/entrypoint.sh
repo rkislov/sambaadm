@@ -37,4 +37,7 @@ cp "$tls/cert.pem" "$tls/ca.pem"
 cp "$tls/cert.pem" /usr/local/share/ca-certificates/sambaadm-lab.crt
 update-ca-certificates >/dev/null
 
+if [ -n "${SAMBAADM_RPC_PORT_RANGE:-}" ]; then
+    exec samba --foreground --no-process-group --debug-stdout --option="rpc server dynamic port range = $SAMBAADM_RPC_PORT_RANGE"
+fi
 exec samba --foreground --no-process-group --debug-stdout

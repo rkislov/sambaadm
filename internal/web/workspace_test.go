@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/service"
@@ -75,7 +74,6 @@ func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 		{"POST", "/api/v1/groups/Finance/members"}, {"DELETE", "/api/v1/groups/Finance/members"},
 		{"POST", "/api/v1/ou/move"}, {"POST", "/api/v1/subnets/delete"},
 		{"POST", "/api/v1/domain/fsmo/seize"}, {"POST", "/api/v1/domain/level/raise"},
-		{"PUT", "/api/v1/dns/zones/example.com/records"}, {"POST", "/api/v1/shares/server/param"},
 	}
 	s := testWorkspaceServer(t)
 	for _, route := range routes {
@@ -143,47 +141,22 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 	}
 }
 
-func TestExtendedToolOperationsUseDecodedIdentifiersAndJSON(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture")
-	}
-	dir := t.TempDir()
-	logPath := filepath.Join(dir, "arguments")
-	tool := filepath.Join(dir, "samba-tool")
-	t.Setenv("SAMBAADM_TEST_TOOL_LOG", logPath)
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SAMBAADM_TEST_TOOL_LOG\"\nprintf 'ok\\n'\n"
-	if e := os.WriteFile(tool, []byte(script), 0700); e != nil {
-		t.Fatal(e)
-	}
-	auditLog, e := audit.New(filepath.Join(dir, "audit.log"))
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer auditLog.Close()
+func TestNativeDNSRejectsMissingCredentialsWithoutFallback(t *testing.T) {
 	s := testWorkspaceServer(t)
-	s.audit = auditLog
-	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{URI: "ldaps://dc1.example.com:636", BaseDN: "DC=example,DC=com"}), auditLog, service.ServiceOptions{SambaTool: tool})
-	sess, _ := s.sessions.Create("admin", "CN=admin", auth.RoleAdmin)
-	cases := []struct{ method, path, body, want string }{
-		{"PUT", "/api/v1/dns/zones/example.com/records", `{"name":"files","type":"A","oldData":"192.0.2.20","newData":"192.0.2.21"}`, "dns\nupdate\ndc1.example.com\nexample.com\nfiles\nA\n192.0.2.20\n192.0.2.21\n"},
-		{"GET", "/api/v1/gpo/%7Babc%7D", "", "gpo\nshow\n{abc}\n"},
-		{"GET", "/api/v1/gpo/links?container=OU%3DPeople%2CDC%3Dexample%2CDC%3Dcom", "", "gpo\ngetlink\nOU=People,DC=example,DC=com\n"},
-		{"POST", "/api/v1/domain/fsmo/seize", `{"role":"pdc"}`, "fsmo\nseize\n--role=pdc\n"},
-		{"POST", "/api/v1/domain/level/raise", `{"forest":"2016"}`, "domain\nlevel\nraise\n--forest-level=2016\n"},
+	logger, err := audit.New(filepath.Join(t.TempDir(), "audit.log"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tc := range cases {
-		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-		req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
-		req.Header.Set(csrfHeader, sess.CSRFToken)
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		s.Router().ServeHTTP(rec, req)
-		if rec.Code != 200 {
-			t.Fatalf("%s: %d %s", tc.path, rec.Code, rec.Body.String())
-		}
-		got, e := os.ReadFile(logPath)
-		if e != nil || string(got) != tc.want {
-			t.Fatalf("%s arguments %q want %q, error %v", tc.path, got, tc.want, e)
-		}
+	defer logger.Close()
+	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{URI: "ldaps://127.0.0.1:1", BaseDN: "DC=example,DC=com"}), logger, service.ServiceOptions{})
+	sess, _ := s.sessions.Create("admin", "CN=admin", auth.RoleAdmin)
+	req := httptest.NewRequest("PUT", "/api/v1/dns/zones/example.com/records", strings.NewReader(`{"name":"files","type":"A","oldData":"192.0.2.20","newData":"192.0.2.21"}`))
+	req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
+	req.Header.Set(csrfHeader, sess.CSRFToken)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != 502 || !strings.Contains(rec.Body.String(), "credentials") {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
 }

@@ -23,6 +23,15 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 if [ "${SAMBAADM_TWO_DC:-0}" = 1 ]; then SAMBAADM_IT_SECOND_DC=dc2.sambaadm.test; export SAMBAADM_IT_SECOND_DC; fi
 compose up -d --build --wait --wait-timeout 240
+if [ "${SAMBAADM_TWO_DC:-0}" = 1 ]; then
+ compose cp dc:/var/lib/samba/private/tls/cert.pem "$work/dc1.crt"
+ compose cp dc2:/var/lib/samba/private/tls/cert.pem "$work/dc2.crt"
+ compose cp "$work/dc2.crt" dc:/usr/local/share/ca-certificates/dc2.crt
+ compose cp "$work/dc1.crt" dc2:/usr/local/share/ca-certificates/dc1.crt
+ compose exec -T dc update-ca-certificates >/dev/null
+ compose exec -T dc2 update-ca-certificates >/dev/null
+fi
+
 case "$(compose exec -T dc uname -m | tr -d '\r')" in
     aarch64) arch=arm64 ;;
     x86_64) arch=amd64 ;;

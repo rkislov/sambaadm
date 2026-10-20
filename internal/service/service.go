@@ -1,10 +1,10 @@
 package service
 
 import (
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // Services aggregates domain services shared by CLI and HTTP.
@@ -24,16 +24,14 @@ type Services struct {
 	Printers  *PrinterService
 	FSACL     *FSACLService
 	Audit     *audit.Logger
-	Tool      *samba.Runner
 }
 
 // ServiceOptions configures optional dependencies.
 type ServiceOptions struct {
-	SambaTool    string
-	ToolUser     string
-	ToolPassword func() string
-	GPO          config.GPOConfig
-	Samba        config.SambaConfig
+	Username string
+	Password func() string
+	GPO      config.GPOConfig
+	Samba    config.SambaConfig
 }
 
 // New builds the service layer on top of an LDAP client.
@@ -41,25 +39,26 @@ func New(ldap *ldapproto.Client, auditLog *audit.Logger) *Services {
 	return NewWithOptions(ldap, auditLog, ServiceOptions{})
 }
 
-// NewWithOptions builds services with optional samba-tool path and GPO sync settings.
+// NewWithOptions builds services with service credentials and GPO sync settings.
 func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts ServiceOptions) *Services {
-	tool := samba.NewRunner(opts.SambaTool)
-	tool.Username = opts.ToolUser
-	tool.Password = opts.ToolPassword
+	remoteHost := hostnameFromURI(ldap.URI())
+	if remoteHost == "" {
+		remoteHost = "localhost"
+	}
 	shares := newShareService(auditLog, opts.Samba)
 	return &Services{
 		Users:     &UserService{ldap: ldap, audit: auditLog},
 		Groups:    &GroupService{ldap: ldap, audit: auditLog},
 		Computers: &ComputerService{ldap: ldap, audit: auditLog},
 		OU:        &OUService{ldap: ldap, audit: auditLog},
-		Trusts:    &TrustService{ldap: ldap, audit: auditLog, tool: tool},
-		Domain:    &DomainService{ldap: ldap, audit: auditLog, tool: tool},
-		Repl:      &ReplService{ldap: ldap, audit: auditLog, tool: tool},
+		Trusts:    &TrustService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
+		Domain:    &DomainService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
+		Repl:      &ReplService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		Sites:     &SiteService{ldap: ldap, audit: auditLog},
 		Subnets:   &SubnetService{ldap: ldap, audit: auditLog},
-		DNS:       &DNSService{ldap: ldap, audit: auditLog, tool: tool},
+		DNS:       &DNSService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		GPO: &GPOService{
-			ldap: ldap, audit: auditLog, tool: tool,
+			ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password},
 			gpoCfg: opts.GPO,
 			jobs:   newJobStore(),
 		},
@@ -67,6 +66,5 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Service
 		Printers: newPrinterService(auditLog, shares),
 		FSACL:    newFSACLService(auditLog, shares),
 		Audit:    auditLog,
-		Tool:     tool,
 	}
 }

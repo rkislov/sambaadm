@@ -62,7 +62,7 @@ chmod +x sambaadm-linux-amd64
 
 Откройте http://localhost:8081/login. Для работы с доменом настройте LDAP;
 операции Samba, ACL и печати используют внешние системные утилиты
-(`samba-tool`, `getfacl`/`setfacl`, `getfattr`/`setfattr`, `lpstat`).
+(`getfacl`/`setfacl`, `getfattr`/`setfattr`, `lpstat`).
 
 Windows:
 
@@ -227,7 +227,7 @@ sambaadm acl get|set <path>
 │                      ▼               ▼
 │              internal/service (ядро)
 │                      ▼
-│         LDAP / Kerberos / samba-tool
+│         LDAP / RPC / SMB
 │                      ▼
 │         embed: templates + static
 └─────────────────────────────────────────────┘
@@ -343,3 +343,7 @@ make docker
 Для проверки на двух одноразовых Samba DC: `SAMBAADM_TWO_DC=1 make integration`. DRS не копирует файлы SYSVOL; применение на ALT СП 10.2.2 требует отдельной приёмки.
 
 Запись расписаний Site Link заблокирована из-за обнаруженного сбоя KCC Samba 4.17; причина показана в интерфейсе.
+
+## Нативный доменный клиент v0.20.0
+
+Доменные операции работают без `samba-tool` и Python Samba. [Запуск тестового домена на Mac, подключение и ограничения](docs/mac-domain.md).

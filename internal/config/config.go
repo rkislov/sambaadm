@@ -32,13 +32,11 @@ type SambaConfig struct {
 
 // GPOConfig controls local policy editing and SYSVOL distribution.
 type GPOConfig struct {
-	EditorEnabled     bool   `mapstructure:"editor_enabled"`
-	ADMXPath          string `mapstructure:"admx_path"`
-	SysvolPath        string `mapstructure:"sysvol_path"`
-	SyncMode          string `mapstructure:"sync_mode"` // drs | rsync | both
-	RsyncBinary       string `mapstructure:"rsync_binary"`
-	SSHBinary         string `mapstructure:"ssh_binary"`
-	RemoteSysvolReset bool   `mapstructure:"remote_sysvolreset"`
+	SMBPort       int    `mapstructure:"smb_port"`
+	EditorEnabled bool   `mapstructure:"editor_enabled"`
+	ADMXPath      string `mapstructure:"admx_path"`
+	SysvolPath    string `mapstructure:"sysvol_path"`
+	SyncMode      string `mapstructure:"sync_mode"` // drs | smb | both (legacy rsync aliases smb)
 }
 
 type ServerConfig struct {
@@ -53,6 +51,7 @@ type TLSConfig struct {
 }
 
 type LDAPConfig struct {
+	CACert string     `mapstructure:"ca_cert"`
 	URI    string     `mapstructure:"uri"`
 	BaseDN string     `mapstructure:"base_dn"`
 	Bind   BindConfig `mapstructure:"bind"`
@@ -116,7 +115,7 @@ func Load(cfgFile string) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	for _, key := range []string{"ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file"} {
+	for _, key := range []string{"ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file"} {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)
@@ -130,9 +129,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gpo.admx_path", "/usr/share/PolicyDefinitions/BaseALTSystemdUnits.admx")
 	v.SetDefault("gpo.sysvol_path", "/var/lib/samba/sysvol")
 	v.SetDefault("gpo.sync_mode", "both")
-	v.SetDefault("gpo.rsync_binary", "rsync")
-	v.SetDefault("gpo.ssh_binary", "ssh")
-	v.SetDefault("gpo.remote_sysvolreset", true)
+	v.SetDefault("gpo.smb_port", 445)
 	v.SetDefault("samba.smb_conf", "/etc/samba/smb.conf")
 	v.SetDefault("samba.shares_root", "/srv/samba")
 	v.SetDefault("samba.create_mode", "0755")

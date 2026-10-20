@@ -3,11 +3,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"github.com/go-ldap/ldap/v3"
+	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"strings"
 
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
-	"sambaadm/internal/samba"
 )
 
 // DomainInfo holds basic domain metadata.
@@ -23,7 +25,7 @@ type DomainInfo struct {
 type FSMORole struct {
 	Role   string `json:"role"`
 	Owner  string `json:"owner,omitempty"`
-	Source string `json:"source,omitempty"` // ldap | samba-tool
+	Source string `json:"source,omitempty"` // ldap
 }
 
 // DomainLevel describes domain/forest functional levels.
@@ -35,9 +37,9 @@ type DomainLevel struct {
 
 // DomainService exposes domain / FSMO operations.
 type DomainService struct {
-	ldap  *ldapproto.Client
-	audit *audit.Logger
-	tool  *samba.Runner
+	remote *adremote.Client
+	ldap   *ldapproto.Client
+	audit  *audit.Logger
 }
 
 // Info returns basic domain information.
@@ -50,91 +52,54 @@ func (s *DomainService) Info(ctx context.Context) (*DomainInfo, error) {
 		Attributes: []string{"dc", "name", "objectSid", "msDS-Behavior-Version"},
 		PageSize:   1,
 	})
-	if err == nil && len(entries) > 0 {
-		e := entries[0]
-		info.NetBIOS = e.GetAttributeValue("dc")
-		info.DNSRoot = e.GetAttributeValue("name")
-		info.FunctionLvl = e.GetAttributeValue("msDS-Behavior-Version")
-	}
-	return info, nil
-}
-
-// FSMOShow returns FSMO role owners. Prefers samba-tool; falls back to LDAP.
-func (s *DomainService) FSMOShow(ctx context.Context) ([]FSMORole, error) {
-	if s.tool != nil && s.tool.Available() {
-		res, err := s.tool.Run(ctx, "fsmo", "show")
-		if err == nil {
-			return parseFSMOShow(res.Stdout), nil
-		}
-	}
-	return s.fsmoFromLDAP(ctx)
-}
-
-// FSMOTransfer transfers a role via samba-tool.
-func (s *DomainService) FSMOTransfer(ctx context.Context, role, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	role = normalizeFSMORole(role)
-	if _, err := s.tool.Run(ctx, "fsmo", "transfer", "--role="+role); err != nil {
-		s.audit.Failure(actor, "fsmo.transfer", role, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "fsmo.transfer", role, ip)
-	return nil
-}
-
-// FSMOSeize seizes a role via samba-tool (last resort).
-func (s *DomainService) FSMOSeize(ctx context.Context, role, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	role = normalizeFSMORole(role)
-	if _, err := s.tool.Run(ctx, "fsmo", "seize", "--role="+role); err != nil {
-		s.audit.Failure(actor, "fsmo.seize", role, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "fsmo.seize", role, ip)
-	return nil
-}
-
-// LevelShow returns domain/forest functional level (samba-tool preferred).
-func (s *DomainService) LevelShow(ctx context.Context) (*DomainLevel, error) {
-	if s.tool != nil && s.tool.Available() {
-		res, err := s.tool.Run(ctx, "domain", "level", "show")
-		if err == nil {
-			return parseDomainLevel(res.Stdout), nil
-		}
-	}
-	info, err := s.Info(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &DomainLevel{Domain: info.FunctionLvl, Raw: "msDS-Behavior-Version=" + info.FunctionLvl}, nil
+	if len(entries) != 1 {
+		return nil, fmt.Errorf("domain not found")
+	}
+	e := entries[0]
+	info.FunctionLvl = e.GetAttributeValue("msDS-Behavior-Version")
+	var sid dtyp.SID
+	if err := sid.DecodeBinary(e.GetRawAttributeValue("objectSid")); err != nil {
+		return nil, err
+	}
+	info.DomainSID = sid.String()
+	refs, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: "CN=Partitions," + ConfigDN(s.ldap.BaseDN()), Filter: "(&(objectClass=crossRef)(nCName=" + ldap.EscapeFilter(s.ldap.BaseDN()) + "))", Attributes: []string{"dnsRoot", "nETBIOSName"}})
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) != 1 {
+		return nil, fmt.Errorf("domain partition metadata unavailable")
+	}
+	info.NetBIOS = refs[0].GetAttributeValue("nETBIOSName")
+	info.DNSRoot = refs[0].GetAttributeValue("dnsRoot")
+	return info, nil
 }
 
-// LevelRaise raises domain and/or forest level via samba-tool.
+// FSMOShow returns FSMO role owners. Uses LDAP.
+func (s *DomainService) FSMOShow(ctx context.Context) ([]FSMORole, error) {
+	return s.fsmoFromLDAP(ctx)
+}
+
+// FSMOTransfer transfers a role through native protocols.
+func (s *DomainService) FSMOTransfer(ctx context.Context, role, actor, ip string) error {
+	return s.changeFSMO(ctx, role, actor, ip, false)
+}
+
+// FSMOSeize seizes a role through native protocols (last resort).
+func (s *DomainService) FSMOSeize(ctx context.Context, role, actor, ip string) error {
+	return s.changeFSMO(ctx, role, actor, ip, true)
+}
+
+// LevelShow returns domain/forest functional level through LDAP.
+func (s *DomainService) LevelShow(ctx context.Context) (*DomainLevel, error) {
+	return s.levelNative(ctx)
+}
+
+// LevelRaise raises domain and/or forest level through native protocols.
 func (s *DomainService) LevelRaise(ctx context.Context, domainLevel, forestLevel, actor, ip string) error {
-	if err := s.requireTool(); err != nil {
-		return err
-	}
-	args := []string{"domain", "level", "raise"}
-	if domainLevel != "" {
-		args = append(args, "--domain-level="+domainLevel)
-	}
-	if forestLevel != "" {
-		args = append(args, "--forest-level="+forestLevel)
-	}
-	if len(args) == 3 {
-		return fmt.Errorf("specify --domain-level and/or --forest-level")
-	}
-	target := strings.Join(args[3:], " ")
-	if _, err := s.tool.Run(ctx, args...); err != nil {
-		s.audit.Failure(actor, "domain.level.raise", target, ip, err)
-		return err
-	}
-	s.audit.Success(actor, "domain.level.raise", target, ip)
-	return nil
+	return s.raiseNative(ctx, domainLevel, forestLevel, actor, ip)
 }
 
 func (s *DomainService) fsmoFromLDAP(ctx context.Context) ([]FSMORole, error) {
@@ -149,6 +114,8 @@ func (s *DomainService) fsmoFromLDAP(ctx context.Context) ([]FSMORole, error) {
 		{"PDC", base},
 		{"RIDMaster", "CN=RID Manager$,CN=System," + base},
 		{"InfrastructureMaster", "CN=Infrastructure," + base},
+		{"DomainDnsZonesMaster", "CN=Infrastructure,DC=DomainDnsZones," + base},
+		{"ForestDnsZonesMaster", "CN=Infrastructure,DC=ForestDnsZones," + base},
 	}
 	out := make([]FSMORole, 0, len(roles))
 	for _, r := range roles {
@@ -159,63 +126,16 @@ func (s *DomainService) fsmoFromLDAP(ctx context.Context) ([]FSMORole, error) {
 			Attributes: []string{"fSMORoleOwner"},
 			PageSize:   1,
 		})
-		owner := ""
-		if err == nil && len(entries) > 0 {
-			owner = entries[0].GetAttributeValue("fSMORoleOwner")
+		if err != nil {
+			return nil, err
 		}
+		if len(entries) != 1 {
+			return nil, fmt.Errorf("missing role object %s", r.dn)
+		}
+		owner := entries[0].GetAttributeValue("fSMORoleOwner")
 		out = append(out, FSMORole{Role: r.name, Owner: owner, Source: "ldap"})
 	}
 	return out, nil
-}
-
-func (s *DomainService) requireTool() error {
-	if s.tool == nil || !s.tool.Available() {
-		return fmt.Errorf("samba-tool is not available on this host")
-	}
-	return nil
-}
-
-func parseFSMOShow(stdout string) []FSMORole {
-	var out []FSMORole
-	for _, line := range strings.Split(stdout, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// Typical: "SchemaMasterRole owner: CN=NTDS Settings,..."
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			out = append(out, FSMORole{Role: line, Source: "samba-tool"})
-			continue
-		}
-		role := strings.TrimSpace(parts[0])
-		role = strings.TrimSuffix(role, " owner")
-		role = strings.TrimSuffix(role, " Role")
-		out = append(out, FSMORole{
-			Role:   strings.TrimSpace(role),
-			Owner:  strings.TrimSpace(parts[1]),
-			Source: "samba-tool",
-		})
-	}
-	return out
-}
-
-func parseDomainLevel(stdout string) *DomainLevel {
-	lvl := &DomainLevel{Raw: stdout}
-	for _, line := range strings.Split(stdout, "\n") {
-		l := strings.ToLower(line)
-		if strings.Contains(l, "domain") && strings.Contains(l, "level") {
-			if i := strings.LastIndex(line, ":"); i >= 0 {
-				lvl.Domain = strings.TrimSpace(line[i+1:])
-			}
-		}
-		if strings.Contains(l, "forest") && strings.Contains(l, "level") {
-			if i := strings.LastIndex(line, ":"); i >= 0 {
-				lvl.Forest = strings.TrimSpace(line[i+1:])
-			}
-		}
-	}
-	return lvl
 }
 
 func normalizeFSMORole(role string) string {

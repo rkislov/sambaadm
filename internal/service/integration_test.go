@@ -3,12 +3,14 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sambaadm/internal/policy"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -24,7 +26,7 @@ func integrationServices(t *testing.T, mutate bool) (*Services, config.LDAPConfi
 	if os.Getenv("SAMBAADM_IT") != "1" {
 		t.Skip("set SAMBAADM_IT=1 to run against the disposable DC")
 	}
-	cfg := config.LDAPConfig{URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: os.Getenv("SAMBAADM_IT_BASE"), Bind: config.BindConfig{Type: "simple", User: os.Getenv("SAMBAADM_IT_USER"), PasswordEnv: "SAMBAADM_PASSWORD"}}
+	cfg := config.LDAPConfig{CACert: os.Getenv("SAMBAADM_IT_CA"), URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: os.Getenv("SAMBAADM_IT_BASE"), Bind: config.BindConfig{Type: "simple", User: os.Getenv("SAMBAADM_IT_USER"), PasswordEnv: "SAMBAADM_PASSWORD"}}
 	if cfg.BaseDN == "" {
 		cfg.BaseDN = "DC=sambaadm,DC=test"
 	}
@@ -46,7 +48,8 @@ func integrationServices(t *testing.T, mutate bool) (*Services, config.LDAPConfi
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { logger.Close() })
-	return NewWithOptions(client, logger, ServiceOptions{ToolUser: cfg.Bind.User, ToolPassword: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
+	port, _ := strconv.Atoi(os.Getenv("SAMBAADM_IT_SMB_PORT"))
+	return NewWithOptions(client, logger, ServiceOptions{GPO: config.GPOConfig{SMBPort: port}, Username: cfg.Bind.User, Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
 }
 func TestIntegrationDomainInfo(t *testing.T) {
 	s, _ := integrationServices(t, false)
@@ -342,7 +345,7 @@ print("Samba preg accepted generated Registry.pol")`
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { s.Users.Delete(context.Background(), viewerLogin, actor, ip) })
-	viewerConfig := config.LDAPConfig{URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: "DC=sambaadm,DC=test", Bind: config.BindConfig{Type: "simple", User: viewerLogin + "@sambaadm.test"}}
+	viewerConfig := config.LDAPConfig{CACert: os.Getenv("SAMBAADM_IT_CA"), URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: "DC=sambaadm,DC=test", Bind: config.BindConfig{Type: "simple", User: viewerLogin + "@sambaadm.test"}}
 	viewerLDAP := ldapproto.NewServiceClient(viewerConfig, func() string { return "Editor-Viewer-Pass1!" })
 	defer viewerLDAP.Close()
 	deniedEditor := &GPOService{ldap: viewerLDAP, audit: s.GPO.audit, gpoCfg: s.GPO.gpoCfg}
@@ -371,8 +374,13 @@ print("Samba preg accepted generated Registry.pol")`
 		t.Fatal(e)
 	}
 	backupPath := filepath.Join(backupRoot, "policy", guid)
-	if contents, err := os.ReadFile(filepath.Join(backupPath, "Machine", "integration.txt.SAMBABACKUP")); err != nil || string(contents) != string(marker) {
-		t.Fatalf("backup content: %q %v", contents, err)
+	contents, err := os.ReadFile(filepath.Join(backupPath, "sambaadm-backup.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nativeBackup policyBackup
+	if err = json.Unmarshal(contents, &nativeBackup); err != nil || !bytes.Equal(nativeBackup.Files["Machine/integration.txt"], marker) {
+		t.Fatalf("backup contents: %v", err)
 	}
 	restoredName := name + "-restored"
 	if e = s.GPO.Restore(ctx, restoredName, backupPath, actor, ip); e != nil {

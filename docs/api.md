@@ -19,7 +19,7 @@
 | DELETE | `/computers/{name}` | admin | удалить |
 | GET/POST | `/ou` | read/admin | список / создать |
 | DELETE | `/ou?dn=` | admin | удалить OU |
-| GET/POST | `/trusts` | read/admin | список / создать (samba-tool) |
+| GET/POST | `/trusts` | read/admin | список / создать (LSA RPC, локальная сторона) |
 | DELETE | `/trusts/{domain}` | admin | удалить |
 | POST | `/trusts/{domain}/validate` | admin | проверить |
 | GET | `/domain` | read | инфо о домене |
