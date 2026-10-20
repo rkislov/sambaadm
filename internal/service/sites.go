@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"strings"
 
 	"github.com/go-ldap/ldap/v3"
@@ -72,12 +73,18 @@ func (s *SiteService) Create(ctx context.Context, name, actor, ip string) (*Site
 		s.audit.Failure(actor, "site.create", dn, ip, err)
 		return nil, err
 	}
-	// Default Servers container under the site (common AD structure).
-	serversDN := BuildDN("CN", "Servers", dn)
-	_ = s.ldap.Add(ctx, serversDN, []ldap.Attribute{
-		{Type: ldapproto.AttrObjectClass, Vals: []string{"top", "serversContainer"}},
-		{Type: ldapproto.AttrCN, Vals: []string{"Servers"}},
-	})
+	// A usable AD site needs both standard child objects. Roll back a partial
+	// create instead of reporting success while hiding a container failure.
+	for _, child := range []struct{ name, class string }{{"Servers", "serversContainer"}, {"NTDS Site Settings", "nTDSSiteSettings"}} {
+		childDN := BuildDN("CN", child.name, dn)
+		if err := s.ldap.Add(ctx, childDN, []ldap.Attribute{{Type: "objectClass", Vals: []string{"top", child.class}}, {Type: "cn", Vals: []string{child.name}}}); err != nil {
+			cleanup := s.ldap.Delete(context.Background(), BuildDN("CN", "Servers", dn))
+			rollback := s.ldap.Delete(context.Background(), dn)
+			s.audit.Failure(actor, "site.create", dn, ip, err)
+			return nil, fmt.Errorf("create site child: %w (rollback: %v, %v)", err, cleanup, rollback)
+		}
+	}
+
 	s.audit.Success(actor, "site.create", dn, ip)
 	return &Site{Name: name, DN: dn}, nil
 }
@@ -85,6 +92,39 @@ func (s *SiteService) Create(ctx context.Context, name, actor, ip string) (*Site
 // Delete removes a site by name.
 func (s *SiteService) Delete(ctx context.Context, name, actor, ip string) error {
 	dn := BuildDN("CN", name, SitesContainerDN(s.ldap.BaseDN()))
+	// Refuse deletion while controllers, subnets or site links still refer to
+	// the site. Never use LDAP subtree delete on a site.
+	refs, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: SitesContainerDN(s.ldap.BaseDN()), Filter: "(|(&(objectClass=subnet)(siteObject=" + ldap.EscapeFilter(dn) + "))(&(objectClass=siteLink)(siteList=" + ldap.EscapeFilter(dn) + ")))", Attributes: []string{"cn"}})
+	if err != nil {
+		return err
+	}
+	if len(refs) > 0 {
+		return topologyBad("site is referenced by subnets or site links")
+	}
+	scope := ldap.ScopeSingleLevel
+	servers := BuildDN("CN", "Servers", dn)
+	children, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: servers, Scope: &scope, Filter: "(objectClass=*)", Attributes: []string{"cn"}})
+	if err != nil && !ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+		return err
+	}
+	if len(children) > 0 {
+		return topologyBad("site contains domain controllers or servers")
+	}
+	top, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: &scope, Filter: "(objectClass=*)", Attributes: []string{"cn"}})
+	if err != nil {
+		return err
+	}
+	for _, child := range top {
+		n := cnFromDN(child.DN)
+		if !strings.EqualFold(n, "Servers") && !strings.EqualFold(n, "NTDS Site Settings") {
+			return topologyBad("site contains unmanaged child objects")
+		}
+	}
+	for _, child := range top {
+		if err := s.ldap.Delete(ctx, child.DN); err != nil {
+			return err
+		}
+	}
 	if err := s.ldap.Delete(ctx, dn); err != nil {
 		s.audit.Failure(actor, "site.delete", dn, ip, err)
 		return err
@@ -125,11 +165,20 @@ func (s *SubnetService) Create(ctx context.Context, subnet, site, actor, ip stri
 	if subnet == "" || site == "" {
 		return nil, fmt.Errorf("subnet and site are required")
 	}
+	prefix, err := netip.ParsePrefix(subnet)
+	if err != nil || prefix != prefix.Masked() {
+		return nil, topologyBad("a valid CIDR network prefix is required")
+	}
 	dn := BuildDN("CN", subnet, SubnetsContainerDN(s.ldap.BaseDN()))
 	siteDN := site
 	if !strings.Contains(strings.ToUpper(site), "CN=") {
 		siteDN = BuildDN("CN", site, SitesContainerDN(s.ldap.BaseDN()))
 	}
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: siteDN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=site)", Attributes: []string{"cn"}})
+	if err != nil {
+		return nil, err
+	}
+	siteDN = entry.DN
 	attrs := []ldap.Attribute{
 		{Type: ldapproto.AttrObjectClass, Vals: []string{"top", "subnet"}},
 		{Type: ldapproto.AttrCN, Vals: []string{subnet}},

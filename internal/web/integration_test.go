@@ -105,6 +105,27 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 		}
 		return result
 	}
+	// Exercise topology HTTP decoding and real LDAP writes, not only service calls.
+	request(admin, token, "POST", "/sites", map[string]any{"name": "Web-Branch"}, 201)
+	request(admin, token, "POST", "/sites/links", map[string]any{"name": "Web-WAN", "sites": []string{"Default-First-Site-Name", "Web-Branch"}, "cost": 120, "interval": 30}, 200)
+	var siteLinks []service.SiteLink
+	if e = json.Unmarshal(request(admin, token, "GET", "/sites/links", nil, 200), &siteLinks); e != nil {
+		t.Fatal(e)
+	}
+	var webLink service.SiteLink
+	for _, r := range siteLinks {
+		if r.Name == "Web-WAN" {
+			webLink = r
+		}
+	}
+	if webLink.Revision == "" || webLink.Cost != 120 || webLink.ScheduleEditable {
+		t.Fatalf("web link: %+v", webLink)
+	}
+	request(admin, token, "PUT", "/sites/links/Web-WAN/schedule", map[string]any{"revision": webLink.Revision, "schedule": []string{"", "", "", "", "", "", ""}}, 400)
+	request(admin, token, "PUT", "/sites/links/Web-WAN", map[string]any{"revision": "0", "sites": webLink.Sites, "cost": 150, "interval": 30}, 409)
+	request(admin, token, "GET", "/sites/topology", nil, 200)
+	request(admin, token, "DELETE", "/sites/links/Web-WAN", map[string]any{"revision": webLink.Revision}, 200)
+	request(admin, token, "DELETE", "/sites/Web-Branch", nil, 200)
 	id := fmt.Sprintf("%d", time.Now().UnixNano())
 	user := "web" + id
 	ouName := "WebIT-" + id

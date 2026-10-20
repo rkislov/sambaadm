@@ -50,7 +50,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Real Samba AD directory, DNS, GPO and HTTP tests
-        run: make integration
+        run: SAMBAADM_TWO_DC=1 make integration
 
   browser:
     runs-on: ubuntu-latest

@@ -24,6 +24,10 @@
   const queryFields = () => [text('name', 'Имя записи', 'Record name', {value: '@'}), text('type', 'Тип записи', 'Record type', {value: 'ALL', choices: ['ALL','A','AAAA','CNAME','MX','NS','PTR','SOA','SRV','TXT']})];
   const recordFields = () => [text('name', 'Имя записи', 'Record name', {value: '@'}), text('type', 'Тип записи', 'Record type', {value: 'A', choices: ['A','AAAA','CNAME','MX','NS','PTR','SRV','TXT']}), text('data', 'Значение записи', 'Record value')];
   const gpoID = r => r.guid;
+  const utcDays=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+  const scheduleFields=()=>utcDays.map((day,i)=>text('day'+i,day+' UTC (09:00-18:00; пусто — закрыто)',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]+' UTC (09:00-18:00; empty — closed)',{optional:true,value:'00:00-24:00'}));
+  const scheduleOperation=(path)=>action(t('Расписание UTC','UTC schedule'),'PUT',path,scheduleFields(),{revision:true,confirm:true,when:r=>r.scheduleSupported!==false&&r.scheduleEditable!==false,prefill:r=>Object.fromEntries((r.schedule||Array(7).fill('00:00-24:00')).map((v,i)=>['day'+i,v])),encode:body=>({revision:body.revision,schedule:utcDays.map((_,i)=>body['day'+i]||'')})});
+  const linkFields=()=>[text('sites','Сайты через точку с запятой','Sites separated by semicolons',{array:true}),text('cost','Стоимость (1–32767)','Cost (1–32767)',{type:'number',numeric:true,value:100}),text('interval','Интервал, минут (15–10080, шаг 15)','Interval, minutes (15–10080, step 15)',{type:'number',numeric:true,value:180})];
   const configs = {
     '/users': {title:t('Пользователи','Users'), endpoint:'/users', directory:'users', id:r=>r.samAccountName,
       columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN']],
@@ -71,11 +75,12 @@
       create:action(t('Создать доверие','Create trust'),'POST','/trusts',[text('domain','Домен','Domain'),text('direction','Направление','Direction',{choices:['both','incoming','outgoing']}),text('type','Тип','Type',{choices:['external','forest']}),{...password(),optional:true}],{confirm:true}),
       actions:[action(t('Проверить','Validate'),'POST',r=>'/trusts/'+enc(r.domain)+'/validate'),remove(r=>'/trusts/'+enc(r.domain))]},
     '/repl':{title:t('Репликация','Replication'),endpoint:'/repl/partners',id:r=>r.dn,
-      columns:[['name',t('Партнёр','Partner')],['status',t('Состояние','Status')],['dn','DN']],
-      toolbar:[view(t('Состояние репликации','Replication status'),'/repl/status'),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
+      columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
+      hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
+      toolbar:[view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
     '/sites':{title:t('Сайты','Sites'),endpoint:'/sites',id:r=>r.name,
       columns:[['name',t('Сайт','Site')],['dn','DN']],create:action(t('Создать сайт','Create site'),'POST','/sites',[name()]),
-      toolbar:[view(t('Подсети','Subnets'),'/subnets'),action(t('Создать подсеть','Create subnet'),'POST','/subnets',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Имя сайта','Site name')]),action(t('Удалить подсеть','Delete subnet'),'POST','/subnets/delete',[text('subnet','Подсеть CIDR','Subnet CIDR')],{danger:true})],actions:[remove(r=>'/sites/'+enc(r.name))]},
+      toolbar:[view(t('Топология сайтов','Site topology'),'/sites/topology'),view(t('Контроллеры','Controllers'),'/sites/controllers'),view(t('Связи сайтов','Site links'),'/sites/links'),action(t('Создать связь сайтов','Create site link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}),view(t('Подсети','Subnets'),'/subnets'),action(t('Переназначить подсеть','Reassign subnet'),'PUT','/subnets/site',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Новый сайт','New site')],{confirm:true}),action(t('Создать подсеть','Create subnet'),'POST','/subnets',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Имя сайта','Site name')]),action(t('Удалить подсеть','Delete subnet'),'POST','/subnets/delete',[text('subnet','Подсеть CIDR','Subnet CIDR')],{danger:true})],actions:[remove(r=>'/sites/'+enc(r.name))]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
@@ -310,11 +315,13 @@
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(!form.reportValidity())return;
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};
-      inputs.forEach(([f,input])=>{if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.type==='password'?input.value:input.value.trim();});
+      inputs.forEach(([f,input])=>{if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
+      if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,a.preset);
+      const payload=a.encode?a.encode(body):body;
       if(a.method==='GET'&&Object.keys(body).length)path+=(path.includes('?')?'&':'?')+new URLSearchParams(body);
       submit.disabled=true;message(notice,t('Выполняется…','Working…'));output.replaceChildren();
       try{
-        const result=await request(path,a.method,a.method==='GET'?undefined:body);
+        const result=await request(path,a.method,a.method==='GET'?undefined:payload);
         if(generation!==dialogGeneration){if(a.method!=='GET')load();return;}
         message(notice,a.job?t('Доставка запущена','Distribution started'):t('Операция выполнена','Operation completed'));
         // Passwords are never included in rendered results or retained in form controls after success.
@@ -328,7 +335,33 @@
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
   }
+  function topologyTable(parent,rows,columns,actions=[]){
+    const wrap=el('div','workspace-table');const table=el('table');const head=el('tr');columns.forEach(c=>head.append(el('th','',c[1])));if(actions.length)head.append(el('th','',t('Операции','Actions')));table.append(head);
+    for(const row of rows){const tr=el('tr');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td');for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))td.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
+  }
   function renderResult(result,parent,a,row,query) {
+    const endpoint=typeof a.path==='function'?a.path(row):a.path;
+    if(endpoint==='/sites/links'){
+ parent.append(el('p','muted',t('Расписания Site Link заблокированы из-за ошибки KCC в Samba. Расписания отдельных соединений доступны в разделе «Репликация».','Site Link schedule writes are blocked due to a Samba KCC defect. Connection schedules are available under Replication.')));
+      topologyTable(parent,result,[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Минуты','Minutes')]],
+        [action(t('Настроить связь','Configure link'),'PUT',r=>'/sites/links/'+enc(r.name),linkFields(),{revision:true,confirm:true,prefill:r=>({sites:r.sites.join(';'),cost:r.cost,interval:r.interval})}),scheduleOperation(r=>'/sites/links/'+enc(r.name)+'/schedule'),{...remove(r=>'/sites/links/'+enc(r.name)),revision:true}]);return;
+    }
+    if(endpoint==='/sites/controllers'){
+      topologyTable(parent,result,[['name',t('Контроллер','DC')],['dns','DNS'],['site',t('Сайт','Site')]],
+        [action(t('Перенести в сайт','Move to site'),'POST',r=>'/sites/controllers/'+enc(r.name)+'/move',[text('site','Новый сайт','New site')],{revision:true,confirm:true}),{...view(t('Проверить репликацию','Inspect replication'),'/repl/status',[text('dc','Контроллер','Controller')]),prefill:r=>({dc:r.dns})}]);return;
+    }
+    if(endpoint==='/sites/topology'){
+      for(const site of result.sites){const title=el('h3','',site.name);parent.append(title);const list=el('ul');for(const dc of result.controllers.filter(dc=>dc.site===site.name))list.append(el('li','',t('Контроллер: ','DC: ')+dc.dns));for(const subnet of result.subnets.filter(sub=>(sub.site||'').toLowerCase()===site.dn.toLowerCase()))list.append(el('li','',t('Подсеть: ','Subnet: ')+subnet.name));parent.append(list);}return;
+    }
+    if(endpoint==='/repl/connections'){
+      parent.append(el('p','muted',t('Автоматические соединения управляются KCC: он может восстановить их после изменений. Ручные соединения используйте осознанно.','KCC manages automatic connections and may recreate them. Use manual connections deliberately.')));
+      topologyTable(parent,result,[['source',t('Источник','Source')],['destination',t('Назначение','Destination')],['enabled',t('Включено','Enabled')],['automatic','KCC']],
+        [action(t('Включить соединение','Enable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:true},confirm:true,when:r=>!r.enabled}),action(t('Отключить соединение','Disable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:false},confirm:true,when:r=>r.enabled}),scheduleOperation(r=>'/repl/connections/'+enc(r.id)),{...remove(r=>'/repl/connections/'+enc(r.id)),revision:true}]);return;
+    }
+    if(endpoint==='/repl/status'){
+      const health={healthy:t('Успешно','Healthy'),degraded:t('Есть ошибки','Degraded'),'no-partners':t('Нет партнёров — состояние не подтверждено','No partners — health unverified')};parent.append(el('h3','',result.server||''),el('p','',health[result.health]||t('Неизвестно','Unknown')));
+      topologyTable(parent,result.neighbors||[],[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);return;
+    }
     // Keep DNS query results under the chosen zone, with explicit values for edits.
     if(cfg===configs['/dns']&&Array.isArray(result)) {
       const ul=el('ul','directory-tree');const li=el('li','',row.name);const inner=el('ul');

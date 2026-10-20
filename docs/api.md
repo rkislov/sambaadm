@@ -52,3 +52,24 @@
 | GET/POST | `/acl?path=` / body | read/admin | права на произвольный путь под `shares_root` |
 
 Также: `GET /healthz`, `GET /metrics`.
+
+## Топология и репликация v0.11.0
+
+Чтение доступно всем аутентифицированным ролям: `GET /sites/topology`, `/sites/controllers`, `/sites/links`, `/repl/connections`, `/repl/status?dc=dc2.example.com`. Последний запрос возвращает `server`, `health` (`healthy`, `degraded`, `no-partners`), `neighbors` и исходный JSON `raw`. Каждый сосед содержит `direction`, `partner`, `partition`, `lastAttempt`, `lastSuccess`, `failures`, `result`, `health`.
+
+Изменения требуют admin и CSRF:
+
+- `POST /sites/links`: `{"name":"WAN","sites":["HQ","Branch"],"cost":100,"interval":180}`.
+- `PUT /sites/links/{name}`: `{"revision":"123","sites":["HQ","Branch"],"cost":200,"interval":30}`.
+- `DELETE /sites/links/{name}`: `{"revision":"123"}`.
+- `PUT /sites/links/{name}/schedule` **заблокирован (400) из-за дефекта KCC Samba**; формат для будущей совместимости: `{"revision":"123","schedule":["","08:00-18:00","08:00-18:00","08:00-18:00","08:00-18:00","08:00-18:00",""]}`.
+- `POST /sites/controllers/{name}/move`: `{"site":"Branch","revision":"123"}`.
+- `PUT /subnets/site`: `{"subnet":"192.0.2.0/24","site":"Branch"}`.
+- `POST /repl/connections`: `{"source":"dc1.example.com","destination":"dc2.example.com"}`.
+- `PUT /repl/connections/{id}`: `{"revision":"123","enabled":false}`; также принимает `schedule` из семи строк.
+- `DELETE /repl/connections/{id}`: `{"revision":"123"}`.
+- `POST /repl/kcc`: `{"dc":"dc2.example.com"}`.
+
+`revision` читается из списка соответствующих объектов. Конфликт — 409, неверный ввод — 400, отказ LDAP/RPC — 502. Расписание: воскресенье первым, UTC, четвертьчасовые интервалы; пустая строка означает закрытый день. Неизвестный двоичный формат возвращается с `scheduleSupported:false` и не предлагается к редактированию. Эти операции не заменяют доставку файлов SYSVOL.
+
+Для Site Links `scheduleEditable:false` и `scheduleWarning` объясняют блокировку записи расписания; существующее значение читается. `schedule` в POST/PUT связи также отвергается. Расписания `/repl/connections/{id}` доступны.

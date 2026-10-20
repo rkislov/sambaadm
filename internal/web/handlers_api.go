@@ -337,7 +337,7 @@ func (s *Server) handleAPIReplPartners(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAPIReplStatus(w http.ResponseWriter, r *http.Request) {
-	st, err := s.svcs.Repl.Status(r.Context())
+	st, err := s.svcs.Repl.StatusFor(r.Context(), r.URL.Query().Get("dc"))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -361,7 +361,7 @@ func (s *Server) handleAPIReplSync(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
 	var err error
 	if body.Dest == "" {
-		err = s.svcs.Repl.SyncFrom(r.Context(), body.From, sess.Username, r.RemoteAddr)
+		err = s.svcs.Repl.Sync(r.Context(), s.svcs.Repl.DefaultDestination(), body.From, body.NC, sess.Username, r.RemoteAddr)
 	} else {
 		err = s.svcs.Repl.Sync(r.Context(), body.Dest, body.From, body.NC, sess.Username, r.RemoteAddr)
 	}
