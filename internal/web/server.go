@@ -166,6 +166,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/users", s.handleAPIUsers)
 		r.Post("/users", s.handleAPIUserCreate)
 		r.Get("/users/{login}", s.handleAPIUserGet)
+		r.Put("/users/{login}", s.handleAPIUserUpdate)
+		r.Get("/users/{login}/groups", s.handleAPIUserGroups)
 		r.Delete("/users/{login}", s.handleAPIUserDelete)
 		r.Post("/users/{login}/enable", s.handleAPIUserEnable)
 		r.Post("/users/{login}/disable", s.handleAPIUserDisable)

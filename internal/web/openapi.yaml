@@ -870,6 +870,69 @@
                   "required": true
                   "schema":
                     "type": "string"
+        "put":
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "minProperties": 2
+                            "properties":
+                                "department":
+                                    "maxLength": 64
+                                    "type": "string"
+                                "description":
+                                    "maxLength": 1024
+                                    "type": "string"
+                                "displayName":
+                                    "maxLength": 256
+                                    "type": "string"
+                                "givenName":
+                                    "maxLength": 64
+                                    "type": "string"
+                                "mail":
+                                    "maxLength": 256
+                                    "type": "string"
+                                "revision":
+                                    "type": "string"
+                                "surname":
+                                    "maxLength": 64
+                                    "type": "string"
+                                "telephone":
+                                    "maxLength": 64
+                                    "type": "string"
+                                "title":
+                                    "maxLength": 64
+                                    "type": "string"
+                            "required":
+                                - "revision"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "User profile updated"
+                "400":
+                    "description": "Invalid or unsupported attributes"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required"
+                "409":
+                    "description": "User changed; reload required"
+                "502":
+                    "description": "Directory operation failed"
+            "summary": "Update selected user attributes"
     "/users/{login}/enable":
         "post":
             "summary": "User Enable"
@@ -2076,6 +2139,35 @@
                   "required": true
                   "schema":
                     "type": "string"
+    "/users/{login}/groups":
+        "get":
+            "parameters":
+                - "in": "path"
+                  "name": "login"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "responses":
+                "200":
+                    "content":
+                        "application/json":
+                            "schema":
+                                "items":
+                                    "properties":
+                                        "dn":
+                                            "type": "string"
+                                        "name":
+                                            "type": "string"
+                                        "primary":
+                                            "type": "boolean"
+                                    "type": "object"
+                                "type": "array"
+                    "description": "Nested memberships are not expanded"
+                "401":
+                    "description": "Session required"
+                "502":
+                    "description": "Directory lookup failed"
+            "summary": "Direct user memberships and primary group"
 "components":
     "securitySchemes":
         "cookieAuth":

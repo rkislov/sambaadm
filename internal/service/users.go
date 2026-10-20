@@ -14,6 +14,12 @@ import (
 
 // User is a domain user account.
 type User struct {
+	Revision       string `json:"revision"`
+	GivenName      string `json:"givenName,omitempty"`
+	Surname        string `json:"surname,omitempty"`
+	Telephone      string `json:"telephone,omitempty"`
+	Department     string `json:"department,omitempty"`
+	Title          string `json:"title,omitempty"`
 	DN             string `json:"dn"`
 	SAMAccountName string `json:"samAccountName"`
 	DisplayName    string `json:"displayName,omitempty"`
@@ -261,6 +267,7 @@ func entryToUser(e *ldap.Entry) User {
 		}
 	}
 	return User{
+		Revision: e.GetAttributeValue("uSNChanged"), GivenName: e.GetAttributeValue("givenName"), Surname: e.GetAttributeValue("sn"), Telephone: e.GetAttributeValue("telephoneNumber"), Department: e.GetAttributeValue("department"), Title: e.GetAttributeValue("title"),
 		DN:             e.DN,
 		SAMAccountName: e.GetAttributeValue(ldapproto.AttrSAMAccountName),
 		DisplayName:    e.GetAttributeValue(ldapproto.AttrDisplayName),

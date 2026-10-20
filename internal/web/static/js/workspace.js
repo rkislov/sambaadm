@@ -28,7 +28,7 @@
     '/users': {title:t('Пользователи','Users'), endpoint:'/users', directory:'users', id:r=>r.samAccountName,
       columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN']],
       create:action(t('Создать пользователя','Create user'),'POST','/users',[text('login','Логин','Login'),text('displayName','Отображаемое имя','Display name',{optional:true}),password(),ou(),text('mail','Почта','Email',{type:'email',optional:true}),description(),text('enabled','Учётная запись включена','Account enabled',{type:'checkbox',value:true})]),
-      actions:[view(t('Свойства','Properties'),r=>'/users/'+enc(r.samAccountName)),
+      actions:[{...view(t('Свойства','Properties'),r=>'/users/'+enc(r.samAccountName)),userCard:true},
         action(t('Включить','Enable'),'POST',r=>'/users/'+enc(r.samAccountName)+'/enable',[],{support:true,when:r=>!r.enabled}),
         action(t('Отключить','Disable'),'POST',r=>'/users/'+enc(r.samAccountName)+'/disable',[],{support:true,when:r=>r.enabled,confirm:true}),
         action(t('Сбросить пароль','Reset password'),'POST',r=>'/users/'+enc(r.samAccountName)+'/password',[password()],{support:true,secret:true}),
@@ -113,7 +113,7 @@
     const type=response.headers.get('content-type')||'';
     if(!type.includes('application/json')) throw new Error(t('Сервер вернул неожиданный ответ. Обновите страницу.','Unexpected server response. Reload this page.'));
     const result=await response.json();
-    if(!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+    if(!response.ok) {const error=new Error(result.error || `HTTP ${response.status}`);error.status=response.status;throw error;}
     return result;
   }
   const head=el('div','workspace-head');
@@ -217,6 +217,43 @@
   }
   function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
+  async function openUserCard(a,row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    const tabs=el('div','workspace-tools');let activeTab='profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));tabs.append(profileTab,groupsTab,button(t('Перезагрузить карточку','Reload profile'),refresh),button(t('Закрыть','Close'),closeOperation));dialog.append(title,notice,tabs,body);dialog.showModal();
+    function selectTab(tab){activeTab=tab;for(const part of body.children)part.hidden=part.dataset.profileTab!==tab;profileTab.setAttribute('aria-pressed',String(tab==='profile'));groupsTab.setAttribute('aria-pressed',String(tab==='groups'));}
+    const path='/users/'+enc(row.samAccountName);let profile;
+    async function refresh(){message(notice,t('Загрузка…','Loading…'));body.replaceChildren();try{const user=await request(path);if(generation!==dialogGeneration)return;profile=user;render();message(notice,'');}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}
+    function render(){
+      body.replaceChildren();const attributes=el('section');attributes.dataset.profileTab='profile';body.append(attributes);describe({[t('Логин','Login')]:profile.samAccountName,UPN:profile.userPrincipalName||'',DN:profile.dn,[t('Состояние','Status')]:profile.enabled?t('Включён','Enabled'):t('Отключён','Disabled')},attributes);
+      const form=el('form','workspace-form');const fields=[['displayName','Отображаемое имя','Display name'],['givenName','Имя','First name'],['surname','Фамилия','Last name'],['mail','Почта','Email'],['telephone','Телефон','Phone'],['department','Подразделение организации','Department'],['title','Должность','Job title'],['description','Описание','Description']];
+      const controls=[];
+      for(const [key,ruLabel,enLabel] of fields){const label=el('label','',t(ruLabel,enLabel));const input=el('input');input.type=key==='mail'?'email':'text';input.value=profile[key]||'';input.disabled=!admin;input.maxLength=['givenName','surname','telephone','department','title'].includes(key)?64:key==='description'?1024:256;label.append(input);form.append(label);controls.push([key,input]);}
+      if(admin){const save=el('button','',t('Сохранить атрибуты','Save attributes'));save.type='submit';form.append(save);
+        form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;const patch={revision:profile.revision};for(const [key,input] of controls)if(input.value!==(profile[key]||''))patch[key]=input.value;
+          if(Object.keys(patch).length===1){message(notice,t('Нет изменений','No changes'));return;}save.disabled=true;
+          try{const updated=await request(path,'PUT',patch);if(generation!==dialogGeneration)return;profile=updated;render();message(notice,t('Атрибуты сохранены','Attributes saved'));await load();}
+          catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);save.disabled=err.status===409;}
+        });
+      }attributes.append(form);
+      const account=el('div','workspace-tools');cfg.actions.slice(1).forEach(action=>addAction(account,action,profile));attributes.append(account);
+      const groups=el('section');groups.dataset.profileTab='groups';groups.append(el('h3','',t('Группы пользователя','User groups')),el('p','muted',t('Прямое членство и основная группа. Вложенные группы здесь не перечисляются.','Direct memberships and primary group. Nested memberships are not listed.')));body.append(groups);
+      let knownGroups=new Set();
+      const groupNotice=el('p','workspace-message');groupNotice.setAttribute('aria-live','polite');const members=el('div');groups.append(groupNotice,members);
+      async function refreshGroups(){try{const data=await request(path+'/groups');if(generation!==dialogGeneration||!groups.isConnected)return;knownGroups=new Set(data.map(g=>g.name.toLowerCase()));members.replaceChildren();
+        if(!data.length)members.append(el('p','muted',t('Группы не найдены','No groups found')));
+        for(const group of data){const line=el('div','workspace-tools');line.append(el('span','',group.name+(group.primary?t(' — основная группа',' — primary group'):'')));if(admin&&!group.primary){const remove=button(t('Исключить из группы','Remove from group'),()=>mutateGroup(group,'DELETE',remove));remove.setAttribute('aria-label',t('Исключить из ','Remove from ')+group.name);line.append(remove);}members.append(line);}
+      }catch(err){if(generation===dialogGeneration&&groups.isConnected){message(groupNotice,err.message,true);members.replaceChildren(button(t('Повторить загрузку групп','Retry groups'),refreshGroups));}}}
+      async function mutateGroup(group,method,trigger){trigger.disabled=true;try{await request('/groups/'+enc(group.name)+'/members',method,{memberDN:profile.dn});if(generation!==dialogGeneration||!groups.isConnected)return;message(groupNotice,t('Членство обновлено','Membership updated'));await refreshGroups();}catch(err){if(generation===dialogGeneration&&groups.isConnected)message(groupNotice,err.message,true);}finally{trigger.disabled=method==='POST'&&knownGroups.has(group.name.toLowerCase());}}
+      if(admin){const search=el('form','workspace-form');const label=el('label','',t('Найти группу','Find group'));const input=el('input');input.required=true;input.maxLength=128;label.append(input);search.append(label);const find=el('button','',t('Найти группы','Search groups'));find.type='submit';search.append(find);const results=el('div');search.append(results);groups.append(search);
+        search.addEventListener('submit',async e=>{e.preventDefault();if(!search.reportValidity())return;find.disabled=true;results.replaceChildren();try{const matches=await request('/groups?q='+enc(input.value.trim()));if(generation!==dialogGeneration||!groups.isConnected)return;for(const match of matches){const line=el('div','workspace-tools');line.append(el('span','',match.samAccountName));const add=button(t('Добавить в группу','Add to group'),()=>mutateGroup({name:match.samAccountName},'POST',add));add.setAttribute('aria-label',t('Добавить в ','Add to ')+match.samAccountName);add.disabled=knownGroups.has(match.samAccountName.toLowerCase());line.append(add);results.append(line);}if(!matches.length)results.append(el('p','muted',t('Группы не найдены','No groups found')));}catch(err){if(generation===dialogGeneration&&groups.isConnected)message(groupNotice,err.message,true);}finally{find.disabled=false;}});
+      }
+      selectTab(activeTab);refreshGroups();
+    }
+    await refresh();
+  }
+
   async function openALTEditor(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики systemd для компьютеров ALT. Включение задаёт автозапуск службы; применение проверяется на клиенте.','ALT computer systemd policies. Enabled configures service startup; verify application on the client.')));
@@ -244,6 +281,7 @@
     await refresh();
   }
   async function openOperation(a,row) {
+    if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);

@@ -41,6 +41,7 @@ const GroupTypeGlobalSecurity = "-2147483646"
 // Default attribute sets for common object types.
 var (
 	UserAttrs = []string{
+		"uSNChanged", "telephoneNumber", "department", "title", "primaryGroupID",
 		AttrCN, AttrSN, AttrGivenName, AttrDisplayName,
 		AttrSAMAccountName, AttrUserPrincipal, AttrMail,
 		AttrMemberOf, AttrUserAccountCtrl, AttrDescription,
