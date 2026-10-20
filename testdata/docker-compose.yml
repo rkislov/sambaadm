@@ -5,6 +5,9 @@ services:
     build: ./samba
     hostname: dc1
     domainname: sambaadm.test
+    networks:
+      default:
+        aliases: [dc1.sambaadm.test]
     environment:
       SAMBAADM_LAB_PASSWORD: "Lab-Only-Adm1n-Pass!"
     ports:

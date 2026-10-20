@@ -1375,18 +1375,25 @@
                     "description": "Directory or system operation failed"
     "/repl/status":
         "get":
-            "summary": "Repl Status"
+            "parameters":
+                - "in": "query"
+                  "name": "dc"
+                  "schema":
+                    "type": "string"
             "responses":
                 "200":
                     "description": "Operation result"
                 "400":
-                    "description": "Invalid input"
+                    "description": "Invalid input or blocked Site Link schedule"
                 "401":
                     "description": "Session required"
                 "403":
-                    "description": "Role or CSRF check failed"
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
                 "502":
-                    "description": "Directory or system operation failed"
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Structured DRS status; registered DCs are not proof of health"
     "/repl/sync":
         "post":
             "summary": "Repl Sync"
@@ -2168,6 +2175,498 @@
                 "502":
                     "description": "Directory lookup failed"
             "summary": "Direct user memberships and primary group"
+    "/sites/topology":
+        "get":
+            "parameters": []
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Sites with controllers and subnets"
+    "/sites/controllers":
+        "get":
+            "parameters": []
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Domain controllers and revisions"
+    "/repl/connections":
+        "post":
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "destination":
+                                    "type": "string"
+                                "source":
+                                    "type": "string"
+                            "required":
+                                - "source"
+                                - "destination"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Create manual source to destination connection"
+        "get":
+            "parameters": []
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Replication connections and schedules"
+    "/sites/links/{name}":
+        "put":
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "cost":
+                                    "maximum": 32767
+                                    "minimum": 1
+                                    "type": "integer"
+                                "interval":
+                                    "maximum": 10080
+                                    "minimum": 15
+                                    "multipleOf": 15
+                                    "type": "integer"
+                                "revision":
+                                    "type": "string"
+                                "sites":
+                                    "items":
+                                        "type": "string"
+                                    "type": "array"
+                            "required":
+                                - "revision"
+                                - "sites"
+                                - "cost"
+                                - "interval"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Update Site Link cost, interval and sites"
+        "delete":
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "revision":
+                                    "type": "string"
+                            "required":
+                                - "revision"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Delete Site Link"
+    "/sites/links/{name}/schedule":
+        "put":
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "revision":
+                                    "type": "string"
+                                "schedule":
+                                    "description": "Seven UTC days, Sunday first; comma-separated quarter-hour HH:MM-HH:MM intervals. Empty day is closed."
+                                    "items":
+                                        "type": "string"
+                                    "maxItems": 7
+                                    "minItems": 7
+                                    "type": "array"
+                            "required":
+                                - "revision"
+                                - "schedule"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Blocked: Samba KCC Site Link schedule defect (400)"
+    "/sites/controllers/{name}/move":
+        "post":
+            "parameters":
+                - "in": "path"
+                  "name": "name"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "revision":
+                                    "type": "string"
+                                "site":
+                                    "type": "string"
+                            "required":
+                                - "revision"
+                                - "site"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Move controller to existing site"
+    "/subnets/site":
+        "put":
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "site":
+                                    "type": "string"
+                                "subnet":
+                                    "type": "string"
+                            "required":
+                                - "subnet"
+                                - "site"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Reassign subnet to existing site"
+    "/repl/kcc":
+        "post":
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "dc":
+                                    "type": "string"
+                            "required":
+                                - "dc"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Recalculate topology on configured DC"
+    "/sites/links":
+        "get":
+            "parameters": []
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "IP Site Links; scheduleEditable is false due to Samba KCC defect"
+        "post":
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "cost":
+                                    "maximum": 32767
+                                    "minimum": 1
+                                    "type": "integer"
+                                "interval":
+                                    "maximum": 10080
+                                    "minimum": 15
+                                    "multipleOf": 15
+                                    "type": "integer"
+                                "name":
+                                    "type": "string"
+                                "sites":
+                                    "items":
+                                        "type": "string"
+                                    "type": "array"
+                            "required":
+                                - "name"
+                                - "sites"
+                                - "cost"
+                                - "interval"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Create IP Site Link; at least two distinct sites"
+    "/repl/connections/{id}":
+        "put":
+            "parameters":
+                - "in": "path"
+                  "name": "id"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "enabled":
+                                    "type": "boolean"
+                                "revision":
+                                    "type": "string"
+                                "schedule":
+                                    "description": "Seven UTC days, Sunday first; comma-separated quarter-hour HH:MM-HH:MM intervals. Empty day is closed."
+                                    "items":
+                                        "type": "string"
+                                    "maxItems": 7
+                                    "minItems": 7
+                                    "type": "array"
+                            "required":
+                                - "revision"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Update connection state or user-owned UTC schedule"
+        "delete":
+            "parameters":
+                - "in": "path"
+                  "name": "id"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "content":
+                    "application/json":
+                        "schema":
+                            "additionalProperties": false
+                            "properties":
+                                "revision":
+                                    "type": "string"
+                            "required":
+                                - "revision"
+                            "type": "object"
+                "required": true
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input or blocked Site Link schedule"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Admin role or CSRF required for mutations"
+                "409":
+                    "description": "Object changed; reload required"
+                "502":
+                    "description": "LDAP or Samba RPC failed"
+            "summary": "Delete connection; KCC may recreate generated connections"
 "components":
     "securitySchemes":
         "cookieAuth":

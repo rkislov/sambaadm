@@ -4,7 +4,13 @@ set -eu
 cd "$(dirname "$0")/../.."
 project="sambaadm-it-$$"
 work=$(mktemp -d)
-compose() { docker compose -p "$project" -f testdata/docker-compose.yml "$@"; }
+compose() {
+ if [ "${SAMBAADM_TWO_DC:-0}" = 1 ]; then
+  docker compose -p "$project" -f testdata/docker-compose.yml -f testdata/docker-compose.two-dc.yml "$@"
+ else
+  docker compose -p "$project" -f testdata/docker-compose.yml "$@"
+ fi
+}
 cleanup() {
     result=$?
     trap - EXIT
@@ -15,7 +21,8 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-compose up -d --build --wait --wait-timeout 180
+if [ "${SAMBAADM_TWO_DC:-0}" = 1 ]; then SAMBAADM_IT_SECOND_DC=dc2.sambaadm.test; export SAMBAADM_IT_SECOND_DC; fi
+compose up -d --build --wait --wait-timeout 240
 case "$(compose exec -T dc uname -m | tr -d '\r')" in
     aarch64) arch=arm64 ;;
     x86_64) arch=amd64 ;;
@@ -26,6 +33,6 @@ for package in service web; do
     compose cp "$work/$package.test" "dc:/tmp/$package.test"
     compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST \
         -e SAMBAADM_IT_URI=ldaps://127.0.0.1:636 \
-        -e SAMBAADM_IT_USER=Administrator@sambaadm.test dc \
+        -e SAMBAADM_IT_USER=Administrator@sambaadm.test -e SAMBAADM_IT_SECOND_DC="${SAMBAADM_IT_SECOND_DC:-}" dc \
         sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run Integration -test.v -test.timeout 4m' sh "$package"
 done
