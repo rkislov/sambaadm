@@ -28,6 +28,25 @@ func TestIntegrationTwoDCTopology(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	// A new DC can still be running its startup KCC pass after LDAP becomes
+	// healthy. DsExecuteKCC then returns DS_BUSY; retry this idempotent test
+	// request with a bound, while preserving persistent KCC failures.
+	kcc := func(server string) {
+		t.Helper()
+		var last error
+		for attempt := 0; attempt < 15; attempt++ {
+			last = s.Repl.KCC(ctx, server, actor, ip)
+			if last == nil {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				t.Fatal(ctx.Err())
+			case <-time.After(time.Second):
+			}
+		}
+		t.Fatal(last)
+	}
 	controllers, e := s.Sites.Controllers(ctx)
 	must(e)
 	if len(controllers) != 2 {
@@ -162,10 +181,10 @@ func TestIntegrationTwoDCTopology(t *testing.T) {
 	if !conn.Enabled || conn.Schedule[1] != days[1] {
 		t.Fatalf("connection schedule: %+v", conn)
 	}
-	must(s.Repl.KCC(ctx, "dc1.sambaadm.test", actor, ip))
+	kcc("dc1.sambaadm.test")
 	// Configuration moves must reach DC2 before its own KCC recalculates topology.
 	must(s.Repl.Sync(ctx, dc2.DNS, "dc1.sambaadm.test", "CN=Configuration,"+cfg.BaseDN, actor, ip))
-	must(s.Repl.KCC(ctx, dc2.DNS, actor, ip))
+	kcc(dc2.DNS)
 	conn = getConnection()
 	if conn.Schedule[1] != days[1] {
 		t.Fatalf("KCC lost user-owned connection schedule: %+v", conn)
