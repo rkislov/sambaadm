@@ -17,6 +17,7 @@ var (
 	realm   string
 	jsonOut bool
 	verbose bool
+	debug   bool
 
 	rootCfg *config.Config
 )
@@ -44,6 +45,9 @@ var rootCmd = &cobra.Command{
 			// realm is used by Kerberos bind; stored for later stages
 			_ = realm
 		}
+		if verbose || debug {
+			cfg.Logging.Level = "debug"
+		}
 		rootCfg = cfg
 		return nil
 	},
@@ -64,6 +68,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVarP(&user, "user", "U", "", "bind user")
 	rootCmd.PersistentFlags().StringVar(&realm, "realm", "", "Kerberos realm")
 	rootCmd.PersistentFlags().BoolVar(&jsonOut, "json", false, "JSON output")
+	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "debug logging and startup diagnostics (no passwords)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose logging")
 
 	rootCmd.AddCommand(versionCmd)
