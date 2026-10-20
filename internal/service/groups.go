@@ -141,11 +141,20 @@ func (s *GroupService) Members(ctx context.Context, name string) ([]string, erro
 
 func (s *GroupService) find(ctx context.Context, name string) (*ldap.Entry, error) {
 	esc := ldap.EscapeFilter(name)
-	filter := fmt.Sprintf("(&(objectClass=group)(|(sAMAccountName=%s)(cn=%s)))", esc, esc)
-	return s.ldap.SearchOne(ctx, ldapproto.SearchOptions{
-		Filter:     filter,
-		Attributes: ldapproto.GroupAttrs,
-	})
+	// A selected sAMAccountName must not resolve to another group's CN.
+	for _, attribute := range []string{"sAMAccountName", "cn"} {
+		entries, err := s.ldap.Search(ctx, ldapproto.SearchOptions{Filter: fmt.Sprintf("(&(objectClass=group)(%s=%s))", attribute, esc), Attributes: ldapproto.GroupAttrs})
+		if err != nil {
+			return nil, err
+		}
+		if len(entries) > 1 {
+			return nil, fmt.Errorf("ambiguous group: %s", name)
+		}
+		if len(entries) == 1 {
+			return entries[0], nil
+		}
+	}
+	return nil, ldap.NewError(ldap.LDAPResultNoSuchObject, fmt.Errorf("group not found: %s", name))
 }
 
 func entryToGroup(e *ldap.Entry) Group {

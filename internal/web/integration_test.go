@@ -117,9 +117,46 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 	if !bytes.Contains(tree, []byte(user)) {
 		t.Fatal("created user missing from HTTP directory tree")
 	}
+	var initial service.User
+	if e = json.Unmarshal(request(admin, token, "GET", "/users/"+user, nil, 200), &initial); e != nil {
+		t.Fatal(e)
+	}
+	fields := map[string]string{"revision": initial.Revision, "displayName": "Updated User", "givenName": "Иван", "surname": "Тестовый", "mail": "user@example.test", "telephone": "12345", "department": "IT", "title": "Engineer", "description": "Profile test"}
+	updatedBytes := request(admin, token, "PUT", "/users/"+user, fields, 200)
+	var updated service.User
+	if e = json.Unmarshal(updatedBytes, &updated); e != nil || updated.DN != initial.DN || updated.Mail != "user@example.test" || updated.GivenName != "Иван" || updated.Revision == initial.Revision {
+		t.Fatalf("profile update: %s %v", updatedBytes, e)
+	}
+	request(admin, token, "PUT", "/users/"+user, fields, 409)
+	request(admin, token, "PUT", "/users/"+user, map[string]string{"revision": updated.Revision, "enabled": "false"}, 400)
+	request(admin, token, "PUT", "/users/"+user, map[string]string{"revision": updated.Revision, "mail": ""}, 200)
+	var memberships []service.UserGroup
+	if e = json.Unmarshal(request(admin, token, "GET", "/users/"+user+"/groups", nil, 200), &memberships); e != nil {
+		t.Fatal(e)
+	}
+	primary := false
+	for _, group := range memberships {
+		if group.Primary {
+			primary = true
+		}
+	}
+	if !primary {
+		t.Fatalf("primary group absent: %+v", memberships)
+	}
+	groupName := "profile" + id
+	request(admin, token, "POST", "/groups", map[string]string{"name": groupName, "ou": ouDN}, 201)
+	defer func() { request(admin, token, "DELETE", "/groups/"+groupName, nil, 200) }()
+	request(admin, token, "POST", "/groups/"+groupName+"/members", map[string]string{"memberDN": initial.DN}, 200)
+	if data := request(admin, token, "GET", "/users/"+user+"/groups", nil, 200); !bytes.Contains(data, []byte(groupName)) {
+		t.Fatal("direct group absent from profile")
+	}
+	request(admin, token, "DELETE", "/groups/"+groupName+"/members", map[string]string{"memberDN": initial.DN}, 200)
 	request(admin, token, "POST", "/users/"+user+"/password", map[string]string{"password": "Web-User-New-Pass2!"}, 200)
 	viewer, viewerToken := login(user+"@sambaadm.test", "Web-User-New-Pass2!")
 	request(viewer, viewerToken, "GET", "/users", nil, 200)
+	request(viewer, viewerToken, "PUT", "/users/"+user, fields, 403)
+	request(admin, "", "PUT", "/users/"+user, fields, 403)
+	request(viewer, viewerToken, "GET", "/users/"+user+"/groups", nil, 200)
 	request(viewer, viewerToken, "POST", "/users/"+user+"/disable", map[string]string{}, 403)
 	request(admin, "", "POST", "/users/"+user+"/disable", map[string]string{}, 403)
 	request(admin, token, "POST", "/users/"+user+"/disable", map[string]string{}, 200)
