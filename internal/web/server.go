@@ -157,6 +157,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/domain/fsmo/seize", s.handleAPIFSMOSeize)
 		r.Post("/domain/level/raise", s.handleAPILevelRaise)
 		r.Get("/gpo/{gpo}", s.handleAPIGPOGet)
+		r.Get("/gpo/{gpo}/alt-settings", s.handleAPIGPOALT)
+		r.Put("/gpo/{gpo}/alt-settings", s.handleAPIGPOALTSet)
 		r.Get("/gpo/links", s.handleAPIGPOLinks)
 		r.Put("/dns/zones/{zone}/records", s.handleAPIDNSRecordUpdate)
 		r.Post("/shares/reload", s.handleAPIShareReload)

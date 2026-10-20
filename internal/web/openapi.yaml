@@ -447,6 +447,79 @@
                   "required": true
                   "schema":
                     "type": "string"
+    "/gpo/{gpo}/alt-settings":
+        "get":
+            "summary": "GPOALT"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "409":
+                    "description": "Policy revision changed; reload required"
+                "503":
+                    "description": "Local ALT policy editor is not configured"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "put":
+            "summary": "GPOALTSet"
+            "responses":
+                "200":
+                    "description": "Operation result"
+                "400":
+                    "description": "Invalid input"
+                "401":
+                    "description": "Session required"
+                "403":
+                    "description": "Role or CSRF check failed"
+                "502":
+                    "description": "Directory or system operation failed"
+                "409":
+                    "description": "Policy revision changed; reload required"
+                "503":
+                    "description": "Local ALT policy editor is not configured"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "id":
+                                    "type": "string"
+                                "state":
+                                    "type": "string"
+                                    "enum":
+                                        - "not-configured"
+                                        - "enabled"
+                                        - "disabled"
+                                "revision":
+                                    "type": "string"
+                            "required":
+                                - "id"
+                                - "state"
+                                - "revision"
     "/gpo/links":
         "get":
             "summary": "GPOLinks"
