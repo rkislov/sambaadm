@@ -11,6 +11,7 @@ import (
 
 // Config holds all runtime settings. Priority: flags > ENV > file > defaults.
 type Config struct {
+	Source  string        `mapstructure:"-"`
 	Server  ServerConfig  `mapstructure:"server"`
 	LDAP    LDAPConfig    `mapstructure:"ldap"`
 	Auth    AuthConfig    `mapstructure:"auth"`
@@ -102,9 +103,7 @@ func Load(cfgFile string) (*Config, error) {
 	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			// Explicit path that failed is an error; missing default file is OK.
-			if cfgFile != "" {
-				return nil, fmt.Errorf("read config: %w", err)
-			}
+			return nil, fmt.Errorf("read config: %w", err)
 		}
 	}
 
@@ -112,10 +111,15 @@ func Load(cfgFile string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	cfg.Source = v.ConfigFileUsed()
 	return &cfg, nil
 }
 
 func setDefaults(v *viper.Viper) {
+	for _, key := range []string{"ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file"} {
+		v.SetDefault(key, "")
+	}
+	v.SetDefault("gpo.editor_enabled", false)
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)
 	v.SetDefault("ldap.uri", "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi")

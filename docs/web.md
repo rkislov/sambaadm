@@ -180,3 +180,13 @@ DRS-синхронизация передаёт выбранный раздел 
 Формат расписания соответствует [SCHEDULE_HEADER Microsoft](https://learn.microsoft.com/en-us/windows/win32/api/schedule/ns-schedule-schedule_header); команды диагностики — [samba-tool](https://www.samba.org/samba/docs/current/man-html/samba-tool.8.html).
 
 Ограничение Site Link подтверждено стендом и [исходником Samba 4.17](https://github.com/samba-team/samba/blob/samba-4.17.12/python/samba/kcc/kcc_utils.py). При сохранении расписания соединения устанавливается флаг пользовательского расписания, чтобы KCC не заменял его автоматически. Отсутствующее расписание соединения отображается как закрытые дни.
+
+## Отладка запуска v0.11.1
+
+Запуск с диагностикой: `sambaadm serve --config /etc/sambaadm/config.yaml --listen=:8081 --debug`. Также работают `--verbose` (`-v`), `SAMBAADM_LOGGING_LEVEL=debug` и `logging.level: debug` в YAML. Флаги debug/verbose имеют приоритет над уровнем в конфигурации.
+
+В stderr выводятся версия и платформа, реально выбранный файл конфигурации, рабочий каталог, адрес HTTP, TLS, LDAP URI и Base DN, имя служебной учётной записи, имя переменной пароля и признак её наличия, пути Samba/SYSVOL/ADMX и доступность утилит. Значение пароля, тело HTTP-запроса и полный список переменных окружения не выводятся. Проверяются служебный LDAP-вход и чтение Base DN; ошибки DNS, подключения, TLS и Bind показываются с подсказкой. Debug также включает журнал HTTP с методом, путём, статусом и длительностью.
+
+Проверка LDAP без запуска веб-сервера: `sambaadm serve --config /etc/sambaadm/config.yaml --check`. Код 0 означает успешный служебный Bind и чтение Base DN; ненулевой код — ошибку настройки или LDAP. Отсутствие необязательных утилит выводится предупреждением: такая проверка не подтверждает работоспособность всех операций Samba/GPO. Обычный запуск с debug продолжает запуск HTTP при недоступном LDAP, чтобы можно было открыть интерфейс; ошибка открытия HTTP-порта завершает процесс. Сообщение «listening» появляется только после открытия порта.
+
+Для сохранения лога: `sambaadm serve --config /etc/sambaadm/config.yaml --debug 2> sambaadm-debug.log`. Для systemd задайте `SAMBAADM_LOGGING_LEVEL=debug` в EnvironmentFile сервиса (`/etc/sambaadm/env`), перезапустите сервис и смотрите `journalctl -u sambaadm -b -f`.
