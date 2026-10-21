@@ -40,13 +40,13 @@ const GroupTypeGlobalSecurity = "-2147483646"
 
 // Default attribute sets for common object types.
 var (
-	UserAttrs = []string{
+	UserAttrs = append([]string{
 		"uSNChanged", "telephoneNumber", "department", "title", "primaryGroupID",
 		AttrCN, AttrSN, AttrGivenName, AttrDisplayName,
 		AttrSAMAccountName, AttrUserPrincipal, AttrMail,
 		AttrMemberOf, AttrUserAccountCtrl, AttrDescription,
 		AttrWhenCreated, AttrWhenChanged, AttrObjectGUID, AttrObjectSID,
-	}
+	}, UserProfileAttrs...)
 	GroupAttrs = []string{
 		AttrCN, AttrSAMAccountName, AttrDescription, AttrMember,
 		AttrObjectGUID, AttrObjectSID, AttrWhenCreated,
@@ -56,3 +56,11 @@ var (
 		AttrDescription, AttrUserAccountCtrl, AttrObjectGUID, AttrObjectSID,
 	}
 )
+
+// Explicit textual allowlist: never request arbitrary or secret attributes.
+var UserProfileAttrs = []string{
+	"initials", "physicalDeliveryOfficeName", "wWWHomePage", "mobile", "homePhone", "pager", "facsimileTelephoneNumber",
+	"streetAddress", "l", "st", "postalCode", "co", "company", "division", "employeeID", "employeeNumber", "manager",
+	"whenCreated", "whenChanged", "accountExpires", "pwdLastSet", "lastLogonTimestamp", "lockoutTime", "badPwdCount",
+	"userAccountControl", "primaryGroupID", "profilePath", "homeDirectory", "homeDrive", "scriptPath", "userWorkstations",
+}

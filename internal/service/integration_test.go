@@ -409,3 +409,53 @@ print("Samba preg accepted generated Registry.pol")`
 	}
 	t.Log("created GPO, linked it to OU, read details, backed up files, restored into a new GPO and unlinked")
 }
+
+func TestIntegrationUnicodeUserProfile(t *testing.T) {
+	s, _ := integrationServices(t, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	ou, err := s.OU.Create(ctx, CreateOUInput{Name: "Проверка, кириллица " + suffix}, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.OU.Delete(context.Background(), ou.DN, "integration", ""); err != nil {
+			t.Error(err)
+		}
+	})
+	login := "unicode" + suffix
+	user, err := s.Users.Create(ctx, CreateUserInput{Login: login, DisplayName: "Приёмная Иванова " + suffix, OU: ou.DN}, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.Users.Delete(context.Background(), login, "integration", ""); err != nil {
+			t.Error(err)
+		}
+	})
+	parent, _ := ldap.ParseDN(ou.DN)
+	child, _ := ldap.ParseDN(user.DN)
+	if !parent.AncestorOfFold(child) {
+		t.Fatalf("wrong OU: %s", user.DN)
+	}
+	updated, err := s.Users.Update(ctx, login, UpdateUserInput{Revision: user.Revision, Attributes: map[string]string{"company": "Организация", "l": "Москва", "mobile": "+7 000 0000000"}}, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(updated.Attributes["l"], "") != "Москва" || strings.Join(updated.Attributes["company"], "") != "Организация" {
+		t.Fatalf("attributes not saved: %+v", updated.Attributes)
+	}
+	users, err := s.Users.List(ctx, ou.DN, "  Иванова  ")
+	if err != nil || len(users) != 1 || users[0].SAMAccountName != login {
+		t.Fatalf("Cyrillic search: %+v %v", users, err)
+	}
+	_, err = s.Users.Update(ctx, login, UpdateUserInput{Revision: user.Revision, Attributes: map[string]string{"l": "Другой город"}}, "integration", "")
+	if !errors.Is(err, ErrUserConflict) {
+		t.Fatalf("stale update allowed: %v", err)
+	}
+	updated, err = s.Users.Update(ctx, login, UpdateUserInput{Revision: updated.Revision, Attributes: map[string]string{"mobile": ""}}, "integration", "")
+	if err != nil || len(updated.Attributes["mobile"]) != 0 {
+		t.Fatalf("clear mobile: %+v %v", updated, err)
+	}
+}

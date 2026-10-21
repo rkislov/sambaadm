@@ -102,3 +102,21 @@
 Мутации и профили Samba требуют admin и CSRF. Остальное чтение требует сессию.
 Конфликты ревизий возвращают 409; некорректные запросы — 400. Неизвестные ACE
 сохраняются, автоматическое редактирование их семантики не поддерживается.
+
+### Расширенные атрибуты пользователя
+
+`GET /api/v1/users/{login}` дополнительно возвращает `name` (CN) и `attributes`:
+словарь явно разрешённых текстовых LDAP-атрибутов со списками значений.
+`PUT /api/v1/users/{login}` принимает `revision` и частичный словарь `attributes`
+со строковыми значениями, например:
+
+```json
+{"revision":"12345","attributes":{"company":"Организация","l":"Москва","mobile":""}}
+```
+
+Пустая строка удаляет атрибут; пропущенные поля не изменяются. Допустимы initials,
+physicalDeliveryOfficeName, wWWHomePage, mobile, homePhone, pager,
+facsimileTelephoneNumber, streetAddress, l, st, postalCode, co, company, division,
+employeeID, employeeNumber. Остальные ключи отклоняются с 400. Изменение доступно
+только admin, требует CSRF и актуальной revision; конфликт возвращает 409.
+Все изменения используют прежнюю LDAP assertion-проверку uSNChanged и журнал аудита.

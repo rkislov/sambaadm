@@ -258,14 +258,25 @@ configs/               примеры конфигурации
 ## Установка на Linux (systemd)
 
 ```bash
-sudo install -m 755 sambaadm-linux-amd64 /usr/local/bin/sambaadm
-sudo mkdir -p /etc/sambaadm /var/log/sambaadm
-sudo cp configs/config.example.yaml /etc/sambaadm/config.yaml
-sudo cp deploy/sambaadm.service /etc/systemd/system/
-# отредактируйте /etc/sambaadm/config.yaml и ENV с паролем
-sudo systemctl daemon-reload
+# Из каталога исходников соответствующей версии:
+sudo sh deploy/install.sh ./sambaadm-linux-amd64
+sudoedit /etc/sambaadm/config.yaml
+sudoedit /etc/sambaadm/env
+# В env: SAMBAADM_PASSWORD="пароль служебной доменной записи"
 sudo systemctl enable --now sambaadm
+sudo journalctl -u sambaadm -n 100 --no-pager
 ```
+
+Скрипт создаёт системного пользователя и группу `sambaadm`, каталог журналов
+с нужным владельцем и обязательный `/etc/sambaadm/env`. Существующие YAML и env
+не перезаписываются. Сам сервис скрипт не запускает: сначала настройте подключение.
+При обновлении уже работающего сервиса выполните `sudo systemctl restart sambaadm`.
+
+`User=sambaadm` — локальная учётная запись процесса. Доменными операциями управляет
+`ldap.bind.user` из конфигурации (пароль из переменной, указанной в `password_env`).
+Вход администратора домена в браузере **не переключает** служебную доменную запись.
+Отказ `ERROR_DS_DRA_ACCESS_DENIED` нужно проверять для этой записи на выбранном DC.
+Отсутствие локального пользователя — другая ошибка: systemd не сможет запустить процесс.
 
 ---
 

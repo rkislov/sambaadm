@@ -47,3 +47,15 @@ func TestGroupSelectionPrefersUniqueAccountName(t *testing.T) {
 		})
 	}
 }
+
+func TestExtendedProfileRejectsSecurityAndInvalidValues(t *testing.T) {
+	for _, attrs := range []map[string]string{
+		{"unicodePwd": "secret"}, {"userAccountControl": "512"}, {"manager": "CN=Other"},
+		{"company": "bad\nvalue"}, {"initials": "1234567"},
+	} {
+		_, err := (&UserService{}).Update(context.Background(), "alice", UpdateUserInput{Revision: "1", Attributes: attrs}, "actor", "")
+		if !errors.Is(err, ErrUserInput) {
+			t.Fatalf("expected validation failure for %v: %v", attrs, err)
+		}
+	}
+}

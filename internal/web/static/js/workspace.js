@@ -128,7 +128,7 @@
   const status=el('p','workspace-message');status.setAttribute('aria-live','polite');root.append(status);
   if(cfg.hint)root.append(el('p','muted',cfg.hint));
   const filter=el('form','workspace-filter');const searchInput=el('input');searchInput.type='search';searchInput.placeholder=t('Поиск по списку','Search list');searchInput.setAttribute('aria-label',searchInput.placeholder);
-  filter.append(searchInput,button(t('Найти','Search'),()=>{search=searchInput.value;renderRows();}));filter.addEventListener('submit',e=>{e.preventDefault();search=searchInput.value;renderRows();});root.append(filter);
+  filter.append(searchInput,button(t('Найти','Search'),()=>{search=searchInput.value;renderRows();}));filter.addEventListener('submit',e=>{e.preventDefault();search=searchInput.value;renderRows();});root.append(filter);searchInput.addEventListener('input',()=>{search=searchInput.value;renderRows();});filter.append(el('span','muted',t('Поиск по имени, логину и атрибутам в выбранной ветви. Для всего домена выберите «Все объекты».','Search name, login and attributes in the selected branch. Select All objects to search the whole domain.')));
   const content=el('div','workspace-columns');const sidebar=el('aside','workspace-tree');sidebar.setAttribute('aria-label',t('Дерево объектов','Object hierarchy'));const main=el('section','workspace-list');content.append(sidebar,main);root.append(content);
   const selection=el('p','workspace-selection');main.append(selection);
   const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>tr.append(el('th','',c[1])));tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);main.append(tableWrap);
@@ -147,14 +147,15 @@
   if(cfg.create)addAction(tools,cfg.create);
   (cfg.toolbar||[]).forEach(a=>addAction(tools,a));
   function value(v) {if(v===true)return t('Включён','Enabled');if(v===false)return t('Отключён','Disabled');if(Array.isArray(v))return v.length;return v??'—';}
+  function normalizeSearch(text){return text.normalize('NFKC').toLocaleLowerCase().trim();}
   function renderRows() {
     tbody.replaceChildren();let count=0;
     for(const row of rows) {
       if(selectedIDs && !selectedIDs.has((row.dn||'').toLowerCase()))continue;
       if(selectedObject && cfg.id(row)!==selectedObject)continue;
-      if(search && !JSON.stringify(row).toLocaleLowerCase().includes(search.toLocaleLowerCase()))continue;
+      if(search && !normalizeSearch(search).split(/\s+/).every(word=>normalizeSearch(JSON.stringify(row)).includes(word)))continue;
       count++;const r=el('tr');
-      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',value(row[key]));r.append(cell);});
+      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',value(key==='displayName'?(row[key]||row.name):row[key]));r.append(cell);});
       const cell=el('td','workspace-actions');(cfg.actions||[]).forEach(a=>addAction(cell,a,row));r.append(cell);tbody.append(r);
     }
     if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=cfg.columns.length+1;const r=el('tr');r.append(cell);tbody.append(r);}
@@ -231,8 +232,8 @@
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
-    const tabs=el('div','workspace-tools');let activeTab='profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));tabs.append(profileTab,groupsTab,button(t('Перезагрузить карточку','Reload profile'),refresh),button(t('Закрыть','Close'),closeOperation));dialog.append(title,notice,tabs,body);dialog.showModal();
-    function selectTab(tab){activeTab=tab;for(const part of body.children)part.hidden=part.dataset.profileTab!==tab;profileTab.setAttribute('aria-pressed',String(tab==='profile'));groupsTab.setAttribute('aria-pressed',String(tab==='groups'));}
+    const tabs=el('div','workspace-tools');let activeTab='profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));const extendedTab=button(t('Расширенные атрибуты','Extended attributes'),()=>selectTab('extended'));tabs.append(profileTab,extendedTab,groupsTab,button(t('Перезагрузить карточку','Reload profile'),refresh),button(t('Закрыть','Close'),closeOperation));dialog.append(title,notice,tabs,body);dialog.showModal();
+    function selectTab(tab){activeTab=tab;for(const part of body.children)part.hidden=part.dataset.profileTab!==tab;profileTab.setAttribute('aria-pressed',String(tab==='profile'));groupsTab.setAttribute('aria-pressed',String(tab==='groups'));extendedTab.setAttribute('aria-pressed',String(tab==='extended'));}
     const path='/users/'+enc(row.samAccountName);let profile;
     async function refresh(){message(notice,t('Загрузка…','Loading…'));body.replaceChildren();try{const user=await request(path);if(generation!==dialogGeneration)return;profile=user;render();message(notice,'');}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}
     function render(){
@@ -247,6 +248,16 @@
           catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);save.disabled=err.status===409;}
         });
       }attributes.append(form);
+      const extended=el('section');extended.dataset.profileTab='extended';body.append(extended);
+      const extraForm=el('form','workspace-form');const extraControls=[];
+      const sections=[['Контакты','Contacts',[
+        ['initials','Инициалы','Initials',6],['physicalDeliveryOfficeName','Офис','Office',128],['wWWHomePage','Веб-страница','Web page',2048],['mobile','Мобильный телефон','Mobile phone',64],['homePhone','Домашний телефон','Home phone',64],['pager','Пейджер','Pager',64],['facsimileTelephoneNumber','Факс','Fax',64]]],
+        ['Адрес','Address',[['streetAddress','Улица, дом','Street address',1024],['l','Город','City',128],['st','Регион','State',128],['postalCode','Почтовый индекс','Postal code',40],['co','Страна (название)','Country name',128]]],
+        ['Организация','Organization',[['company','Организация','Company',64],['division','Отделение','Division',256],['employeeID','Табельный идентификатор','Employee ID',16],['employeeNumber','Табельный номер','Employee number',512]]]];
+      for(const [ru,en,fields] of sections){const section=el('fieldset');section.append(el('legend','',t(ru,en)));for(const [key,ruLabel,enLabel,max] of fields){const label=el('label','',t(ruLabel,enLabel));const input=el('input');const values=profile.attributes?.[key]||[];input.value=values[0]||'';input.maxLength=max;input.disabled=!admin||values.length>1;label.append(input);section.append(label);extraControls.push([key,input]);}extraForm.append(section);}
+      if(admin){const save=el('button','',t('Сохранить расширенные атрибуты','Save extended attributes'));save.type='submit';extraForm.append(save);extraForm.addEventListener('submit',async e=>{e.preventDefault();if(!extraForm.reportValidity())return;const changes={};for(const [key,input] of extraControls)if(!input.disabled&&input.value!==(profile.attributes?.[key]?.[0]||''))changes[key]=input.value;if(!Object.keys(changes).length){message(notice,t('Нет изменений','No changes'));return;}save.disabled=true;try{const updated=await request(path,'PUT',{revision:profile.revision,attributes:changes});if(generation!==dialogGeneration)return;profile=updated;render();message(notice,t('Атрибуты сохранены','Attributes saved'));await load();}catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);save.disabled=err.status===409;}});}
+      extended.append(extraForm,el('h3','',t('Учётная запись и LDAP-атрибуты (просмотр)','Account and LDAP attributes (read only)')),el('p','muted',t('Значения показаны в формате LDAP; временные поля AD могут содержать FILETIME. Права безопасности и делегирование этим редактором не изменяются.','Values use LDAP format; AD timestamps may contain FILETIME. This editor does not modify security permissions or delegation.')));
+      describe({cn:profile.name||'',...(profile.attributes||{})},extended);
       const account=el('div','workspace-tools');cfg.actions.slice(1).forEach(action=>addAction(account,action,profile));attributes.append(account);
       const groups=el('section');groups.dataset.profileTab='groups';groups.append(el('h3','',t('Группы пользователя','User groups')),el('p','muted',t('Прямое членство и основная группа. Вложенные группы здесь не перечисляются.','Direct memberships and primary group. Nested memberships are not listed.')));body.append(groups);
       let knownGroups=new Set();

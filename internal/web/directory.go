@@ -25,8 +25,8 @@ func directoryTree(base string, entries []directoryEntry) (*DirectoryNode, error
 	if err != nil || len(baseDN.RDNs) == 0 {
 		return nil, fmt.Errorf("configure a valid LDAP Base DN")
 	}
-	root := &DirectoryNode{DN: baseDN.String(), Label: baseDN.String(), Kind: "domain", Children: []*DirectoryNode{}}
-	nodes := map[string]*DirectoryNode{strings.ToLower(root.DN): root}
+	root := &DirectoryNode{DN: readableDN(baseDN), Label: readableDN(baseDN), Kind: "domain", Children: []*DirectoryNode{}}
+	nodes := map[string]*DirectoryNode{strings.ToLower(baseDN.String()): root}
 	var ensure func(*ldap.DN) *DirectoryNode
 	ensure = func(dn *ldap.DN) *DirectoryNode {
 		if baseDN.EqualFold(dn) {
@@ -37,7 +37,7 @@ func directoryTree(base string, entries []directoryEntry) (*DirectoryNode, error
 			return n
 		}
 		parent := ensure(&ldap.DN{RDNs: dn.RDNs[1:]})
-		n := &DirectoryNode{DN: dn.String(), Label: dn.RDNs[0].String(), Kind: "container", Children: []*DirectoryNode{}}
+		n := &DirectoryNode{DN: readableDN(dn), Label: readableDN(&ldap.DN{RDNs: dn.RDNs[:1]}), Kind: "container", Children: []*DirectoryNode{}}
 		n.ParentDN = parent.DN
 		nodes[key] = n
 		parent.Children = append(parent.Children, n)
@@ -120,4 +120,17 @@ func (s *Server) handleAPIDirectoryTree(w http.ResponseWriter, r *http.Request) 
 	}
 	tree, err := directoryTree(s.cfg.LDAP.BaseDN, entries)
 	apiResult(w, tree, err)
+}
+
+// readableDN preserves Unicode while escaping RFC 4514 delimiters in values.
+func readableDN(dn *ldap.DN) string {
+	parts := make([]string, 0, len(dn.RDNs))
+	for _, rdn := range dn.RDNs {
+		attrs := make([]string, 0, len(rdn.Attributes))
+		for _, a := range rdn.Attributes {
+			attrs = append(attrs, a.Type+"="+ldap.EscapeDN(a.Value))
+		}
+		parts = append(parts, strings.Join(attrs, "+"))
+	}
+	return strings.Join(parts, ",")
 }
