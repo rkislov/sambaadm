@@ -139,3 +139,21 @@ func TestRemoteEditorRejectsPathEscapesBeforeNetwork(t *testing.T) {
 		}
 	}
 }
+
+func TestPolicyVersionHalves(t *testing.T) {
+	for _, tc := range []struct {
+		scope     string
+		old, next uint32
+	}{{"User", 65541, 131077}, {"Machine", 65541, 65542}, {"User", 65535, 131071}} {
+		got, e := nextPolicyVersion(tc.old, tc.scope)
+		if e != nil || got != tc.next {
+			t.Fatalf("%+v got %d %v", tc, got, e)
+		}
+	}
+	if _, e := nextPolicyVersion(65535, "Machine"); e == nil {
+		t.Fatal("machine wrap")
+	}
+	if _, e := nextPolicyVersion(0xffff0000, "User"); e == nil {
+		t.Fatal("user wrap")
+	}
+}

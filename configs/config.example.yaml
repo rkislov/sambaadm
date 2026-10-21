@@ -29,8 +29,8 @@ auth:
 gpo:
   # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
   editor_enabled: false
-  # Пусто: SYSVOL/<domain>/Policies/PolicyDefinitions/BaseALTSystemdUnits.admx
-  # Можно явно указать локальный ADMX на Mac/сервере приложения.
+  # Пусто: каталог BaseALT*.admx + ru-RU/*.adml в SYSVOL/<domain>/Policies/PolicyDefinitions
+  # Можно явно указать локальный каталог шаблонов или один ADMX.
   admx_path: ""
   # drs | smb | both — AD replication and/or native SMB SYSVOL delivery.
   sync_mode: both

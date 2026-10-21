@@ -11,11 +11,19 @@ import (
 const SystemdKey = `Software\BaseALT\Policies\SystemdUnits`
 
 type Definition struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
-	Key   string `json:"key"`
-	Value string `json:"value"`
-	Scope string `json:"scope"`
+	ID                string   `json:"id"`
+	Label             string   `json:"label"`
+	Key               string   `json:"key"`
+	Value             string   `json:"value"`
+	Scope             string   `json:"scope"`
+	Template          string   `json:"template,omitempty"`
+	Category          string   `json:"category,omitempty"`
+	Description       string   `json:"description,omitempty"`
+	SupportedOn       string   `json:"supportedOn,omitempty"`
+	Digest            string   `json:"templateRevision,omitempty"`
+	Unsupported       string   `json:"unsupported,omitempty"`
+	Fields            []Field  `json:"fields,omitempty"`
+	Enabled, Disabled *Literal `json:"-"`
 }
 
 // SystemdDefinitions reads the installed ALT templates instead of assuming a
@@ -62,7 +70,7 @@ func ParseSystemdDefinitions(r io.Reader) ([]Definition, error) {
 			return nil, fmt.Errorf("duplicate ALT policy %q", p.Name)
 		}
 		seen[p.Name] = true
-		out = append(out, Definition{p.Name, p.Value, p.Key, p.Value, p.Class})
+		out = append(out, Definition{ID: p.Name, Label: p.Value, Key: p.Key, Value: p.Value, Scope: p.Class})
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no supported ALT systemd policies in installed template")

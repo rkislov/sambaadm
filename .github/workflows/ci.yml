@@ -18,6 +18,12 @@ jobs:
         run: go test -race ./...
       - name: Vet
         run: go vet ./...
+      - name: ALT template compatibility (pinned upstream)
+        run: |
+          git init "$RUNNER_TEMP/alt-templates"
+          git -C "$RUNNER_TEMP/alt-templates" fetch --depth 1 https://github.com/altlinux/admx-basealt.git 8205b08f69dc9365c92bfd8451b2863f757d356b
+          git -C "$RUNNER_TEMP/alt-templates" checkout --detach FETCH_HEAD
+          SAMBAADM_ALT_TEMPLATES="$RUNNER_TEMP/alt-templates" go test ./internal/policy -run TestALTTemplateCollection -count=1 -v
       - name: Build
         run: make build
 
