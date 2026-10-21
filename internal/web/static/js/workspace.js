@@ -261,30 +261,62 @@
 
   async function openALTEditor(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
-    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики systemd для компьютеров ALT. Включение задаёт автозапуск службы; применение проверяется на клиенте.','ALT computer systemd policies. Enabled configures service startup; verify application on the client.')));
-    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const content=el('div');dialog.append(notice,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
-    const path=a.path(row);let model;
-    const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Другое значение — используйте GPUI','Other value — use GPUI')}[s]||s);
+    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики ALT из шаблонов домена. Выберите раздел и найдите нужную настройку. Применение проверяется на ALT-клиенте.','ALT policies from domain templates. Select a scope and find a setting. Verify application on the ALT client.')));
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
+    const toolbar=el('div','workspace-form');
+    const scopeSelect=el('select');scopeSelect.id='alt-scope';for(const [value,label] of [['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]]){const o=el('option','',label);o.value=value;scopeSelect.append(o);}
+    const scopeLabel=el('label','',t('Раздел политики','Policy scope'));scopeLabel.htmlFor=scopeSelect.id;
+    const search=el('input');search.type='search';search.id='alt-search';search.placeholder=t('Название, описание или параметр','Name, description or parameter');const searchLabel=el('label','',t('Поиск политик','Search policies'));searchLabel.htmlFor=search.id;
+    const category=el('select');category.id='alt-category';const categoryLabel=el('label','',t('Категория','Category'));categoryLabel.htmlFor=category.id;
+    toolbar.append(scopeLabel,scopeSelect,searchLabel,search,categoryLabel,category);
+    const content=el('div');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const path=a.path(row);let model,limit=30,loading=0;
+    const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
     function render(){
-      content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · Machine'));
-      if(model.controller)content.append(el('p','muted',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
-      if(model.templateSource)content.append(el('p','mono',t('Шаблон: ','Template: ')+model.templateSource));
-      if(model.machineDisabled)content.append(el('p','alert error',t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
-      for(const setting of model.settings){
-        const form=el('form','workspace-form');const label=el('label','',setting.label);const select=el('select');
-        const states=setting.state==='unsupported'?['unsupported']:['not-configured','enabled','disabled'];
-        for(const state of states){const option=el('option','',stateLabel(state));option.value=state;select.append(option);}select.value=setting.state;select.disabled=!admin||setting.state==='unsupported';select.id='alt-setting-'+model.settings.indexOf(setting);label.htmlFor=select.id;form.append(label,select);
-        if(admin&&setting.state!=='unsupported'){
+      if(!model)return;
+      content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · '+(model.scope||scopeSelect.value)));
+      if(model.controller)content.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
+      if(model.templateSource)content.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
+      if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
+      const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===(s.category||s.template||''))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
+      content.append(el('p','muted',t('Найдено: ','Found: ')+matches.length+' / '+model.settings.length));
+      for(const setting of matches.slice(0,limit)){
+        const form=el('form','workspace-form');form.style.marginBottom='1.5rem';const label=el('label','',setting.label);const select=el('select');
+        const readonly=setting.state==='unsupported'||!!setting.unsupported;
+        const states=readonly?['unsupported']:['not-configured','enabled','disabled'];for(const state of states){const option=el('option','',stateLabel(state));option.value=state;select.append(option);}select.value=readonly?'unsupported':setting.state;select.disabled=!admin||readonly;select.id='alt-setting-'+model.settings.indexOf(setting);label.htmlFor=select.id;form.append(label,select);
+        if(setting.template)form.append(el('p','mono',setting.template+' · '+(setting.category||'')+' · '+(setting.supportedOn||'')));
+        if(setting.description){const detail=el('details');const text=el('p','',setting.description);text.style.whiteSpace='pre-wrap';detail.append(el('summary','',t('Описание и требования','Description and requirements')),text);form.append(detail);}
+        if(setting.unsupported)form.append(el('p','alert error',setting.unsupported));
+        const controls=[];
+        for(const field of setting.fields||[]){
+          let input;const current=setting.values&&Object.hasOwn(setting.values,field.id)?setting.values[field.id]:field.default;
+          if(field.kind==='enum'){input=el('select');for(const [i,c] of (field.choices||[]).entries()){const o=el('option','',c.label);o.value=String(i);input.append(o);}input.value=current==null?'0':String(current);}
+          else if(field.kind==='list'){input=el('textarea');input.rows=4;input.value=Array.isArray(current)?current.join('\n'):'';input.placeholder=t('По одному значению в строке','One value per line');}
+          else {input=el('input');input.type=field.kind==='boolean'?'checkbox':field.kind==='decimal'?'number':'text';if(field.kind==='boolean')input.checked=!!current;else input.value=current==null?'':String(current);if(field.kind==='decimal'){input.min=String(field.min);input.max=String(field.max);input.step='1';}if(field.kind==='text'&&field.maxLength)input.maxLength=field.maxLength;}
+          input.id=select.id+'-field-'+controls.length;const fieldLabel=el('label','',field.label||field.id);fieldLabel.htmlFor=input.id;form.append(fieldLabel,input);controls.push({field,input});
+        }
+        const updateFields=()=>{for(const {field,input} of controls){input.disabled=!admin||readonly||select.value!=='enabled';input.required=select.value==='enabled'&&(field.required||field.kind==='decimal');}};select.addEventListener('change',updateFields);updateFields();
+        if(admin&&!readonly){
           const confirmLabel=el('label','workspace-confirm',t('Подтверждаю изменение этой политики','I confirm this policy change'));const confirm=el('input');confirm.type='checkbox';confirm.required=true;confirmLabel.prepend(confirm);form.append(confirmLabel);
           const save=el('button','',t('Сохранить','Save'));save.type='submit';form.append(save);
-          form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;content.querySelectorAll('button,select,input').forEach(x=>x.disabled=true);message(notice,t('Сохранение…','Saving…'));
-            try{const result=await request(path,'PUT',{id:setting.id,state:select.value,revision:model.revision});if(generation!==dialogGeneration)return;model=result;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
+          form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;
+            const values={};if(select.value==='enabled')for(const {field,input} of controls){values[field.id]=field.kind==='boolean'?input.checked:field.kind==='list'?input.value.split(/\r?\n/).filter(x=>x!==''):input.value;}
+            const payload={id:setting.id,state:select.value,revision:model.revision,scope:model.scope||scopeSelect.value,values};
+            dialog.querySelectorAll('button,select,input,textarea').forEach(x=>x.disabled=true);message(notice,t('Сохранение…','Saving…'));
+            try{const result=await request(path,'PUT',payload);if(generation!==dialogGeneration)return;model=result;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
             catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);content.replaceChildren(button(t('Перезагрузить параметры','Reload settings'),()=>refresh()));}
+            finally{if(generation===dialogGeneration){toolbar.querySelectorAll('input,select').forEach(x=>x.disabled=false);dialog.querySelectorAll('button').forEach(x=>x.disabled=false);}}
           });
         }content.append(form);
       }
+      if(matches.length>limit)content.append(button(t('Показать ещё','Show more'),()=>{limit+=30;render();}));
     }
-    async function refresh(){message(notice,t('Загрузка…','Loading…'));try{const result=await request(path);if(generation!==dialogGeneration)return;model=result;render();message(notice,'');}catch(err){if(generation===dialogGeneration){message(notice,err.message,true);content.replaceChildren(button(t('Повторить','Retry'),refresh));}}}
+    async function refresh(){const requestID=++loading;model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
+      const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''));if(generation!==dialogGeneration||requestID!==loading)return;model=result;
+      category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
+      limit=30;render();message(notice,'');
+    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
+    scopeSelect.addEventListener('change',()=>{search.value='';refresh();});search.addEventListener('input',()=>{limit=30;render();});category.addEventListener('change',()=>{limit=30;render();});
     await refresh();
   }
   async function openOperation(a,row) {

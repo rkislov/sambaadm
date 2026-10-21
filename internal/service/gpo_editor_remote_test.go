@@ -79,7 +79,13 @@ func TestIntegrationRemoteALTEditor(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		if saved.Version != before.Version+1 || saved.Settings[0].State != state {
+		actual := ""
+		for _, setting := range saved.Settings {
+			if setting.ID == "chronyd.service" {
+				actual = setting.State
+			}
+		}
+		if saved.Version != before.Version+1 || actual != state {
 			t.Fatalf("bad save: %+v", saved)
 		}
 		if _, e = s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: state, Revision: before.Revision}, "integration", ""); !errors.Is(e, ErrPolicyConflict) {

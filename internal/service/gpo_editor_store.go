@@ -1,12 +1,14 @@
 package service
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"sambaadm/internal/policy"
+	"sort"
 	"strings"
 
 	smb2 "github.com/cloudsoda/go-smb2"
@@ -95,25 +97,147 @@ func (s *smbPolicyStore) Remove(name string) error {
 	return s.share.Remove(p)
 }
 
-// Empty admx_path selects the domain Central Store. An explicit local template
-// remains supported for administrators whose domain has no Central Store yet.
+// Empty admx_path selects the domain Central Store; a local directory or
+// a single ADMX file is also supported. SYSVOL editing always stays remote.
 func (s *GPOService) editorDefinitions(share *smb2.Share, domain string) ([]policy.Definition, string, error) {
+	var names []string
+	var read func(string) ([]byte, error)
+	source := ""
+	singleFile := false
 	if s.gpoCfg.ADMXPath != "" {
-		defs, err := policy.SystemdDefinitions(s.gpoCfg.ADMXPath)
-		return defs, "local ADMX: " + s.gpoCfg.ADMXPath, err
+		file := s.gpoCfg.ADMXPath
+		info, err := os.Stat(file)
+		if err != nil {
+			return nil, "", err
+		}
+		dir := file
+		if !info.IsDir() {
+			singleFile = true
+			dir = filepath.Dir(file)
+			names = []string{filepath.Base(file)}
+		} else {
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				return nil, "", err
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					names = append(names, entry.Name())
+				}
+			}
+		}
+		read = func(name string) ([]byte, error) {
+			p := dir
+			for _, part := range strings.Split(name, "/") {
+				entries, err := os.ReadDir(p)
+				if err != nil {
+					return nil, err
+				}
+				actual := ""
+				for _, entry := range entries {
+					if strings.EqualFold(entry.Name(), part) {
+						if actual != "" {
+							return nil, fmt.Errorf("ambiguous template filename")
+						}
+						actual = entry.Name()
+					}
+				}
+				if actual == "" {
+					return nil, os.ErrNotExist
+				}
+				p = filepath.Join(p, actual)
+			}
+			info, err := os.Lstat(p)
+			if err != nil {
+				return nil, err
+			}
+			if !info.Mode().IsRegular() || info.Size() > 4<<20 {
+				return nil, fmt.Errorf("invalid template file")
+			}
+			return os.ReadFile(p)
+		}
+		source = "local ADMX: " + file
+	} else {
+		store := &smbPolicyStore{share: share, base: path.Join(domain, "Policies", "PolicyDefinitions")}
+		entries, err := store.ReadDir(".")
+		if err != nil {
+			return nil, "", fmt.Errorf("ALT ADMX missing from SYSVOL Central Store: %w", err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				names = append(names, entry.Name())
+			}
+		}
+		read = func(name string) ([]byte, error) {
+			actual, err := policyChild(store, path.Dir(name), path.Base(name), false)
+			if err != nil { // A missing optional language file is a normal fallback.
+				if errors.Is(err, os.ErrNotExist) {
+					return nil, os.ErrNotExist
+				}
+				return nil, err
+			}
+			return readPolicyFile(store, actual)
+		}
+		source = "SYSVOL/" + store.base
 	}
-	store := &smbPolicyStore{share: share, base: path.Join(domain, "Policies", "PolicyDefinitions")}
-	name, err := policyChild(store, ".", "BaseALTSystemdUnits.admx", false)
-	if err != nil {
-		return nil, "", fmt.Errorf("ALT ADMX missing from SYSVOL Central Store: %w", err)
+	sort.Strings(names)
+	var defs []policy.Definition
+	files, total := 0, 0
+	categories := map[string]string{}
+	for _, name := range names {
+		if (!singleFile && !strings.HasPrefix(strings.ToLower(name), "basealt")) || !strings.HasSuffix(strings.ToLower(name), ".admx") {
+			continue
+		}
+		files++
+		if files > 64 {
+			return nil, "", fmt.Errorf("too many ALT templates")
+		}
+		data, err := read(name)
+		if err != nil {
+			return nil, "", err
+		}
+		var language []byte
+		for _, locale := range []string{"ru-RU", "en-US"} {
+			language, err = read(locale + "/" + strings.TrimSuffix(name, path.Ext(name)) + ".adml")
+			if err == nil {
+				break
+			}
+			if !os.IsNotExist(err) {
+				return nil, "", err
+			}
+		}
+		total += len(data) + len(language)
+		if total > 32<<20 {
+			return nil, "", fmt.Errorf("ALT template catalog exceeds 32 MiB")
+		}
+		parsed, err := policy.ParseADMX(name, data, language)
+		if err != nil {
+			return nil, "", fmt.Errorf("%s: %w", name, err)
+		}
+		defs = append(defs, parsed...)
+		for key, value := range policy.CategoryLabels(name, data, language) {
+			categories[key] = value
+		}
 	}
-	data, err := readPolicyFile(store, name)
-	if err != nil {
-		return nil, "", err
+	if len(defs) == 0 {
+		return nil, "", fmt.Errorf("no ALT policies found; install BaseALT*.admx in Central Store")
 	}
-	if len(data) > 2<<20 {
-		return nil, "", fmt.Errorf("ALT ADMX exceeds 2 MiB")
+	seen := map[string]bool{}
+	for i := range defs {
+		d := &defs[i]
+		if label := categories[d.SupportedOn]; label != "" {
+			d.SupportedOn = label
+		}
+		key := d.Scope + "/" + d.ID
+		if seen[key] {
+			return nil, "", fmt.Errorf("duplicate policy identity %s", key)
+		}
+		seen[key] = true
+		if label := categories[d.Category]; label != "" {
+			d.Category = label
+		} else if label := categories[d.Template+"/"+d.Category]; label != "" {
+			d.Category = label
+		}
 	}
-	defs, err := policy.ParseSystemdDefinitions(bytes.NewReader(data))
-	return defs, "SYSVOL/" + store.base + "/" + name, err
+	return defs, source, nil
 }

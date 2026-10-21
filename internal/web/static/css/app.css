@@ -483,3 +483,5 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .workspace-result {margin-top:1rem}
 .workspace-result progress {width:100%}
 @media(max-width:850px){.workspace-columns{grid-template-columns:1fr}.workspace-tree{max-height:300px}.topbar{flex-wrap:wrap}.workspace-head{align-items:flex-start}.workspace-properties{grid-template-columns:1fr}}
+
+.workspace-form textarea {width:100%;min-width:0;box-sizing:border-box;padding:.6rem;border:1px solid var(--border);border-radius:6px;font:inherit;resize:vertical}

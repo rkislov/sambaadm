@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +25,8 @@ const registryCSE = "[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F72-3407-48AE-
 
 type ALTSetting struct {
 	policy.Definition
-	State string `json:"state"`
+	State  string         `json:"state"`
+	Values map[string]any `json:"values,omitempty"`
 }
 type ALTPolicy struct {
 	Version         uint32       `json:"version"`
@@ -36,15 +36,19 @@ type ALTPolicy struct {
 	Controller      string       `json:"controller"`
 	TemplateSource  string       `json:"templateSource"`
 	MachineDisabled bool         `json:"machineDisabled"`
+	SectionDisabled bool         `json:"sectionDisabled"`
 }
 type ALTChange struct {
-	ID       string `json:"id"`
-	State    string `json:"state"`
-	Revision string `json:"revision"`
+	ID       string                     `json:"id"`
+	State    string                     `json:"state"`
+	Revision string                     `json:"revision"`
+	Scope    string                     `json:"scope,omitempty"`
+	Values   map[string]json.RawMessage `json:"values,omitempty"`
 }
 type editorSnapshot struct {
 	root                       policyStore
 	templateSource, controller string
+	scope                      string
 	entry                      *ldap.Entry
 	pol, ini                   []byte
 	exists                     bool
@@ -71,7 +75,7 @@ func policyChild(root policyStore, parent, name string, optional bool) (string, 
 	}
 	if found == "" {
 		if !optional {
-			return "", fmt.Errorf("missing policy path %s", name)
+			return "", fmt.Errorf("missing policy path %s: %w", name, os.ErrNotExist)
 		}
 		found = name
 	}
@@ -144,14 +148,14 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	}
 	return uint32(v), []byte(strings.Join(lines, "\n")), nil
 }
-func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool) (*editorSnapshot, error) {
+func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool, scope string) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {
 		return nil, ErrEditorUnavailable
 	}
 	if !looksLikeGUID(gpo) {
 		return nil, fmt.Errorf("GPO GUID required")
 	}
-	entry, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{Filter: "(&(objectClass=groupPolicyContainer)(cn=" + ldap.EscapeFilter(braceGUID(gpo)) + "))", Attributes: []string{"cn", "versionNumber", "gPCMachineExtensionNames", "gPCFileSysPath", "flags", "uSNChanged"}})
+	entry, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{Filter: "(&(objectClass=groupPolicyContainer)(cn=" + ldap.EscapeFilter(braceGUID(gpo)) + "))", Attributes: []string{"cn", "versionNumber", "gPCMachineExtensionNames", "gPCUserExtensionNames", "gPCFileSysPath", "flags", "uSNChanged"}})
 	if e != nil {
 		return nil, e
 	}
@@ -170,6 +174,13 @@ func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2
 	if e != nil {
 		return nil, fmt.Errorf("%w: %v", ErrEditorUnavailable, e)
 	}
+	filtered := []policy.Definition{}
+	for _, d := range defs {
+		if d.Scope == scope {
+			filtered = append(filtered, d)
+		}
+	}
+	defs = filtered
 	// Use the configured DC, never follow a host or path supplied by HTTP/UNC.
 	unc := strings.Split(strings.TrimPrefix(entry.GetAttributeValue("gPCFileSysPath"), `\\`), `\`)
 	if len(unc) != 5 || !strings.EqualFold(unc[1], "sysvol") || !strings.EqualFold(unc[2], dns) || !strings.EqualFold(unc[3], "Policies") || !strings.EqualFold(unc[4], cn) {
@@ -184,13 +195,13 @@ func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2
 			return nil, fmt.Errorf("unfinished policy save: inspect SYSVOL/%s/%s before further edits", root.base, editorJournal)
 		}
 	}
-	machinePath, e := policyChild(root, ".", "Machine", false)
+	machinePath, e := policyChild(root, ".", scope, false)
 	if e != nil {
 		return nil, e
 	}
 	machine, e := root.Lstat(machinePath)
 	if e != nil || !machine.IsDir() {
-		return nil, fmt.Errorf("Machine must be a real directory")
+		return nil, fmt.Errorf("%s must be a real directory", scope)
 	}
 	iniPath, e := policyChild(root, ".", "GPT.INI", false)
 	if e != nil {
@@ -226,41 +237,48 @@ func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2
 	}
 	// Include the template and registry metadata in the optimistic revision.
 	encoded, _ := json.Marshal(struct {
-		Defs              []policy.Definition
-		Version           uint32
-		Extensions, Flags string
-	}{defs, version, entry.GetAttributeValue("gPCMachineExtensionNames"), entry.GetAttributeValue("flags")})
+		Defs                     []policy.Definition
+		Version                  uint32
+		Extensions, Flags, Scope string
+	}{defs, version, entry.GetAttributeValue("gPC" + scope + "ExtensionNames"), entry.GetAttributeValue("flags"), scope})
 	h := sha256.New()
 	h.Write(ini)
 	h.Write(data)
 	h.Write(encoded)
 	revision := fmt.Sprintf("%x", h.Sum(nil))
-	return &editorSnapshot{root: root, templateSource: source, controller: s.remote.Host, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
+	return &editorSnapshot{root: root, scope: scope, templateSource: source, controller: s.remote.Host, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
 }
 func (snap *editorSnapshot) view() *ALTPolicy {
-	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: "Machine", Controller: snap.controller, TemplateSource: snap.templateSource, Settings: []ALTSetting{}}
+	scope := snap.scope
+	if scope == "" {
+		scope = "Machine"
+	}
+	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: scope, Controller: snap.controller, TemplateSource: snap.templateSource, Settings: []ALTSetting{}}
 	flags, _ := strconv.ParseUint(snap.entry.GetAttributeValue("flags"), 10, 32)
 	out.MachineDisabled = flags&2 != 0
+	out.SectionDisabled = out.MachineDisabled
+	if scope == "User" {
+		out.SectionDisabled = flags&1 != 0
+	}
 	for _, d := range snap.definitions {
-		state := "not-configured"
-		for _, r := range snap.records {
-			if strings.EqualFold(r.Key, d.Key) && strings.EqualFold(r.Name, d.Value) {
-				state = "unsupported"
-				if r.Type == 4 && len(r.Data) == 4 {
-					switch binary.LittleEndian.Uint32(r.Data) {
-					case 0:
-						state = "disabled"
-					case 1:
-						state = "enabled"
-					}
-				}
-			}
-		}
-		out.Settings = append(out.Settings, ALTSetting{d, state})
+		state, values := policy.SettingState(d, snap.records)
+		out.Settings = append(out.Settings, ALTSetting{Definition: d, State: state, Values: values})
 	}
 	return out
 }
+func (s *GPOService) ALTSettingsScope(ctx context.Context, gpo, scope string) (*ALTPolicy, error) {
+	if scope == "" {
+		scope = "Machine"
+	}
+	if scope != "Machine" && scope != "User" {
+		return nil, fmt.Errorf("%w: invalid scope", policy.ErrInvalidValue)
+	}
+	return s.altSettings(ctx, gpo, scope)
+}
 func (s *GPOService) ALTSettings(ctx context.Context, gpo string) (*ALTPolicy, error) {
+	return s.altSettings(ctx, gpo, "Machine")
+}
+func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPolicy, error) {
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
 	var out *ALTPolicy
@@ -268,7 +286,7 @@ func (s *GPOService) ALTSettings(ctx context.Context, gpo string) (*ALTPolicy, e
 		return nil, ErrEditorUnavailable
 	}
 	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
-		snap, e := s.editorSnapshot(ctx, gpo, share, false)
+		snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
 		if e != nil {
 			return e
 		}
@@ -305,11 +323,14 @@ func writePolicyFile(root policyStore, path string, data []byte) error {
 	return nil
 }
 func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string) (out *ALTPolicy, err error) {
+	if change.Scope == "" {
+		change.Scope = "Machine"
+	}
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
 	defer func() {
 		if err != nil {
-			s.audit.Failure(actor, "gpo.alt.set", gpo+"/"+change.ID, ip, err)
+			s.audit.Failure(actor, "gpo.alt.set", gpo+"/"+change.Scope+"/"+change.ID, ip, err)
 		}
 	}()
 	if !s.gpoCfg.EditorEnabled || s.remote == nil {
@@ -323,7 +344,14 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 }
 
 func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string, share *smb2.Share) (*ALTPolicy, error) {
-	snap, e := s.editorSnapshot(ctx, gpo, share, false)
+	scope := change.Scope
+	if scope == "" {
+		scope = "Machine"
+	}
+	if scope != "Machine" && scope != "User" {
+		return nil, fmt.Errorf("%w: invalid scope", policy.ErrInvalidValue)
+	}
+	snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
 	if e != nil {
 		return nil, e
 	}
@@ -338,36 +366,20 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 		}
 	}
 	if def == nil {
-		return nil, fmt.Errorf("unsupported ALT template policy")
+		return nil, fmt.Errorf("%w: unknown ALT policy", policy.ErrInvalidValue)
 	}
-	if change.State != "enabled" && change.State != "disabled" && change.State != "not-configured" {
-		return nil, fmt.Errorf("invalid policy state")
-	}
-	records := []policy.Record{}
-	for _, r := range snap.records {
-		if strings.EqualFold(r.Key, def.Key) && strings.EqualFold(r.Name, def.Value) {
-			if r.Type != 4 || len(r.Data) != 4 || binary.LittleEndian.Uint32(r.Data) > 1 {
-				return nil, fmt.Errorf("existing setting has unsupported type or value; edit with GPUI")
-			}
-			continue
-		}
-		records = append(records, r)
-	}
-	if change.State != "not-configured" {
-		data := make([]byte, 4)
-		if change.State == "enabled" {
-			binary.LittleEndian.PutUint32(data, 1)
-		}
-		records = append(records, policy.Record{Key: def.Key, Name: def.Value, Type: 4, Data: data})
+	records, e := policy.ApplySetting(*def, snap.records, change.State, change.Values)
+	if e != nil {
+		return nil, e
 	}
 	data, e := policy.Encode(records)
 	if e != nil {
 		return nil, e
 	}
-	if uint16(snap.version) == 65535 {
-		return nil, fmt.Errorf("machine GPO version exhausted")
+	next, e := nextPolicyVersion(snap.version, scope)
+	if e != nil {
+		return nil, e
 	}
-	next := snap.version + 1
 	_, ini, e := gptVersion(snap.ini, &next)
 	if e != nil {
 		return nil, e
@@ -397,7 +409,7 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	}
 	// The snapshot might predate another editor's completed save. Recheck
 	// under the exclusive journal before touching either policy file.
-	current, e := s.editorSnapshot(ctx, gpo, share, true)
+	current, e := s.editorSnapshot(ctx, gpo, share, true, scope)
 	if e != nil || current.revision != snap.revision {
 		cleanup := snap.root.Remove(editorJournal)
 		if e == nil {
@@ -442,9 +454,9 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	assertion, _ := ldap.CompileFilter("(&(versionNumber=" + strconv.FormatUint(uint64(snap.version), 10) + ")(uSNChanged=" + ldap.EscapeFilter(snap.entry.GetAttributeValue("uSNChanged")) + "))")
 	req := ldap.NewModifyRequest(snap.entry.DN, []ldap.Control{ldap.NewControlString("1.3.6.1.1.12", true, string(assertion.Bytes()))})
 	req.Replace("versionNumber", []string{strconv.FormatUint(uint64(next), 10)})
-	ext := snap.entry.GetAttributeValue("gPCMachineExtensionNames")
+	ext := snap.entry.GetAttributeValue("gPC" + scope + "ExtensionNames")
 	if !strings.Contains(strings.ToUpper(ext), "{35378EAC-683F-11D2-A89A-00C04FBBCFA2}") {
-		req.Replace("gPCMachineExtensionNames", []string{ext + registryCSE})
+		req.Replace("gPC"+scope+"ExtensionNames", []string{ext + registryCSE})
 	}
 	if e = s.ldap.Modify(ctx, req); e != nil {
 		var ldapErr *ldap.Error
@@ -461,11 +473,24 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	if e = snap.root.Remove(editorJournal); e != nil {
 		return nil, fmt.Errorf("policy saved; remove completed journal after verification: %w", e)
 	}
-	s.audit.Success(actor, "gpo.alt.set", gpo+"/"+change.ID+"="+change.State, ip)
+	s.audit.Success(actor, "gpo.alt.set", gpo+"/"+change.Scope+"/"+change.ID+"="+change.State, ip)
 	// Return fresh revision including the updated LDAP extension metadata.
-	fresh, e := s.editorSnapshot(ctx, gpo, share, false)
+	fresh, e := s.editorSnapshot(ctx, gpo, share, false, scope)
 	if e != nil {
 		return nil, e
 	}
 	return fresh.view(), nil
+}
+
+func nextPolicyVersion(version uint32, scope string) (uint32, error) {
+	if scope == "User" {
+		if version>>16 == 65535 {
+			return 0, fmt.Errorf("user GPO version exhausted")
+		}
+		return version + 65536, nil
+	}
+	if uint16(version) == 65535 {
+		return 0, fmt.Errorf("machine GPO version exhausted")
+	}
+	return version + 1, nil
 }
