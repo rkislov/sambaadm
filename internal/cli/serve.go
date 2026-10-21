@@ -19,6 +19,7 @@ import (
 	"sambaadm/internal/auth"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/service"
+	"sambaadm/internal/version"
 	"sambaadm/internal/web"
 )
 
@@ -27,13 +28,17 @@ var (
 	tlsCert      string
 	tlsKey       string
 	checkStartup bool
+	eventLogFile string
 )
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the web UI and REST API server",
-	RunE: func(cmd *cobra.Command, args []string) error {
+	RunE: func(cmd *cobra.Command, args []string) (runErr error) {
 		cfg := rootCfg
+		if cmd.Flags().Changed("log-file") {
+			cfg.Logging.File = eventLogFile
+		}
 		if listen != "" {
 			cfg.Server.Listen = listen
 		}
@@ -59,7 +64,24 @@ var serveCmd = &cobra.Command{
 		default:
 			return fmt.Errorf("invalid logging.level %q (debug, info, warn, error)", cfg.Logging.Level)
 		}
-		slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+		logger, closeLog, err := newEventLogger(cfg, level, os.Stderr)
+		if err != nil {
+			return err
+		}
+		previousLogger := slog.Default()
+		slog.SetDefault(logger)
+		defer func() {
+			if runErr != nil {
+				slog.Error("server stopped with error", "err", runErr)
+			} else {
+				slog.Info("server stopped")
+			}
+			slog.SetDefault(previousLogger)
+			if err := closeLog(); err != nil {
+				fmt.Fprintf(os.Stderr, "close event log: %v\n", err)
+			}
+		}()
+		slog.Info("sambaadm starting", "version", version.String(), "config", cfg.Source, "listen", cfg.Server.Listen, "event_log", cfg.Logging.File, "log_level", level.String())
 
 		ldapClient := ldapproto.NewServiceClient(cfg.LDAP, cfg.BindPassword)
 		defer ldapClient.Close()
@@ -99,6 +121,7 @@ var serveCmd = &cobra.Command{
 
 		httpSrv := &http.Server{
 			Addr:              cfg.Server.Listen,
+			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 			Handler:           srv.Router(),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
@@ -153,6 +176,7 @@ var serveCmd = &cobra.Command{
 }
 
 func init() {
+	serveCmd.Flags().StringVar(&eventLogFile, "log-file", "", "append application events to this file as well as stderr")
 	serveCmd.Flags().BoolVar(&checkStartup, "check", false, "check configuration, dependencies and LDAP then exit without starting HTTP")
 	serveCmd.Flags().StringVar(&listen, "listen", "", "listen address (default :8080)")
 	serveCmd.Flags().StringVar(&tlsCert, "tls-cert", "", "TLS certificate file")

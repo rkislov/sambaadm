@@ -51,3 +51,5 @@ audit:
 
 logging:
   level: info
+  # Optional application events, separate from audit.file; parent directory must exist.
+  # file: /var/log/sambaadm/events.log
