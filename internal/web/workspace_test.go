@@ -67,6 +67,7 @@ func testWorkspaceServer(t *testing.T) *Server {
 // Service pointers are intentionally nil: rejected requests must never reach a mutation.
 func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 	routes := []struct{ method, path string }{
+		{"PUT", "/api/v1/gpo/scope"}, {"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/filter"}, {"POST", "/api/v1/shares/wizard"}, {"PUT", "/api/v1/samba/profile"},
 		{"POST", "/api/v1/sites/links"}, {"PUT", "/api/v1/sites/links/WAN"}, {"DELETE", "/api/v1/sites/links/WAN"}, {"PUT", "/api/v1/sites/links/WAN/schedule"}, {"POST", "/api/v1/sites/controllers/DC2/move"}, {"PUT", "/api/v1/subnets/site"}, {"POST", "/api/v1/repl/connections"}, {"PUT", "/api/v1/repl/connections/manual-test"}, {"DELETE", "/api/v1/repl/connections/manual-test"}, {"POST", "/api/v1/repl/kcc"},
 		{"PUT", "/api/v1/users/alice"},
 		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/alt-settings"},
@@ -124,9 +125,10 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 		t.Skip("browser harness only")
 	}
 	s := testWorkspaceServer(t)
+	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{BaseDN: "DC=example,DC=com"}), nil, service.ServiceOptions{})
 	for _, role := range []auth.Role{auth.RoleAdmin, auth.RoleHelpdesk, auth.RoleReadonly} {
 		sess, _ := s.sessions.Create("fixture@example.com", "CN=fixture", role)
-		for _, path := range []string{"", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
+		for _, path := range []string{"", "shares/new", "settings", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
 			req := httptest.NewRequest("GET", "/"+path, nil)
 			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
 			rec := httptest.NewRecorder()
@@ -134,7 +136,7 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 			if rec.Code != 200 {
 				t.Fatal(rec.Code)
 			}
-			if err := os.WriteFile(filepath.Join(dir, string(role)+"-"+path+".html"), rec.Body.Bytes(), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, string(role)+"-"+strings.ReplaceAll(path, "/", "_")+".html"), rec.Body.Bytes(), 0600); err != nil {
 				t.Fatal(err)
 			}
 		}

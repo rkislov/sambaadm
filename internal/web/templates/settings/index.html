@@ -3,6 +3,7 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
+  <script src="/static/js/host-admin.js" defer></script>
 </head>
 <body>
   {{template "nav" .}}
@@ -20,6 +21,7 @@
       </label>
       <button type="submit">{{t .Lang "settings.save"}}</button>
     </form>
+    {{if canAdmin .Role}}<section id="samba-profiles" class="form-card form-wide"></section>{{end}}
   </main>
   <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>

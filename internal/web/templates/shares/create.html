@@ -3,12 +3,15 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
+  <script src="/static/js/host-admin.js" defer></script>
 </head>
 <body>
   {{template "nav" .}}
   <main class="container">
     <h1>{{t .Lang "shares.create"}}</h1>
     <p class="muted">{{t .Lang "shares.hint"}}</p>
+    <section id="share-wizard" class="form-card form-wide"></section>
+    <details><summary>{{if eq (printf "%s" .Lang) "ru"}}Расширенная ручная настройка{{else}}Advanced manual configuration{{end}}</summary>
     {{template "shares/tips" .}}
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
@@ -81,6 +84,7 @@
 
       <button type="submit">{{t .Lang "shares.create.submit"}}</button>
     </form>
+    </details>
   </main>
   <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>

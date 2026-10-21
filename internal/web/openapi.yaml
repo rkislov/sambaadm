@@ -2667,6 +2667,126 @@
                 "502":
                     "description": "LDAP or Samba RPC failed"
             "summary": "Delete connection; KCC may recreate generated connections"
+    "/gpo/scope":
+        "get":
+            "summary": "Domain and OU GPO scope (container query gives link-only inheritance preview)"
+            "parameters":
+                - "name": "container"
+                  "in": "query"
+                  "schema": {"type": "string"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+        "put":
+            "summary": "Replace direct links and inheritance block with revision check"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"type": "object"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+    "/gpo/{gpo}/filter":
+        "get":
+            "summary": "Read GPO DACL"
+            "parameters":
+                - "name": "gpo"
+                  "in": "path"
+                  "required": true
+                  "schema": {"type": "string"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+        "put":
+            "summary": "Add or remove one explicit Apply Group Policy allow ACE"
+            "parameters":
+                - "name": "gpo"
+                  "in": "path"
+                  "required": true
+                  "schema": {"type": "string"}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"type": "object"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+    "/shares/wizard":
+        "post":
+            "summary": "Calculate local domain share permissions; apply=1 creates share"
+            "parameters":
+                - "name": "apply"
+                  "in": "query"
+                  "schema": {"type": "string", "enum": ["1"]}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"type": "object"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+    "/samba/profile":
+        "get":
+            "summary": "Preview local Samba profile (admin)"
+            "parameters":
+                - "name": "profile"
+                  "in": "query"
+                  "required": true
+                  "schema": {"type": "string", "enum": ["compatible", "secure"]}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+        "put":
+            "summary": "Validate and save local Samba profile with backup (admin)"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"type": "object"}
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
+    "/system/metrics":
+        "get":
+            "summary": "Local sambaadm host CPU memory and disk history"
+            "responses":
+                "200": {"description": "Result; see docs/api.md for payloads"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Revision conflict"}
+                "502": {"description": "Domain or local host operation failed"}
 "components":
     "securitySchemes":
         "cookieAuth":

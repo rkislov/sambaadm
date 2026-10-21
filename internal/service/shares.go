@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"sambaadm/internal/audit"
@@ -18,50 +19,50 @@ import (
 
 // Share is a Samba file share from smb.conf.
 type Share struct {
-	Name           string            `json:"name"`
-	Path           string            `json:"path,omitempty"`
-	Comment        string            `json:"comment,omitempty"`
-	Browseable     bool              `json:"browseable"`
-	ReadOnly       bool              `json:"readOnly"`
-	GuestOK        bool              `json:"guestOk"`
-	ValidUsers     string            `json:"validUsers,omitempty"`
-	WriteList      string            `json:"writeList,omitempty"`
-	ReadList       string            `json:"readList,omitempty"`
-	ForceUser      string            `json:"forceUser,omitempty"`
-	ForceGroup     string            `json:"forceGroup,omitempty"`
-	CreateMask     string            `json:"createMask,omitempty"`
-	DirectoryMask  string            `json:"directoryMask,omitempty"`
-	InheritACLs    bool              `json:"inheritAcls"`
-	MapACLInherit  bool              `json:"mapAclInherit"`
-	Printable      bool              `json:"printable"`
-	Params         map[string]string `json:"params,omitempty"`
-	PathExists     bool              `json:"pathExists"`
+	Name          string            `json:"name"`
+	Path          string            `json:"path,omitempty"`
+	Comment       string            `json:"comment,omitempty"`
+	Browseable    bool              `json:"browseable"`
+	ReadOnly      bool              `json:"readOnly"`
+	GuestOK       bool              `json:"guestOk"`
+	ValidUsers    string            `json:"validUsers,omitempty"`
+	WriteList     string            `json:"writeList,omitempty"`
+	ReadList      string            `json:"readList,omitempty"`
+	ForceUser     string            `json:"forceUser,omitempty"`
+	ForceGroup    string            `json:"forceGroup,omitempty"`
+	CreateMask    string            `json:"createMask,omitempty"`
+	DirectoryMask string            `json:"directoryMask,omitempty"`
+	InheritACLs   bool              `json:"inheritAcls"`
+	MapACLInherit bool              `json:"mapAclInherit"`
+	Printable     bool              `json:"printable"`
+	Params        map[string]string `json:"params,omitempty"`
+	PathExists    bool              `json:"pathExists"`
 }
 
 // CreateShareInput creates a share and optionally the filesystem path.
 type CreateShareInput struct {
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	Comment        string `json:"comment,omitempty"`
-	Preset         string `json:"preset,omitempty"` // see share_presets.go
-	Browseable     *bool  `json:"browseable,omitempty"`
-	ReadOnly       *bool  `json:"readOnly,omitempty"`
-	GuestOK        *bool  `json:"guestOk,omitempty"`
-	ValidUsers     string `json:"validUsers,omitempty"`
-	WriteList      string `json:"writeList,omitempty"`
-	ReadList       string `json:"readList,omitempty"`
-	ForceUser      string `json:"forceUser,omitempty"`
-	ForceGroup     string `json:"forceGroup,omitempty"`
-	CreateMask     string `json:"createMask,omitempty"`
-	DirectoryMask  string `json:"directoryMask,omitempty"`
-	InheritACLs    *bool  `json:"inheritAcls,omitempty"`    // smb.conf inherit acls
-	MapACLInherit  *bool  `json:"mapAclInherit,omitempty"`  // smb.conf map acl inherit
-	Owner          string `json:"owner,omitempty"`           // user or user:group
-	Mode           string `json:"mode,omitempty"`            // octal
-	ACL            string `json:"acl,omitempty"`             // setfacl -m
-	DefaultACL     string `json:"defaultAcl,omitempty"`      // setfacl -d -m (inheritance)
-	CreateDir      *bool  `json:"createDir,omitempty"`
-	Reload         *bool  `json:"reload,omitempty"`
+	Name          string `json:"name"`
+	Path          string `json:"path"`
+	Comment       string `json:"comment,omitempty"`
+	Preset        string `json:"preset,omitempty"` // see share_presets.go
+	Browseable    *bool  `json:"browseable,omitempty"`
+	ReadOnly      *bool  `json:"readOnly,omitempty"`
+	GuestOK       *bool  `json:"guestOk,omitempty"`
+	ValidUsers    string `json:"validUsers,omitempty"`
+	WriteList     string `json:"writeList,omitempty"`
+	ReadList      string `json:"readList,omitempty"`
+	ForceUser     string `json:"forceUser,omitempty"`
+	ForceGroup    string `json:"forceGroup,omitempty"`
+	CreateMask    string `json:"createMask,omitempty"`
+	DirectoryMask string `json:"directoryMask,omitempty"`
+	InheritACLs   *bool  `json:"inheritAcls,omitempty"`   // smb.conf inherit acls
+	MapACLInherit *bool  `json:"mapAclInherit,omitempty"` // smb.conf map acl inherit
+	Owner         string `json:"owner,omitempty"`         // user or user:group
+	Mode          string `json:"mode,omitempty"`          // octal
+	ACL           string `json:"acl,omitempty"`           // setfacl -m
+	DefaultACL    string `json:"defaultAcl,omitempty"`    // setfacl -d -m (inheritance)
+	CreateDir     *bool  `json:"createDir,omitempty"`
+	Reload        *bool  `json:"reload,omitempty"`
 }
 
 // UpdateShareAccessInput updates Samba-level access parameters on an existing share.
@@ -86,6 +87,7 @@ type UpdateShareAccessInput struct {
 
 // ShareService manages local smb.conf shares and directories.
 type ShareService struct {
+	mu    sync.Mutex
 	audit *audit.Logger
 	cfg   config.SambaConfig
 }
@@ -160,6 +162,8 @@ func (s *ShareService) Show(ctx context.Context, name string) (*Share, error) {
 
 // Create adds a share, creates the directory, applies ownership/ACL, reloads smbd.
 func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, ip string) (*Share, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	ApplyPreset(&in)
 	name := strings.TrimSpace(in.Name)
 	if err := validateShareName(name); err != nil {
@@ -293,6 +297,8 @@ func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, i
 
 // Delete removes a share from smb.conf. Optionally remove the directory.
 func (s *ShareService) Delete(ctx context.Context, name string, removeDir bool, actor, ip string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if isReservedSection(name) || strings.EqualFold(name, "global") {
 		err := fmt.Errorf("cannot delete reserved section %q", name)
 		s.audit.Failure(actor, "share.delete", name, ip, err)
@@ -335,6 +341,8 @@ func (s *ShareService) Delete(ctx context.Context, name string, removeDir bool, 
 
 // UpdateAccess updates Samba share access parameters.
 func (s *ShareService) UpdateAccess(ctx context.Context, name string, in UpdateShareAccessInput, actor, ip string) (*Share, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	doc, err := smbconf.ParseFile(s.cfg.SMBConf)
 	if err != nil {
 		return nil, err
@@ -400,6 +408,8 @@ func (s *ShareService) UpdateAccess(ctx context.Context, name string, in UpdateS
 
 // SetParam updates a single smb.conf parameter for a share.
 func (s *ShareService) SetParam(ctx context.Context, name, key, value, actor, ip string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if strings.EqualFold(name, "global") {
 		// allow carefully — still admin
 	}
