@@ -126,7 +126,7 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 	s := testWorkspaceServer(t)
 	for _, role := range []auth.Role{auth.RoleAdmin, auth.RoleHelpdesk, auth.RoleReadonly} {
 		sess, _ := s.sessions.Create("fixture@example.com", "CN=fixture", role)
-		for _, path := range []string{"users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
+		for _, path := range []string{"", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
 			req := httptest.NewRequest("GET", "/"+path, nil)
 			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
 			rec := httptest.NewRecorder()

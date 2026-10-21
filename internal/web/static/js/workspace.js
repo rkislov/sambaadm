@@ -27,7 +27,7 @@
   const utcDays=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
   const scheduleFields=()=>utcDays.map((day,i)=>text('day'+i,day+' UTC (09:00-18:00; пусто — закрыто)',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]+' UTC (09:00-18:00; empty — closed)',{optional:true,value:'00:00-24:00'}));
   const scheduleOperation=(path)=>action(t('Расписание UTC','UTC schedule'),'PUT',path,scheduleFields(),{revision:true,confirm:true,when:r=>r.scheduleSupported!==false&&r.scheduleEditable!==false,prefill:r=>Object.fromEntries((r.schedule||Array(7).fill('00:00-24:00')).map((v,i)=>['day'+i,v])),encode:body=>({revision:body.revision,schedule:utcDays.map((_,i)=>body['day'+i]||'')})});
-  const linkFields=()=>[text('sites','Сайты через точку с запятой','Sites separated by semicolons',{array:true}),text('cost','Стоимость (1–32767)','Cost (1–32767)',{type:'number',numeric:true,value:100}),text('interval','Интервал, минут (15–10080, шаг 15)','Interval, minutes (15–10080, step 15)',{type:'number',numeric:true,value:180})];
+  const linkFields=()=>[text('sites','Сайты','Sites',{array:true,multiple:true}),text('cost','Стоимость (1–32767)','Cost (1–32767)',{type:'number',numeric:true,value:100}),text('interval','Интервал, минут (15–10080, шаг 15)','Interval, minutes (15–10080, step 15)',{type:'number',numeric:true,value:180})];
   const configs = {
     '/users': {title:t('Пользователи','Users'), endpoint:'/users', directory:'users', id:r=>r.samAccountName,
       columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN']],
@@ -77,10 +77,10 @@
     '/repl':{title:t('Репликация','Replication'),endpoint:'/repl/partners',id:r=>r.dn,
       columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
       hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
-      toolbar:[view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
+      toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
     '/sites':{title:t('Сайты','Sites'),endpoint:'/sites',id:r=>r.name,
       columns:[['name',t('Сайт','Site')],['dn','DN']],create:action(t('Создать сайт','Create site'),'POST','/sites',[name()]),
-      toolbar:[view(t('Топология сайтов','Site topology'),'/sites/topology'),view(t('Контроллеры','Controllers'),'/sites/controllers'),view(t('Связи сайтов','Site links'),'/sites/links'),action(t('Создать связь сайтов','Create site link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}),view(t('Подсети','Subnets'),'/subnets'),action(t('Переназначить подсеть','Reassign subnet'),'PUT','/subnets/site',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Новый сайт','New site')],{confirm:true}),action(t('Создать подсеть','Create subnet'),'POST','/subnets',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Имя сайта','Site name')]),action(t('Удалить подсеть','Delete subnet'),'POST','/subnets/delete',[text('subnet','Подсеть CIDR','Subnet CIDR')],{danger:true})],actions:[remove(r=>'/sites/'+enc(r.name))]},
+      toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Топология сайтов','Site topology'),'/sites/topology'),view(t('Контроллеры','Controllers'),'/sites/controllers'),view(t('Связи сайтов','Site links'),'/sites/links'),action(t('Создать связь сайтов','Create site link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}),view(t('Подсети','Subnets'),'/subnets'),action(t('Переназначить подсеть','Reassign subnet'),'PUT','/subnets/site',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Новый сайт','New site')],{confirm:true}),action(t('Создать подсеть','Create subnet'),'POST','/subnets',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Имя сайта','Site name')]),action(t('Удалить подсеть','Delete subnet'),'POST','/subnets/delete',[text('subnet','Подсеть CIDR','Subnet CIDR')],{danger:true})],actions:[remove(r=>'/sites/'+enc(r.name))]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
@@ -192,7 +192,7 @@
         };d.addEventListener('toggle',loadNodes);
         li.append(button(t('Запросить запись…','Query record…'),()=>openOperation(cfg.actions[0],row),'linkish'));
       }
-      if(cfg===configs['/gpo']){const ul=el('ul');const sub=el('li');sub.textContent=row.guid||t('GUID отсутствует','GUID missing');ul.append(sub);li.append(ul);}
+      if(cfg===configs['/gpo']){const branch=el('details');branch.append(el('summary','',t('Параметры политики','Policy settings')));for(const a of cfg.actions.slice(0,2))branch.append(button(a.label,()=>openOperation(a,row)));li.append(branch);}
       list.append(li);
     });sidebar.append(list);
     if(cfg===configs['/gpo'] && tree){
@@ -219,6 +219,10 @@
     if(typeof result!=='object'){parent.append(el('pre','workspace-output',String(result)));return;}
     if(Array.isArray(result)) {if(!result.length)parent.append(el('p','muted',t('Нет данных','No data')));else result.forEach(r=>describe(r,parent));return;}
     const dl=el('dl','workspace-properties');Object.entries(result).forEach(([k,v])=>{dl.append(el('dt','',k));const dd=el('dd');if(v&&typeof v==='object')describe(v,dd);else dd.textContent=value(v);dl.append(dd);});parent.append(dl);
+  }
+  function describeTree(data,parent){
+    if(!data||typeof data!=='object'){describe(data,parent);return;}
+    const list=el('ul','directory-tree');for(const [name,item] of Object.entries(data)){const li=el('li');const branch=el('details');branch.append(el('summary','',name));describeTree(item,branch);li.append(branch);list.append(li);}parent.append(list);
   }
   function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
@@ -263,14 +267,14 @@
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики ALT из шаблонов домена. Выберите раздел и найдите нужную настройку. Применение проверяется на ALT-клиенте.','ALT policies from domain templates. Select a scope and find a setting. Verify application on the ALT client.')));
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
-    const toolbar=el('div','workspace-form');
+    const toolbar=el('div','workspace-form policy-toolbar');
     const scopeSelect=el('select');scopeSelect.id='alt-scope';for(const [value,label] of [['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]]){const o=el('option','',label);o.value=value;scopeSelect.append(o);}
     const scopeLabel=el('label','',t('Раздел политики','Policy scope'));scopeLabel.htmlFor=scopeSelect.id;
     const search=el('input');search.type='search';search.id='alt-search';search.placeholder=t('Название, описание или параметр','Name, description or parameter');const searchLabel=el('label','',t('Поиск политик','Search policies'));searchLabel.htmlFor=search.id;
     const category=el('select');category.id='alt-category';const categoryLabel=el('label','',t('Категория','Category'));categoryLabel.htmlFor=category.id;
     toolbar.append(scopeLabel,scopeSelect,searchLabel,search,categoryLabel,category);
     const content=el('div');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
-    const path=a.path(row);let model,limit=30,loading=0;
+    const path=a.path(row);let model,selectedPolicy='',loading=0;const expanded=new Set();
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
     function render(){
       if(!model)return;
@@ -280,7 +284,15 @@
       if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
       const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===(s.category||s.template||''))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
       content.append(el('p','muted',t('Найдено: ','Found: ')+matches.length+' / '+model.settings.length));
-      for(const setting of matches.slice(0,limit)){
+      const layout=el('div','policy-layout');const navigation=el('nav','policy-navigation directory-tree');navigation.setAttribute('aria-label',t('Дерево политик ALT','ALT policy tree'));const detail=el('section','policy-detail');layout.append(navigation,detail);content.append(layout);
+      const groups=new Map();for(const setting of matches){const template=setting.template||'ALT';if(!groups.has(template))groups.set(template,new Map());const categories=groups.get(template);const name=setting.category||t('Общие','General');if(!categories.has(name))categories.set(name,[]);categories.get(name).push(setting);}
+      for(const [template,categories] of groups){const branch=el('details');branch.open=!!needle||expanded.has(template);branch.append(el('summary','',template));branch.addEventListener('toggle',()=>branch.open?expanded.add(template):expanded.delete(template));navigation.append(branch);
+        for(const [name,settings] of categories){const key=template+'/'+name;const folder=el('details');folder.open=!!needle||expanded.has(key);folder.append(el('summary','',name+' ('+settings.length+')'));folder.addEventListener('toggle',()=>folder.open?expanded.add(key):expanded.delete(key));branch.append(folder);
+          for(const setting of settings){const item=button(setting.label,()=>{selectedPolicy=setting.id;expanded.add(template);expanded.add(key);render();content.querySelector('[aria-current=true]')?.focus();},selectedPolicy===setting.id?'selected':'');item.title=stateLabel(setting.state);item.setAttribute('aria-current',selectedPolicy===setting.id?'true':'false');folder.append(item);}
+        }
+      }
+      if(!matches.some(s=>s.id===selectedPolicy))detail.append(el('p','muted',t('Выберите политику в дереве слева. Поиск раскрывает подходящие ветви.','Select a policy in the tree. Search expands matching branches.')));
+      for(const setting of matches.filter(s=>s.id===selectedPolicy)){
         const form=el('form','workspace-form');form.style.marginBottom='1.5rem';const label=el('label','',setting.label);const select=el('select');
         const readonly=setting.state==='unsupported'||!!setting.unsupported;
         const states=readonly?['unsupported']:['not-configured','enabled','disabled'];for(const state of states){const option=el('option','',stateLabel(state));option.value=state;select.append(option);}select.value=readonly?'unsupported':setting.state;select.disabled=!admin||readonly;select.id='alt-setting-'+model.settings.indexOf(setting);label.htmlFor=select.id;form.append(label,select);
@@ -307,19 +319,19 @@
             catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);content.replaceChildren(button(t('Перезагрузить параметры','Reload settings'),()=>refresh()));}
             finally{if(generation===dialogGeneration){toolbar.querySelectorAll('input,select').forEach(x=>x.disabled=false);dialog.querySelectorAll('button').forEach(x=>x.disabled=false);}}
           });
-        }content.append(form);
+        }detail.append(form);
       }
-      if(matches.length>limit)content.append(button(t('Показать ещё','Show more'),()=>{limit+=30;render();}));
     }
     async function refresh(){const requestID=++loading;model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
       const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''));if(generation!==dialogGeneration||requestID!==loading)return;model=result;
       category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
-      limit=30;render();message(notice,'');
+      render();message(notice,'');
     }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
-    scopeSelect.addEventListener('change',()=>{search.value='';refresh();});search.addEventListener('input',()=>{limit=30;render();});category.addEventListener('change',()=>{limit=30;render();});
+    scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';refresh();});search.addEventListener('input',render);category.addEventListener('change',render);
     await refresh();
   }
   async function openOperation(a,row) {
+    if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
@@ -327,13 +339,24 @@
     if(row)dialog.append(el('p','mono',cfg.id(row)||row.dn||''));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
     if(a.danger)dialog.append(el('p','alert error',t('Изменение применяется в домене. Проверьте выбранный объект. Удаление может быть необратимым.','This changes the domain. Check the selected object. Deletion may be irreversible.')));
+    const endpoint=typeof a.path==='function'?a.path(row):a.path;
+    let fields=a.fields;
+    const needsSites=fields.some(f=>f.key==='sites'||f.key==='site');
+    const needsDCs=endpoint.startsWith('/repl/')&&fields.some(f=>['dc','from','dest'].includes(f.key));
+    if(needsSites||needsDCs){
+      const pending=el('p','',t('Загрузка списка объектов…','Loading objects…'));dialog.append(pending);if(!dialog.open)dialog.showModal();
+      try{const [sites,dcs]=await Promise.all([needsSites?request('/sites'):[],needsDCs?request('/sites/controllers'):[]]);if(generation!==dialogGeneration)return;
+        fields=fields.map(f=>f.key==='sites'||f.key==='site'?{...f,choices:sites.map(s=>s.name)}:needsDCs&&['dc','from','dest'].includes(f.key)?{...f,choices:dcs.map(dc=>dc.dns)}:f);pending.remove();
+      }catch(err){if(generation===dialogGeneration){message(pending,err.message,true);dialog.append(button(t('Закрыть','Close'),closeOperation));}return;}
+    }
     const form=el('form','workspace-form');const defaults=a.prefill?a.prefill(row):{};
     const inputs=[];
-    for(const f of a.fields){const label=el('label','',f.label);let input;
-      if(f.choices){input=el('select');f.choices.forEach(c=>{const option=el('option','',c);option.value=c;input.append(option);});}
+    for(const f of fields){const label=el('label','',f.label);let input;
+      if(f.choices){input=el('select');input.multiple=!!f.multiple;if(!f.multiple){const empty=el('option','',f.optional?t('По умолчанию','Default'):t('Выберите объект','Select object'));empty.value='';input.append(empty);}f.choices.forEach(c=>{const option=el('option','',c);option.value=c;input.append(option);});}
       else {input=el('input');input.type=f.type||'text';}
-      input.name=f.key;input.required=!f.optional&&f.type!=='checkbox';input.autocomplete=f.type==='password'?'new-password':'off';
+      input.setAttribute('aria-label',f.label);input.name=f.key;input.required=!f.optional&&f.type!=='checkbox';input.autocomplete=f.type==='password'?'new-password':'off';
       if(f.type==='checkbox')input.checked=!!f.value;else input.value=defaults[f.key]??f.value??((f.key==='ou'||f.key==='parentDN')?selectedContainer:'');
+      if(f.multiple){const selected=String(defaults[f.key]??f.value??'').split(';');for(const o of input.options)o.selected=selected.includes(o.value);}
       if(f.key==='container' && !input.value)input.value=selectedContainer||'';
       if(f.placeholder)input.placeholder=f.placeholder;if(f.list)input.setAttribute('list',f.list);
       label.append(input);form.append(label);inputs.push([f,input]);
@@ -349,7 +372,7 @@
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(!form.reportValidity())return;
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};
-      inputs.forEach(([f,input])=>{if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
+      inputs.forEach(([f,input])=>{if(f.multiple)body[f.key]=Array.from(input.selectedOptions,o=>o.value);else if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
       if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,a.preset);
       const payload=a.encode?a.encode(body):body;
       if(a.method==='GET'&&Object.keys(body).length)path+=(path.includes('?')?'&':'?')+new URLSearchParams(body);
@@ -368,6 +391,41 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  async function openTopology(){
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Топология репликации','Replication topology'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    dialog.append(title,notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
+    let serial=0;
+    async function refresh(){const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
+      try{const [topology,connections]=await Promise.all([request('/sites/topology'),request('/repl/connections')]);if(generation!==dialogGeneration||current!==serial)return;
+        const dcs=topology.controllers||[];message(notice,'');
+        body.append(el('p','muted',t('Стрелки показывают направление источник → назначение. Сплошная линия — включено, пунктир — отключено. Это конфигурация AD, а не подтверждение исправности репликации.','Arrows show source → destination. Solid: enabled; dashed: disabled. AD configuration does not confirm replication health.')));
+        const map=el('div','topology-map');const width=720,height=Math.max(180,Math.ceil(dcs.length/3)*145+40);map.style.aspectRatio=width+'/'+height;
+        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('aria-hidden','true');map.append(svg);
+        const shape=(tag,attrs)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);return n;};
+        const defs=shape('defs',{}),marker=shape('marker',{id:'topology-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});marker.append(shape('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#477887'}));defs.append(marker);svg.append(defs);
+        const positions=new Map(dcs.map((dc,i)=>[dc.dns.toLowerCase(),{x:width/(Math.min(3,dcs.length-Math.floor(i/3)*3)+1)*((i%3)+1),y:80+Math.floor(i/3)*145}]));
+        const missing=[];for(const connection of connections){const from=positions.get(connection.source.toLowerCase()),to=positions.get(connection.destination.toLowerCase());if(!from||!to){missing.push(connection);continue;}const reverse=connections.some(c=>c.source.toLowerCase()===connection.destination.toLowerCase()&&c.destination.toLowerCase()===connection.source.toLowerCase());const offset=reverse?18:0,dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;const line=shape('polyline',{points:`${from.x},${from.y} ${(from.x+to.x)/2-dy/length*offset},${(from.y+to.y)/2+dx/length*offset} ${to.x},${to.y}`,fill:'none',stroke:'#477887','stroke-width':2,'stroke-dasharray':connection.enabled?'':'7 5','marker-mid':'url(#topology-arrow)'});const hint=shape('title',{});hint.textContent=connection.source+' → '+connection.destination+(connection.automatic?' (KCC)':'');line.append(hint);svg.append(line);}
+        const form=el('form','workspace-form');const source=el('select'),destination=el('select');source.name='source';destination.name='destination';
+        for(const select of [source,destination]){select.required=true;const empty=el('option','',t('Выберите контроллер','Select controller'));empty.value='';select.append(empty);for(const dc of dcs){const option=el('option','',dc.dns+' · '+dc.site);option.value=dc.dns;select.append(option);}}
+        const update=()=>{map.querySelectorAll('.topology-node').forEach(n=>{n.classList.toggle('source',n.dataset.dc===source.value);n.classList.toggle('destination',n.dataset.dc===destination.value);});destination.setCustomValidity(source.value&&source.value===destination.value?t('Выберите разные контроллеры','Choose different controllers'):'');confirm.checked=false;};
+        let dragged='';for(const dc of dcs){const point=positions.get(dc.dns.toLowerCase());const node=button(dc.name+'\n'+dc.site,()=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();},'topology-node');node.title=dc.dns;node.style.left=point.x/width*100+'%';node.style.top=point.y/height*100+'%';node.draggable=admin;node.dataset.dc=dc.dns;
+          node.addEventListener('dragstart',e=>{dragged=dc.dns;e.dataTransfer.setData('text/plain',dc.dns);e.dataTransfer.effectAllowed='link';});node.addEventListener('dragend',()=>{dragged='';});node.addEventListener('dragover',e=>{if(admin&&dragged&&dragged!==dc.dns){e.preventDefault();e.dataTransfer.dropEffect='link';}});node.addEventListener('drop',e=>{e.preventDefault();if(!admin||!dragged||dragged===dc.dns)return;source.value=dragged;destination.value=dc.dns;dragged='';update();form.scrollIntoView({block:'nearest'});});map.append(node);}
+        body.append(map);if(!dcs.length)body.append(el('p','muted',t('Контроллеры не найдены','No controllers found')));
+        if(missing.length)body.append(el('p','alert error',t('Некоторые соединения ссылаются на отсутствующие контроллеры: ','Some connections reference missing controllers: ')+missing.length));
+        const confirm=el('input');confirm.type='checkbox';confirm.required=true;
+        if(admin){body.append(el('p','',t('Перетащите источник на назначение или нажмите два узла по очереди. Можно также выбрать контроллеры из списков. Связь создаётся только после подтверждения.','Drag the source onto the destination or click two nodes in order. You can also use the lists. Confirm before creating the connection.')));
+          for(const [labelText,select] of [[t('Источник','Source'),source],[t('Назначение','Destination'),destination]]){const label=el('label','',labelText);select.setAttribute('aria-label',labelText);label.append(select);form.append(label);select.addEventListener('change',update);}
+          const confirmation=el('label','',t('Подтверждаю создание соединения источник → назначение','Confirm creating the source → destination connection'));confirmation.prepend(confirm);form.append(confirmation);const save=el('button','',t('Создать соединение','Create connection'));save.type='submit';save.disabled=dcs.length<2;form.append(save);body.append(form);if(dcs.length<2)form.append(el('p','muted',t('Для соединения нужны как минимум два контроллера.','At least two controllers are required.')));
+          form.addEventListener('submit',async e=>{e.preventDefault();updateValidity();if(!form.reportValidity())return;const payload={source:source.value,destination:destination.value};if(connections.some(c=>c.source.toLowerCase()===payload.source.toLowerCase()&&c.destination.toLowerCase()===payload.destination.toLowerCase())){message(notice,t('Такое соединение уже существует','This connection already exists'),true);return;}save.disabled=true;try{await request('/repl/connections','POST',payload);if(generation!==dialogGeneration)return;await refresh();message(notice,t('Соединение создано','Connection created'));}catch(err){if(generation===dialogGeneration){message(notice,err.message,true);save.disabled=false;}}});
+          function updateValidity(){destination.setCustomValidity(source.value===destination.value?t('Выберите разные контроллеры','Choose different controllers'):'');}
+        }
+        const list=el('details');list.append(el('summary','',t('Соединения и операции','Connections and actions')));renderResult(connections,list,{path:'/repl/connections'});body.append(list);
+      }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
+    }
+    await refresh();
   }
   function topologyTable(parent,rows,columns,actions=[]){
     const wrap=el('div','workspace-table');const table=el('table');const head=el('tr');columns.forEach(c=>head.append(el('th','',c[1])));if(actions.length)head.append(el('th','',t('Операции','Actions')));table.append(head);
@@ -396,6 +454,7 @@
       const health={healthy:t('Успешно','Healthy'),degraded:t('Есть ошибки','Degraded'),'no-partners':t('Нет партнёров — состояние не подтверждено','No partners — health unverified')};parent.append(el('h3','',result.server||''),el('p','',health[result.health]||t('Неизвестно','Unknown')));
       topologyTable(parent,result.neighbors||[],[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);return;
     }
+    if(cfg===configs['/gpo']){describeTree(result,parent);return;}
     // Keep DNS query results under the chosen zone, with explicit values for edits.
     if(cfg===configs['/dns']&&Array.isArray(result)) {
       const ul=el('ul','directory-tree');const li=el('li','',row.name);const inner=el('ul');

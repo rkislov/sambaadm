@@ -3,6 +3,7 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
+  <script src="/static/js/dashboard.js" defer></script>
 </head>
 <body>
   {{template "nav" .}}
@@ -10,6 +11,7 @@
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     <h1>{{t .Lang "dashboard.title"}}</h1>
     <p class="muted">{{t .Lang "dashboard.hint"}}</p>
+    <section id="domain-dashboard" aria-label="Domain summary"></section>
     <dl class="kv">
       <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
       <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>
