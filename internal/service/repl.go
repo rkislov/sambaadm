@@ -121,7 +121,7 @@ func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus
 	}
 	neighbors, err := remote.Neighbors(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("replication status on %s as service account %s (ldap.bind.user; browser login does not change this account): %w", remote.Host, remote.User, err)
 	}
 	st := &ReplStatus{Server: remote.Host, Health: "no-partners", Neighbors: []ReplNeighbor{}}
 	for _, n := range neighbors {

@@ -18,15 +18,16 @@ var ErrUserConflict = errors.New("user changed; reload the profile before saving
 var ErrUserInput = errors.New("invalid user profile")
 
 type UpdateUserInput struct {
-	Revision    string  `json:"revision"`
-	DisplayName *string `json:"displayName"`
-	Mail        *string `json:"mail"`
-	Description *string `json:"description"`
-	GivenName   *string `json:"givenName"`
-	Surname     *string `json:"surname"`
-	Telephone   *string `json:"telephone"`
-	Department  *string `json:"department"`
-	Title       *string `json:"title"`
+	Attributes  map[string]string `json:"attributes"`
+	Revision    string            `json:"revision"`
+	DisplayName *string           `json:"displayName"`
+	Mail        *string           `json:"mail"`
+	Description *string           `json:"description"`
+	GivenName   *string           `json:"givenName"`
+	Surname     *string           `json:"surname"`
+	Telephone   *string           `json:"telephone"`
+	Department  *string           `json:"department"`
+	Title       *string           `json:"title"`
 }
 
 func (s *UserService) Update(ctx context.Context, login string, in UpdateUserInput, actor, ip string) (*User, error) {
@@ -38,6 +39,19 @@ func (s *UserService) Update(ctx context.Context, login string, in UpdateUserInp
 		value *string
 		max   int
 	}{{"displayName", in.DisplayName, 256}, {"mail", in.Mail, 256}, {"description", in.Description, 1024}, {"givenName", in.GivenName, 64}, {"sn", in.Surname, 64}, {"telephoneNumber", in.Telephone, 64}, {"department", in.Department, 64}, {"title", in.Title, 64}}
+
+	for attr, value := range in.Attributes {
+		max, ok := editableUserAttributes[attr]
+		if !ok {
+			return nil, fmt.Errorf("%w: attribute %s is read-only or unsupported", ErrUserInput, attr)
+		}
+		v := value
+		fields = append(fields, struct {
+			attr  string
+			value *string
+			max   int
+		}{attr, &v, max})
+	}
 	changed := false
 	for _, f := range fields {
 		if f.value == nil {
@@ -131,4 +145,12 @@ func (s *UserService) Memberships(ctx context.Context, login string) ([]UserGrou
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	return out, nil
+}
+
+// Account/security attributes require dedicated operations, not generic replacement.
+var editableUserAttributes = map[string]int{
+	"initials": 6, "physicalDeliveryOfficeName": 128, "wWWHomePage": 2048,
+	"mobile": 64, "homePhone": 64, "pager": 64, "facsimileTelephoneNumber": 64,
+	"streetAddress": 1024, "l": 128, "st": 128, "postalCode": 40, "co": 128,
+	"company": 64, "division": 256, "employeeID": 16, "employeeNumber": 512,
 }

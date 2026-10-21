@@ -14,19 +14,21 @@ import (
 
 // User is a domain user account.
 type User struct {
-	Revision       string `json:"revision"`
-	GivenName      string `json:"givenName,omitempty"`
-	Surname        string `json:"surname,omitempty"`
-	Telephone      string `json:"telephone,omitempty"`
-	Department     string `json:"department,omitempty"`
-	Title          string `json:"title,omitempty"`
-	DN             string `json:"dn"`
-	SAMAccountName string `json:"samAccountName"`
-	DisplayName    string `json:"displayName,omitempty"`
-	UPN            string `json:"userPrincipalName,omitempty"`
-	Mail           string `json:"mail,omitempty"`
-	Enabled        bool   `json:"enabled"`
-	Description    string `json:"description,omitempty"`
+	Name           string              `json:"name,omitempty"`
+	Attributes     map[string][]string `json:"attributes,omitempty"`
+	Revision       string              `json:"revision"`
+	GivenName      string              `json:"givenName,omitempty"`
+	Surname        string              `json:"surname,omitempty"`
+	Telephone      string              `json:"telephone,omitempty"`
+	Department     string              `json:"department,omitempty"`
+	Title          string              `json:"title,omitempty"`
+	DN             string              `json:"dn"`
+	SAMAccountName string              `json:"samAccountName"`
+	DisplayName    string              `json:"displayName,omitempty"`
+	UPN            string              `json:"userPrincipalName,omitempty"`
+	Mail           string              `json:"mail,omitempty"`
+	Enabled        bool                `json:"enabled"`
+	Description    string              `json:"description,omitempty"`
 }
 
 // CreateUserInput holds parameters for creating a user.
@@ -49,11 +51,11 @@ type UserService struct {
 // List returns users under optional OU, with optional substring filter.
 func (s *UserService) List(ctx context.Context, ou, q string) ([]User, error) {
 	filter := "(&(objectCategory=person)(objectClass=user))"
-	if q != "" {
+	if q = strings.TrimSpace(q); q != "" {
 		esc := ldap.EscapeFilter(q)
 		filter = fmt.Sprintf(
-			"(&(objectCategory=person)(objectClass=user)(|(sAMAccountName=*%s*)(displayName=*%s*)(cn=*%s*)))",
-			esc, esc, esc,
+			"(&(objectCategory=person)(objectClass=user)(|(sAMAccountName=*%s*)(displayName=*%s*)(cn=*%s*)(givenName=*%s*)(sn=*%s*)(mail=*%s*)(userPrincipalName=*%s*)))",
+			esc, esc, esc, esc, esc, esc, esc,
 		)
 	}
 	entries, err := s.ldap.Search(ctx, ldapproto.SearchOptions{
@@ -266,7 +268,14 @@ func entryToUser(e *ldap.Entry) User {
 			enabled = v&ldapproto.UACAccountDisable == 0
 		}
 	}
+	attrs := make(map[string][]string)
+	for _, name := range ldapproto.UserProfileAttrs {
+		if values := e.GetAttributeValues(name); len(values) > 0 {
+			attrs[name] = values
+		}
+	}
 	return User{
+		Name: e.GetAttributeValue("cn"), Attributes: attrs,
 		Revision: e.GetAttributeValue("uSNChanged"), GivenName: e.GetAttributeValue("givenName"), Surname: e.GetAttributeValue("sn"), Telephone: e.GetAttributeValue("telephoneNumber"), Department: e.GetAttributeValue("department"), Title: e.GetAttributeValue("title"),
 		DN:             e.DN,
 		SAMAccountName: e.GetAttributeValue(ldapproto.AttrSAMAccountName),
