@@ -11,7 +11,7 @@ import (
 	"github.com/go-ldap/ldap/v3"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/policy"
 	"strconv"
@@ -19,7 +19,7 @@ import (
 )
 
 var ErrPolicyConflict = errors.New("policy changed; reload before saving")
-var ErrEditorUnavailable = errors.New("ALT editor requires editor_enabled, an installed ALT ADMX template and local writable DC SYSVOL")
+var ErrEditorUnavailable = errors.New("ALT editor requires editor_enabled, an ALT ADMX template and SMB access to DC SYSVOL")
 
 const editorJournal = ".sambaadm-editor.pending"
 const registryCSE = "[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F72-3407-48AE-BA88-E8213C6761F1}]"
@@ -33,6 +33,8 @@ type ALTPolicy struct {
 	Revision        string       `json:"revision"`
 	Settings        []ALTSetting `json:"settings"`
 	Scope           string       `json:"scope"`
+	Controller      string       `json:"controller"`
+	TemplateSource  string       `json:"templateSource"`
 	MachineDisabled bool         `json:"machineDisabled"`
 }
 type ALTChange struct {
@@ -41,24 +43,20 @@ type ALTChange struct {
 	Revision string `json:"revision"`
 }
 type editorSnapshot struct {
-	root             *os.Root
-	entry            *ldap.Entry
-	pol, ini         []byte
-	exists           bool
-	records          []policy.Record
-	version          uint32
-	definitions      []policy.Definition
-	revision         string
-	polPath, iniPath string
+	root                       policyStore
+	templateSource, controller string
+	entry                      *ldap.Entry
+	pol, ini                   []byte
+	exists                     bool
+	records                    []policy.Record
+	version                    uint32
+	definitions                []policy.Definition
+	revision                   string
+	polPath, iniPath           string
 }
 
-func policyChild(root *os.Root, parent, name string, optional bool) (string, error) {
-	dir, e := root.Open(parent)
-	if e != nil {
-		return "", e
-	}
-	defer dir.Close()
-	entries, e := dir.ReadDir(-1)
+func policyChild(root policyStore, parent, name string, optional bool) (string, error) {
+	entries, e := root.ReadDir(parent)
 	if e != nil {
 		return "", e
 	}
@@ -77,34 +75,10 @@ func policyChild(root *os.Root, parent, name string, optional bool) (string, err
 		}
 		found = name
 	}
-	return filepath.Join(parent, found), nil
+	return path.Join(parent, found), nil
 }
 
-// Create over SMB so Samba assigns the inherited NT ACL, ownership and DOS
-// attributes. Local POSIX creation would bypass Samba ACL inheritance.
-func (s *GPOService) createRegistry(ctx context.Context, root *os.Root, path string, entry *ldap.Entry) error {
-	unc := strings.Split(strings.TrimPrefix(entry.GetAttributeValue("gPCFileSysPath"), `\\`), `\`)
-	if len(unc) < 5 {
-		return fmt.Errorf("invalid SYSVOL path")
-	}
-	remote := strings.Join(append(unc[2:], strings.Split(filepath.ToSlash(path), "/")...), `\`)
-	if err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
-		file, err := share.OpenFile(remote, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
-		if err != nil {
-			return err
-		}
-		return file.Close()
-	}); err != nil {
-		return fmt.Errorf("create Registry.pol with inherited SMB ACL: %w", err)
-	}
-	f, e := root.Open(path)
-	if e != nil {
-		return e
-	}
-	defer f.Close()
-	return f.Sync()
-}
-func readPolicyFile(root *os.Root, path string) ([]byte, error) {
+func readPolicyFile(root policyStore, path string) ([]byte, error) {
 	info, e := root.Lstat(path)
 	if e != nil {
 		return nil, e
@@ -170,18 +144,14 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	}
 	return uint32(v), []byte(strings.Join(lines, "\n")), nil
 }
-func (s *GPOService) editorSnapshot(ctx context.Context, gpo string) (*editorSnapshot, error) {
+func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {
 		return nil, ErrEditorUnavailable
-	}
-	defs, e := policy.SystemdDefinitions(s.gpoCfg.ADMXPath)
-	if e != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEditorUnavailable, e)
 	}
 	if !looksLikeGUID(gpo) {
 		return nil, fmt.Errorf("GPO GUID required")
 	}
-	entry, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{Filter: "(&(objectClass=groupPolicyContainer)(cn=" + ldap.EscapeFilter(braceGUID(gpo)) + "))", Attributes: []string{"cn", "versionNumber", "gPCMachineExtensionNames", "gPCFileSysPath", "flags"}})
+	entry, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{Filter: "(&(objectClass=groupPolicyContainer)(cn=" + ldap.EscapeFilter(braceGUID(gpo)) + "))", Attributes: []string{"cn", "versionNumber", "gPCMachineExtensionNames", "gPCFileSysPath", "flags", "uSNChanged"}})
 	if e != nil {
 		return nil, e
 	}
@@ -189,38 +159,30 @@ func (s *GPOService) editorSnapshot(ctx context.Context, gpo string) (*editorSna
 	if !looksLikeGUID(cn) {
 		return nil, fmt.Errorf("invalid LDAP GPO identifier")
 	}
-	var domain []string
-	for _, p := range strings.Split(s.ldap.BaseDN(), ",") {
-		if len(p) > 3 && strings.EqualFold(p[:3], "DC=") {
-			domain = append(domain, p[3:])
-		}
+	dns, e := s.domainDNS(ctx)
+	if e != nil {
+		return nil, e
 	}
-	dns := strings.ToLower(strings.Join(domain, "."))
-	if dns == "" || strings.ContainsAny(dns, "/\\") {
+	if dns == "" || strings.ContainsAny(dns, "/\\:") {
 		return nil, fmt.Errorf("invalid domain")
 	}
-	// Local mode must address this domain's SYSVOL, never a path supplied by HTTP.
+	defs, source, e := s.editorDefinitions(share, dns)
+	if e != nil {
+		return nil, fmt.Errorf("%w: %v", ErrEditorUnavailable, e)
+	}
+	// Use the configured DC, never follow a host or path supplied by HTTP/UNC.
 	unc := strings.Split(strings.TrimPrefix(entry.GetAttributeValue("gPCFileSysPath"), `\\`), `\`)
 	if len(unc) != 5 || !strings.EqualFold(unc[1], "sysvol") || !strings.EqualFold(unc[2], dns) || !strings.EqualFold(unc[3], "Policies") || !strings.EqualFold(unc[4], cn) {
 		return nil, fmt.Errorf("GPO SYSVOL path does not match configured domain")
 	}
-	parent, e := os.OpenRoot(s.sysvol())
-	if e != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEditorUnavailable, e)
-	}
-	defer parent.Close()
-	root, e := parent.OpenRoot(filepath.Join(dns, "Policies", cn))
-	if e != nil {
-		return nil, e
-	}
-	ok := false
-	defer func() {
-		if !ok {
-			root.Close()
+	root := &smbPolicyStore{share: share, base: path.Join(dns, "Policies", cn)}
+	if !locked {
+		if _, e = root.Lstat(editorJournal); !os.IsNotExist(e) {
+			if e != nil {
+				return nil, e
+			}
+			return nil, fmt.Errorf("unfinished policy save: inspect SYSVOL/%s/%s before further edits", root.base, editorJournal)
 		}
-	}()
-	if _, e = root.Stat(editorJournal); !os.IsNotExist(e) {
-		return nil, fmt.Errorf("unfinished policy save: inspect %s before further edits", editorJournal)
 	}
 	machinePath, e := policyChild(root, ".", "Machine", false)
 	if e != nil {
@@ -273,11 +235,10 @@ func (s *GPOService) editorSnapshot(ctx context.Context, gpo string) (*editorSna
 	h.Write(data)
 	h.Write(encoded)
 	revision := fmt.Sprintf("%x", h.Sum(nil))
-	ok = true
-	return &editorSnapshot{root: root, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
+	return &editorSnapshot{root: root, templateSource: source, controller: s.remote.Host, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
 }
 func (snap *editorSnapshot) view() *ALTPolicy {
-	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: "Machine", Settings: []ALTSetting{}}
+	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: "Machine", Controller: snap.controller, TemplateSource: snap.templateSource, Settings: []ALTSetting{}}
 	flags, _ := strconv.ParseUint(snap.entry.GetAttributeValue("flags"), 10, 32)
 	out.MachineDisabled = flags&2 != 0
 	for _, d := range snap.definitions {
@@ -302,26 +263,25 @@ func (snap *editorSnapshot) view() *ALTPolicy {
 func (s *GPOService) ALTSettings(ctx context.Context, gpo string) (*ALTPolicy, error) {
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
-	snap, e := s.editorSnapshot(ctx, gpo)
-	if e != nil {
-		return nil, e
+	var out *ALTPolicy
+	if !s.gpoCfg.EditorEnabled || s.remote == nil {
+		return nil, ErrEditorUnavailable
 	}
-	defer snap.root.Close()
-	return snap.view(), nil
+	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+		snap, e := s.editorSnapshot(ctx, gpo, share, false)
+		if e != nil {
+			return e
+		}
+		out = snap.view()
+		return nil
+	})
+	return out, err
 }
 
 // writePolicyFile updates existing files in place so their ownership, ACL and
 // extended attributes survive. A durable journal allows detecting interrupted saves.
-func syncPolicyDirectory(root *os.Root, path string) error {
-	dir, e := root.Open(path)
-	if e != nil {
-		return e
-	}
-	defer dir.Close()
-	return dir.Sync()
-}
-func writePolicyFile(root *os.Root, path string, data []byte) error {
-	f, e := root.OpenFile(path, os.O_WRONLY|os.O_CREATE, 0644)
+func writePolicyFile(root policyStore, path string, data []byte) error {
+	f, e := root.OpenFile(path, os.O_RDWR, 0644)
 	if e != nil {
 		return e
 	}
@@ -342,7 +302,7 @@ func writePolicyFile(root *os.Root, path string, data []byte) error {
 	if e = f.Sync(); e != nil {
 		return e
 	}
-	return syncPolicyDirectory(root, filepath.Dir(path))
+	return nil
 }
 func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string) (out *ALTPolicy, err error) {
 	s.editorMu.Lock()
@@ -352,11 +312,21 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 			s.audit.Failure(actor, "gpo.alt.set", gpo+"/"+change.ID, ip, err)
 		}
 	}()
-	snap, e := s.editorSnapshot(ctx, gpo)
+	if !s.gpoCfg.EditorEnabled || s.remote == nil {
+		return nil, ErrEditorUnavailable
+	}
+	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+		out, err = s.setALTSetting(ctx, gpo, change, actor, ip, share)
+		return err
+	})
+	return out, err
+}
+
+func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string, share *smb2.Share) (*ALTPolicy, error) {
+	snap, e := s.editorSnapshot(ctx, gpo, share, false)
 	if e != nil {
 		return nil, e
 	}
-	defer snap.root.Close()
 	if change.Revision == "" || change.Revision != snap.revision {
 		return nil, ErrPolicyConflict
 	}
@@ -403,7 +373,7 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 		return nil, e
 	}
 	// Store recovery data before changing either file. Never silently continue
-	// after an interrupted save. Administrators can inspect this journal locally.
+	// after an interrupted save. The exclusive SMB create also serializes cooperating remote editors.
 	journal, e := snap.root.OpenFile(editorJournal, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 	if e != nil {
 		return nil, e
@@ -425,8 +395,15 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 	if e != nil {
 		return nil, e
 	}
-	if e = syncPolicyDirectory(snap.root, "."); e != nil {
-		return nil, e
+	// The snapshot might predate another editor's completed save. Recheck
+	// under the exclusive journal before touching either policy file.
+	current, e := s.editorSnapshot(ctx, gpo, share, true)
+	if e != nil || current.revision != snap.revision {
+		cleanup := snap.root.Remove(editorJournal)
+		if e == nil {
+			e = ErrPolicyConflict
+		}
+		return nil, errors.Join(e, cleanup)
 	}
 	rollback := func(cause error) (*ALTPolicy, error) {
 		var a error
@@ -445,13 +422,14 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 		if e := snap.root.Remove(editorJournal); e != nil {
 			return nil, fmt.Errorf("save failed (%v); journal cleanup: %w", cause, e)
 		}
-		if e = syncPolicyDirectory(snap.root, "."); e != nil {
-			return nil, fmt.Errorf("rollback complete but journal directory sync failed: %w", e)
-		}
 		return nil, cause
 	}
 	if !snap.exists {
-		if e = s.createRegistry(ctx, snap.root, snap.polPath, snap.entry); e != nil {
+		f, createErr := snap.root.OpenFile(snap.polPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+		if createErr == nil {
+			createErr = f.Close()
+		}
+		if e = createErr; e != nil {
 			return nil, fmt.Errorf("retain %s and inspect file creation outcome: %w", editorJournal, e)
 		}
 	}
@@ -461,7 +439,7 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 	if e = writePolicyFile(snap.root, snap.iniPath, ini); e != nil {
 		return rollback(e)
 	}
-	assertion, _ := ldap.CompileFilter("(versionNumber=" + strconv.FormatUint(uint64(snap.version), 10) + ")")
+	assertion, _ := ldap.CompileFilter("(&(versionNumber=" + strconv.FormatUint(uint64(snap.version), 10) + ")(uSNChanged=" + ldap.EscapeFilter(snap.entry.GetAttributeValue("uSNChanged")) + "))")
 	req := ldap.NewModifyRequest(snap.entry.DN, []ldap.Control{ldap.NewControlString("1.3.6.1.1.12", true, string(assertion.Bytes()))})
 	req.Replace("versionNumber", []string{strconv.FormatUint(uint64(next), 10)})
 	ext := snap.entry.GetAttributeValue("gPCMachineExtensionNames")
@@ -473,6 +451,9 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 		if !errors.As(e, &ldapErr) || ldapErr.ResultCode >= 200 {
 			return nil, fmt.Errorf("LDAP commit outcome unknown; retain %s and verify LDAP/GPT.INI before recovery: %w", editorJournal, e)
 		}
+		if ldapErr.ResultCode == ldap.LDAPResultAssertionFailed {
+			return rollback(ErrPolicyConflict)
+		}
 		return rollback(fmt.Errorf("save LDAP version: %w", e))
 	}
 	// LDAP success commits the save. Leave the journal if cleanup fails, rather
@@ -480,15 +461,11 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 	if e = snap.root.Remove(editorJournal); e != nil {
 		return nil, fmt.Errorf("policy saved; remove completed journal after verification: %w", e)
 	}
-	if e = syncPolicyDirectory(snap.root, "."); e != nil {
-		return nil, fmt.Errorf("policy saved; journal directory sync failed: %w", e)
-	}
 	s.audit.Success(actor, "gpo.alt.set", gpo+"/"+change.ID+"="+change.State, ip)
 	// Return fresh revision including the updated LDAP extension metadata.
-	fresh, e := s.editorSnapshot(ctx, gpo)
+	fresh, e := s.editorSnapshot(ctx, gpo, share, false)
 	if e != nil {
 		return nil, e
 	}
-	defer fresh.root.Close()
 	return fresh.view(), nil
 }

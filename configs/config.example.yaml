@@ -27,10 +27,11 @@ auth:
       - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
 
 gpo:
-  # Редактор ALT: включать только на writable DC с локальным SYSVOL.
+  # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
   editor_enabled: false
-  admx_path: /usr/share/PolicyDefinitions/BaseALTSystemdUnits.admx
-  sysvol_path: /var/lib/samba/sysvol
+  # Пусто: SYSVOL/<domain>/Policies/PolicyDefinitions/BaseALTSystemdUnits.admx
+  # Можно явно указать локальный ADMX на Mac/сервере приложения.
+  admx_path: ""
   # drs | smb | both — AD replication and/or native SMB SYSVOL delivery.
   sync_mode: both
   # Standard SMB port; use 1445 only for the loopback macOS lab.

@@ -9,7 +9,7 @@ docker compose -p sambaadm-lab -f testdata/docker-compose.yml -f testdata/docker
 python3 - <<'PY'
 import json,pathlib
 root=pathlib.Path.cwd(); lab=root/'bin/lab'
-config={'server':{'listen':'127.0.0.1:8081'},'ldap':{'uri':'ldaps://127.0.0.1:1636','ca_cert':str(lab/'ca.pem'),'base_dn':'DC=sambaadm,DC=test','bind':{'type':'simple','user':'Administrator@sambaadm.test','password_env':'SAMBAADM_PASSWORD'}},'auth':{'roles':{'admins':['CN=Domain Admins,CN=Users,DC=sambaadm,DC=test']}},'gpo':{'smb_port':1445,'sync_mode':'both'},'audit':{'file':str(lab/'audit.log')},'logging':{'level':'debug'}}
+config={'server':{'listen':'127.0.0.1:8081'},'ldap':{'uri':'ldaps://127.0.0.1:1636','ca_cert':str(lab/'ca.pem'),'base_dn':'DC=sambaadm,DC=test','bind':{'type':'simple','user':'Administrator@sambaadm.test','password_env':'SAMBAADM_PASSWORD'}},'auth':{'roles':{'admins':['CN=Domain Admins,CN=Users,DC=sambaadm,DC=test']}},'gpo':{'smb_port':1445,'sync_mode':'both','editor_enabled':True,'admx_path':''},'audit':{'file':str(lab/'audit.log')},'logging':{'level':'debug'}}
 (lab/'config.yaml').write_text(json.dumps(config,indent=2))
 PY
 make build

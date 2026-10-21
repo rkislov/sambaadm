@@ -267,6 +267,8 @@
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Другое значение — используйте GPUI','Other value — use GPUI')}[s]||s);
     function render(){
       content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · Machine'));
+      if(model.controller)content.append(el('p','muted',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
+      if(model.templateSource)content.append(el('p','mono',t('Шаблон: ','Template: ')+model.templateSource));
       if(model.machineDisabled)content.append(el('p','alert error',t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
       for(const setting of model.settings){
         const form=el('form','workspace-form');const label=el('label','',setting.label);const select=el('select');

@@ -30,13 +30,13 @@ type SambaConfig struct {
 	ReloadCmd    string `mapstructure:"reload_cmd"` // e.g. "smbcontrol all reload-config"
 }
 
-// GPOConfig controls local policy editing and SYSVOL distribution.
+// GPOConfig controls remote policy editing and SYSVOL distribution.
 type GPOConfig struct {
 	SMBPort       int    `mapstructure:"smb_port"`
 	EditorEnabled bool   `mapstructure:"editor_enabled"`
 	ADMXPath      string `mapstructure:"admx_path"`
-	SysvolPath    string `mapstructure:"sysvol_path"`
-	SyncMode      string `mapstructure:"sync_mode"` // drs | smb | both (legacy rsync aliases smb)
+	SysvolPath    string `mapstructure:"sysvol_path"` // Deprecated: remote editor ignores local SYSVOL.
+	SyncMode      string `mapstructure:"sync_mode"`   // drs | smb | both (legacy rsync aliases smb)
 }
 
 type ServerConfig struct {
@@ -126,7 +126,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ldap.bind.password_env", "SAMBAADM_PASSWORD")
 	v.SetDefault("auth.session_ttl", "8h")
 	v.SetDefault("logging.level", "info")
-	v.SetDefault("gpo.admx_path", "/usr/share/PolicyDefinitions/BaseALTSystemdUnits.admx")
+	v.SetDefault("gpo.admx_path", "")
 	v.SetDefault("gpo.sysvol_path", "/var/lib/samba/sysvol")
 	v.SetDefault("gpo.sync_mode", "both")
 	v.SetDefault("gpo.smb_port", 445)

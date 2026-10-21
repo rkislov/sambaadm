@@ -50,7 +50,7 @@ func TestPolicyFilesRefuseSymlinks(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer root.Close()
-	if _, e = readPolicyFile(root, "GPT.INI"); e == nil {
+	if _, e = readPolicyFile(localPolicyStore{root}, "GPT.INI"); e == nil {
 		t.Fatal("followed symlink")
 	}
 }
@@ -68,15 +68,15 @@ func TestPolicyFilenameCase(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer root.Close()
-	machine, e := policyChild(root, ".", "Machine", false)
+	machine, e := policyChild(localPolicyStore{root}, ".", "Machine", false)
 	if e != nil || machine != "MACHINE" {
 		t.Fatalf("machine path %q %v", machine, e)
 	}
-	ini, e := policyChild(root, ".", "GPT.INI", false)
+	ini, e := policyChild(localPolicyStore{root}, ".", "GPT.INI", false)
 	if e != nil || ini != "gpt.ini" {
 		t.Fatalf("ini path %q %v", ini, e)
 	}
-	missing, e := policyChild(root, machine, "Registry.pol", true)
+	missing, e := policyChild(localPolicyStore{root}, machine, "Registry.pol", true)
 	if e != nil || missing != filepath.Join("MACHINE", "Registry.pol") {
 		t.Fatalf("new registry path %q %v", missing, e)
 	}
@@ -112,5 +112,30 @@ func TestALTPolicyMixedSettingsAndDisabledSection(t *testing.T) {
 	}
 	if len(records) != 3 || records[2].Type != 1 || !bytes.Equal(records[2].Data, []byte{49, 0, 0, 0}) {
 		t.Fatal("view changed an unsupported record")
+	}
+}
+
+// Local adapter is test-only: the production editor exclusively uses SMB.
+type localPolicyStore struct{ *os.Root }
+
+func (s localPolicyStore) Open(p string) (policyFile, error) { return s.Root.Open(p) }
+func (s localPolicyStore) OpenFile(p string, f int, m os.FileMode) (policyFile, error) {
+	return s.Root.OpenFile(p, f, m)
+}
+func (s localPolicyStore) ReadDir(p string) ([]os.FileInfo, error) {
+	f, e := s.Root.Open(p)
+	if e != nil {
+		return nil, e
+	}
+	defer f.Close()
+	return f.Readdir(-1)
+}
+
+func TestRemoteEditorRejectsPathEscapesBeforeNetwork(t *testing.T) {
+	store := &smbPolicyStore{base: "example.test/Policies/{GUID}"}
+	for _, name := range []string{"", "..", "../GPT.INI", "/GPT.INI", "Machine/../../GPT.INI", `Machine\Registry.pol`, "GPT.INI:stream", "Machine//Registry.pol"} {
+		if _, e := store.checked(name, true); e == nil {
+			t.Fatalf("accepted %q", name)
+		}
 	}
 }
