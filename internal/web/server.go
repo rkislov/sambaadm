@@ -93,8 +93,8 @@ func (s *Server) buildRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
 	r.Use(chimw.RealIP)
-	r.Use(chimw.Recoverer)
 	r.Use(s.requestLogger)
+	r.Use(chimw.Recoverer)
 	r.Use(s.withLang)
 
 	staticFS, err := fs.Sub(assets, "static")
@@ -269,7 +269,13 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := chimw.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		slog.Debug("http",
+		level := slog.LevelDebug
+		if ww.Status() >= 500 {
+			level = slog.LevelError
+		} else if ww.Status() >= 400 {
+			level = slog.LevelWarn
+		}
+		slog.Log(r.Context(), level, "http",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", ww.Status(),

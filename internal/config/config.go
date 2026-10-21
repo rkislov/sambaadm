@@ -78,6 +78,7 @@ type AuditConfig struct {
 }
 
 type LoggingConfig struct {
+	File  string `mapstructure:"file"`
 	Level string `mapstructure:"level"`
 }
 
@@ -115,7 +116,7 @@ func Load(cfgFile string) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	for _, key := range []string{"ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file"} {
+	for _, key := range []string{"ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file", "logging.file"} {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)

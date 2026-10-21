@@ -14,11 +14,12 @@ func TestEnvironmentFieldsWithoutFileKeys(t *testing.T) {
 	t.Setenv("SAMBAADM_LDAP_BASE_DN", "DC=test,DC=example")
 	t.Setenv("SAMBAADM_LDAP_BIND_USER", "svc@test.example")
 	t.Setenv("SAMBAADM_LOGGING_LEVEL", "debug")
+	t.Setenv("SAMBAADM_LOGGING_FILE", "/tmp/events.log")
 	c, e := Load(p)
 	if e != nil {
 		t.Fatal(e)
 	}
-	if c.LDAP.BaseDN != "DC=test,DC=example" || c.LDAP.Bind.User != "svc@test.example" || c.Logging.Level != "debug" || c.Source != p {
+	if c.LDAP.BaseDN != "DC=test,DC=example" || c.LDAP.Bind.User != "svc@test.example" || c.Logging.Level != "debug" || c.Logging.File != "/tmp/events.log" || c.Source != p {
 		t.Fatalf("environment settings not applied: %+v", c)
 	}
 }
