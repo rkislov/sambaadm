@@ -26,6 +26,11 @@ func SystemdDefinitions(path string) ([]Definition, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return ParseSystemdDefinitions(f)
+}
+
+// ParseSystemdDefinitions accepts local or remotely fetched ADMX data.
+func ParseSystemdDefinitions(r io.Reader) ([]Definition, error) {
 	var raw struct {
 		Policies []struct {
 			Name    string `xml:"name,attr"`
@@ -44,7 +49,7 @@ func SystemdDefinitions(path string) ([]Definition, error) {
 			} `xml:"disabledValue"`
 		} `xml:"policies>policy"`
 	}
-	if err = xml.NewDecoder(io.LimitReader(f, 2<<20)).Decode(&raw); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(r, 2<<20)).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("read ALT ADMX: %w", err)
 	}
 	var out []Definition

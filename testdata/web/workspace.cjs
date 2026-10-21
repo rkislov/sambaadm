@@ -43,7 +43,7 @@ const server=http.createServer((req,res)=>{
     else if(failure||(req.method()==='PUT'&&altConflict)){status=409;result={error:'policy changed; reload before saving'};}
     else {
      if(req.method()==='PUT'){const change=req.postDataJSON();assert.equal(change.revision,'revision-'+altVersion);assert.equal(change.id,'chronyd.service');altState=change.state;altVersion++;}
-     result={version:altVersion,revision:'revision-'+altVersion,scope:'Machine',machineDisabled:altDisabled,settings:[{id:'chronyd.service',label:'chronyd.service',state:altState},...altOthers]};
+     result={version:altVersion,revision:'revision-'+altVersion,scope:'Machine',controller:'dc1.example.test',templateSource:'SYSVOL/example.test/Policies/PolicyDefinitions/BaseALTSystemdUnits.admx',machineDisabled:altDisabled,settings:[{id:'chronyd.service',label:'chronyd.service',state:altState},...altOthers]};
     }
    }
    if(endpoint==='/users/alice/groups')result=profileGroups;

@@ -403,13 +403,6 @@ func (s *GPOService) markRemainingSkipped(jobID string) {
 	})
 }
 
-func (s *GPOService) sysvol() string {
-	if s.gpoCfg.SysvolPath != "" {
-		return s.gpoCfg.SysvolPath
-	}
-	return "/var/lib/samba/sysvol"
-}
-
 func (s *GPOService) localDCName() string {
 	if host := hostnameFromURI(s.ldap.URI()); host != "" {
 		return host

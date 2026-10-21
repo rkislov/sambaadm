@@ -348,7 +348,7 @@ print("Samba preg accepted generated Registry.pol")`
 	viewerConfig := config.LDAPConfig{CACert: os.Getenv("SAMBAADM_IT_CA"), URI: os.Getenv("SAMBAADM_IT_URI"), BaseDN: "DC=sambaadm,DC=test", Bind: config.BindConfig{Type: "simple", User: viewerLogin + "@sambaadm.test"}}
 	viewerLDAP := ldapproto.NewServiceClient(viewerConfig, func() string { return "Editor-Viewer-Pass1!" })
 	defer viewerLDAP.Close()
-	deniedEditor := &GPOService{ldap: viewerLDAP, audit: s.GPO.audit, gpoCfg: s.GPO.gpoCfg}
+	deniedEditor := &GPOService{remote: s.GPO.remote, ldap: viewerLDAP, audit: s.GPO.audit, gpoCfg: s.GPO.gpoCfg}
 	if _, e = deniedEditor.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "enabled", Revision: cleared.Revision}, actor, ip); e == nil {
 		t.Fatal("read-only LDAP identity wrote GPO")
 	}
