@@ -485,3 +485,27 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 @media(max-width:850px){.workspace-columns{grid-template-columns:1fr}.workspace-tree{max-height:300px}.topbar{flex-wrap:wrap}.workspace-head{align-items:flex-start}.workspace-properties{grid-template-columns:1fr}}
 
 .workspace-form textarea {width:100%;min-width:0;box-sizing:border-box;padding:.6rem;border:1px solid var(--border);border-radius:6px;font:inherit;resize:vertical}
+
+.workspace-dialog:has(.policy-layout),.workspace-dialog:has(.topology-map){width:min(1100px,94vw)}
+.policy-layout{display:grid;grid-template-columns:minmax(220px,1fr) minmax(0,2fr);gap:1.25rem;align-items:start}
+.policy-navigation{max-height:60vh;overflow:auto;border-right:1px solid var(--border);padding-right:.75rem}
+.policy-navigation details details{margin-left:.75rem}
+.policy-navigation summary{padding:.4rem;overflow-wrap:anywhere}
+.policy-navigation button{display:block;width:100%;margin:.2rem 0}
+.policy-detail{min-width:0}
+.topology-map{position:relative;min-width:0;margin:1rem 0;background:#f1f6f8;border:1px solid var(--border);border-radius:8px}
+.topology-map svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.topology-node{position:absolute;transform:translate(-50%,-50%);width:24%;padding:.6rem .25rem;white-space:pre-line;overflow-wrap:anywhere;font-size:.8rem;background:#fff;color:var(--ink);border:2px solid #477887;border-radius:8px}
+.topology-node[draggable=true]{cursor:grab}
+@media(max-width:650px){.policy-layout{grid-template-columns:1fr}.policy-navigation{max-height:32vh;border-right:0;border-bottom:1px solid var(--border)}.topology-node{font-size:.65rem;padding:.3rem .15rem}}
+.dashboard-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1rem 0}
+.dashboard-card{display:flex;flex-direction:column;gap:.6rem;padding:1.2rem;border:1px solid var(--border);border-radius:8px;color:var(--ink);text-decoration:none;background:#fff}
+.dashboard-card strong{font-size:1.8rem}.dashboard-card small{overflow-wrap:anywhere}
+.replication-health{padding-left:1.25rem;overflow-wrap:anywhere}
+.topology-node.source{border-color:#146b3a;background:#e6f6ec}.topology-node.destination{border-color:#234fbd;background:#eaf0ff}
+.policy-toolbar{grid-template-columns:1fr 2fr 1fr;align-items:end}
+.policy-toolbar>:nth-child(1){grid-area:1/1}.policy-toolbar>:nth-child(2){grid-area:2/1}
+.policy-toolbar>:nth-child(3){grid-area:1/2}.policy-toolbar>:nth-child(4){grid-area:2/2}
+.policy-toolbar>:nth-child(5){grid-area:1/3}.policy-toolbar>:nth-child(6){grid-area:2/3}
+.policy-toolbar input,.policy-toolbar select{min-width:0;width:100%}
+@media(max-width:650px){.policy-toolbar{grid-template-columns:1fr}.policy-toolbar>:nth-child(n){grid-area:auto}}
