@@ -82,3 +82,23 @@
 списки — массивами строк. Для `disabled`/`not-configured` значения не нужны.
 Пропущенный scope означает Machine. Ошибочные типы/диапазоны возвращают 400,
 устаревшая ревизия — 409; сохранение требует admin и CSRF.
+
+### Область действия GPO и локальный сервер
+
+- `GET /api/v1/gpo/scope` — домен/OU, прямые ссылки, ревизии и каталог GPO.
+- `GET /api/v1/gpo/scope?container=<DN>` — кандидаты по наследованию (не RSoP).
+- `PUT /api/v1/gpo/scope` — полный набор ссылок контейнера:
+  `{"container":"OU=People,DC=example,DC=com","revision":"123","block":true,"links":[{"dn":"CN={GUID},CN=Policies,CN=System,DC=example,DC=com","enabled":true,"enforced":false}]}`.
+  Первый элемент links имеет высший приоритет. Пустой массив удаляет ссылки.
+- `GET /api/v1/gpo/{guid}/filter` — DACL с SID, именами, типом, маской, признаком Apply и возможностью удаления отдельной ACE.
+- `PUT /api/v1/gpo/{guid}/filter` — `{"revision":"123","principal":"<DN>"}`
+  либо `{"revision":"123","remove":"<ACE hash>"}`. Для Authenticated Users допустим principal `S-1-5-11`. Чтение GPO/SYSVOL не предоставляется.
+- `POST /api/v1/shares/wizard` — расчёт `{name,path,comment,profile,groups:[DN...]}`;
+  profile `team` или `read`. `?apply=1` повторно рассчитывает права и создаёт папку.
+- `GET /api/v1/samba/profile?profile=compatible|secure` — рассчитанные параметры и ревизия smb.conf.
+- `PUT /api/v1/samba/profile` — `{profile,revision}`; возвращает backup и activation=reload-required. Перечитывание отдельно через `/shares/reload`.
+- `GET /api/v1/system/metrics` — host, os, cpus, diskPath, samples (time в Unix ms; cpu/memory/disk в процентах либо null). До 120 образцов, один раз в 5 секунд при запросах.
+
+Мутации и профили Samba требуют admin и CSRF. Остальное чтение требует сессию.
+Конфликты ревизий возвращают 409; некорректные запросы — 400. Неизвестные ACE
+сохраняются, автоматическое редактирование их семантики не поддерживается.

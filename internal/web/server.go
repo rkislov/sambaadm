@@ -46,6 +46,7 @@ type Server struct {
 	audit    *audit.Logger
 	tmpl     *template.Template
 	router   chi.Router
+	monitor  service.HostMonitor
 }
 
 // New constructs the web server and router.
@@ -144,6 +145,10 @@ func (s *Server) buildRouter() chi.Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
+		r.Post("/shares/wizard", s.handleAPIShareWizard)
+		r.Get("/samba/profile", s.handleAPISambaProfile)
+		r.Put("/samba/profile", s.handleAPISambaProfile)
+		r.Get("/system/metrics", s.handleAPIHostMetrics)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)
 		r.Get("/groups/{name}", s.handleAPIGroupGet)
 		r.Get("/groups/{name}/members", s.handleAPIGroupMembers)
@@ -160,6 +165,10 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/gpo/{gpo}/alt-settings", s.handleAPIGPOALT)
 		r.Put("/gpo/{gpo}/alt-settings", s.handleAPIGPOALTSet)
 		r.Get("/gpo/links", s.handleAPIGPOLinks)
+		r.Get("/gpo/scope", s.handleAPIGPOScope)
+		r.Put("/gpo/scope", s.handleAPIGPOScope)
+		r.Get("/gpo/{gpo}/filter", s.handleAPIGPOFilter)
+		r.Put("/gpo/{gpo}/filter", s.handleAPIGPOFilter)
 		r.Put("/dns/zones/{zone}/records", s.handleAPIDNSRecordUpdate)
 		r.Post("/shares/reload", s.handleAPIShareReload)
 		r.Post("/shares/{name}/param", s.handleAPIShareParam)
