@@ -120,3 +120,42 @@ facsimileTelephoneNumber, streetAddress, l, st, postalCode, co, company, divisio
 employeeID, employeeNumber. Остальные ключи отклоняются с 400. Изменение доступно
 только admin, требует CSRF и актуальной revision; конфликт возвращает 409.
 Все изменения используют прежнюю LDAP assertion-проверку uSNChanged и журнал аудита.
+
+### POST /api/v1/gpo/model — моделирование ALT / Registry.pol
+
+Операция только читает данные, доступна всем авторизованным ролям; нужен
+`X-CSRF-Token`. Требуются настройки редактора ALT и доступ к SYSVOL.
+
+```json
+{
+  "user": "CN=alice,OU=People,DC=example,DC=com",
+  "computer": "CN=pc01,OU=Computers,DC=example,DC=com",
+  "userOU": "",
+  "computerOU": "OU=Test,DC=example,DC=com",
+  "loopback": "merge",
+  "security": "unknown",
+  "wmi": "unknown",
+  "securityOverrides": {"{00000000-0000-0000-0000-000000000001}": "allow"},
+  "wmiOverrides": {"{00000000-0000-0000-0000-000000000001}": "deny"}
+}
+```
+
+Хотя бы один получатель обязателен; вместо объекта можно передать DN домена/OU.
+`userOU` / `computerOU` задают условное расположение и не перемещают объект.
+`loopback`: `none`, `merge`, `replace`; Merge/Replace требуют обоих получателей.
+`security` и `wmi`: `unknown`, `allow`, `deny`. Исключения задаются по GUID GPO
+и имеют те же значения. Это допущения для обоих разделов, а не проверка ACL/WMI.
+При неизвестном условии GPO исключается из расчёта и раздел помечается неполным.
+
+Ответ содержит `generatedAt`, `scenario`, `controller`, `templateSource`,
+`limitations` и `sections`. Каждый раздел содержит `scope` (`Machine` / `User`),
+`container`, `links` с причинами применения/исключения (сначала высокий приоритет),
+`settings` с итоговыми параметрами ALT и `sources`, `values` с эффективными записями
+Registry.pol, `incomplete` и `warnings`. У значения есть `winner`, `precedence`,
+`conflict` и `contributions` (GPO, тип, значение, удаление); у параметра ALT —
+`conflicts`. `data` содержит исходные байты в base64. Совпадающие значения из разных
+GPO не считаются конфликтом. Специальные директивы кроме `**del.` не вычисляются
+и приводят к `incomplete=true`. Ограничения модели описаны в docs/web.md.
+
+Коды: 200 — отчёт (возможен неполный), 400 — некорректный сценарий,
+401 — нет сессии, 403 — нет CSRF, 502 — чтение LDAP/SYSVOL или шаблонов недоступно.
