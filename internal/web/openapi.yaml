@@ -2667,6 +2667,34 @@
                 "502":
                     "description": "LDAP or Samba RPC failed"
             "summary": "Delete connection; KCC may recreate generated connections"
+    "/gpo/model":
+        "post":
+            "summary": "Read-only domain/OU Registry.pol and ALT policy modeling with explicit filter assumptions"
+            "description": "All authenticated roles; X-CSRF-Token required. Returns effective ALT settings, winning GPOs, conflicting contributions and incomplete calculation warnings. See docs/api.md and docs/web.md for limits."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["loopback", "security", "wmi"]
+                            "properties":
+                                "user": {"type": "string", "description": "User, domain or OU DN; user or computer required"}
+                                "computer": {"type": "string", "description": "Computer, domain or OU DN"}
+                                "userOU": {"type": "string", "description": "Hypothetical user domain/OU DN"}
+                                "computerOU": {"type": "string", "description": "Hypothetical computer domain/OU DN"}
+                                "loopback": {"type": "string", "enum": ["none", "merge", "replace"]}
+                                "security": {"type": "string", "enum": ["unknown", "allow", "deny"]}
+                                "wmi": {"type": "string", "enum": ["unknown", "allow", "deny"]}
+                                "securityOverrides": {"type": "object", "additionalProperties": {"type": "string", "enum": ["unknown", "allow", "deny"]}}
+                                "wmiOverrides": {"type": "object", "additionalProperties": {"type": "string", "enum": ["unknown", "allow", "deny"]}}
+            "responses":
+                "200": {"description": "Model report with sections, ALT settings, registry values, conflicts and limitations"}
+                "400": {"description": "Invalid scenario"}
+                "401": {"description": "Session required"}
+                "403": {"description": "CSRF token required"}
+                "502": {"description": "LDAP/SYSVOL or ALT templates unavailable"}
     "/gpo/scope":
         "get":
             "summary": "Domain and OU GPO scope (container query gives link-only inheritance preview)"

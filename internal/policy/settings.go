@@ -313,3 +313,6 @@ func ApplySetting(d Definition, records []Record, state string, values map[strin
 	}
 	return out, nil
 }
+
+// SettingOwnsRecord identifies registry values contributing to an ADMX setting.
+func SettingOwnsRecord(d Definition, r Record) bool { return owns(d, r) }

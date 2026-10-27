@@ -165,6 +165,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/gpo/{gpo}/alt-settings", s.handleAPIGPOALT)
 		r.Put("/gpo/{gpo}/alt-settings", s.handleAPIGPOALTSet)
 		r.Get("/gpo/links", s.handleAPIGPOLinks)
+		r.Post("/gpo/model", s.handleAPIGPOModel)
 		r.Get("/gpo/scope", s.handleAPIGPOScope)
 		r.Put("/gpo/scope", s.handleAPIGPOScope)
 		r.Get("/gpo/{gpo}/filter", s.handleAPIGPOFilter)

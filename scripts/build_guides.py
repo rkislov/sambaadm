@@ -41,6 +41,7 @@ def build(source, target):
                 for i, title in enumerate(headings, 2): doc.add_paragraph(f'{i}  {title}')
                 contents=True
             p=doc.add_paragraph(line[3:],'Heading 1');p.paragraph_format.page_break_before=True;continue
+        if line.startswith('### '): doc.add_paragraph(line[4:],'Heading 2');continue
         m=re.match(r'!\[(.*?)\]\((.*?)\)',line)
         if m:
             p=doc.add_paragraph();p.paragraph_format.keep_with_next=True
@@ -59,7 +60,7 @@ def build(source, target):
             for r in p.runs:r.font.name='Courier New';r.font.size=Pt(8)
     doc.core_properties.title=doc.paragraphs[0].text
     doc.core_properties.author='sambaadm'
-    doc.core_properties.subject='Руководство для main и v0.23.0-dev от 21 октября 2026 года'
+    doc.core_properties.subject='Руководство для main и v0.23.0-dev от 27 октября 2026 года'
     target.parent.mkdir(parents=True,exist_ok=True);doc.save(target)
 
 build(ROOT/'docs/admin.md',ROOT/'docs/admin-guide/sambaadm-admin-guide.docx')

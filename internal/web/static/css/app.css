@@ -516,3 +516,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .group-picker{max-height:260px;overflow:auto;border:1px solid var(--border);padding:.6rem}.group-picker label{display:flex;gap:.5rem;padding:.25rem}
 #share-wizard pre,#samba-profiles pre{max-height:300px;overflow:auto}
 .policy-navigation summary>button{display:inline-block;width:auto}
+.policy-model-conflict>td{background:#fff1d6;color:#653b00;border-bottom-color:#d99a2b}
+.policy-model-conflict>td:first-child{border-left:4px solid #b96900;font-weight:600}
+.policy-model-conflicts{border:1px solid #d99a2b;border-left:4px solid #b96900;border-radius:6px;padding:.8rem;margin:1rem 0;background:#fffbf2}
+.policy-model-conflicts>summary{font-weight:600;color:#653b00;cursor:pointer}
