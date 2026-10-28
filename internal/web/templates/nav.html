@@ -27,6 +27,7 @@
     <a href="/shares" class="{{navClass .Active "/shares"}}">{{t .Lang "nav.shares"}}</a>
     <a href="/printers" class="{{navClass .Active "/printers"}}">{{t .Lang "nav.printers"}}</a>
     <a href="/audit" class="{{navClass .Active "/audit"}}">{{t .Lang "nav.audit"}}</a>
+    {{if canAdmin .Role}}<a href="/diagnostics" class="{{navClass .Active "/diagnostics"}}">{{t .Lang "nav.diagnostics"}}</a>{{end}}
     <a href="/settings" class="{{navClass .Active "/settings"}}">{{t .Lang "nav.settings"}}</a>
   </nav>
   <div class="user">

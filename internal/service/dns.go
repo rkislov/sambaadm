@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/miekg/dns"
 	"sort"
 	"strings"
 
@@ -258,6 +259,21 @@ func validateDNSRecord(zone, name, typ, data string) error {
 	}
 	if strings.TrimSpace(data) == "" {
 		return fmt.Errorf("data is required")
+	}
+	if _, ok := dns.IsDomainName(zone); !ok {
+		return fmt.Errorf("invalid DNS zone")
+	}
+	owner := name
+	if owner == "@" {
+		owner = zone
+	} else if !strings.HasSuffix(owner, ".") {
+		owner += "." + zone
+	}
+	if _, ok := dns.IsDomainName(owner); !ok {
+		return fmt.Errorf("invalid DNS record name")
+	}
+	if _, err := adremote.DNSRecord(typ, data); err != nil {
+		return fmt.Errorf("invalid %s record: %w", typ, err)
 	}
 	return nil
 }

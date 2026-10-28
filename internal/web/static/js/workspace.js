@@ -22,7 +22,6 @@
   const move = path => action(t('Переместить', 'Move'), 'POST', path, [ou('toOU')].map(f => ({...f, optional: false})));
   const password = () => text('password', 'Новый пароль', 'New password', {type: 'password'});
   const queryFields = () => [text('name', 'Имя записи', 'Record name', {value: '@'}), text('type', 'Тип записи', 'Record type', {value: 'ALL', choices: ['ALL','A','AAAA','CNAME','MX','NS','PTR','SOA','SRV','TXT']})];
-  const recordFields = () => [text('name', 'Имя записи', 'Record name', {value: '@'}), text('type', 'Тип записи', 'Record type', {value: 'A', choices: ['A','AAAA','CNAME','MX','NS','PTR','SRV','TXT']}), text('data', 'Значение записи', 'Record value')];
   const gpoID = r => r.guid;
   const utcDays=['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
   const scheduleFields=()=>utcDays.map((day,i)=>text('day'+i,day+' UTC (09:00-18:00; пусто — закрыто)',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]+' UTC (09:00-18:00; empty — closed)',{optional:true,value:'00:00-24:00'}));
@@ -55,10 +54,8 @@
       columns:[['name',t('Зона','Zone')],['source',t('Источник','Source')],['dn','DN']],
       hint:t('Выберите зону в дереве. Для записей укажите относительное имя узла; @ — корень зоны.','Select a zone. Record names are relative to the zone; @ is the zone apex.'),
       create:action(t('Создать зону','Create zone'),'POST','/dns/zones',[name()]),
-      actions:[view(t('Записи','Records'),r=>'/dns/zones/'+enc(r.name)+'/records',queryFields()),
-        action(t('Добавить запись','Add record'),'POST',r=>'/dns/zones/'+enc(r.name)+'/records',recordFields()),
-        action(t('Изменить запись','Update record'),'PUT',r=>'/dns/zones/'+enc(r.name)+'/records',[...recordFields().slice(0,2),text('oldData','Прежнее значение','Previous value'),text('newData','Новое значение','New value')]),
-        action(t('Удалить запись','Delete record'),'DELETE',r=>'/dns/zones/'+enc(r.name)+'/records',recordFields(),{danger:true}),remove(r=>'/dns/zones/'+enc(r.name))]},
+      actions:[{...view(t('Записи','Records'),r=>'/dns/zones/'+enc(r.name)+'/records',queryFields()),dnsEditor:true},
+        remove(r=>'/dns/zones/'+enc(r.name))]},
     '/gpo':{title:t('Групповые политики','Group policies'),endpoint:'/gpo',id:gpoID,
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
@@ -342,7 +339,60 @@
     scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';refresh();});search.addEventListener('input',render);category.addEventListener('change',render);
     await refresh();
   }
+  async function openDNSEditor(zone, initialName) {
+    lastFocus=document.activeElement;
+    const generation=++dialogGeneration;
+    dialog.replaceChildren();
+    const title=el('h2','',t('Записи DNS · ','DNS records · ')+zone.name);title.id='operation-title';
+    const notice=el('p','workspace-message'), body=el('div'), editor=el('div');
+    const query=el('form','workspace-form');
+    const owner=el('input');owner.value=initialName;owner.required=true;owner.setAttribute('aria-label',t('Имя записи','Record name'));
+    const filter=el('select');filter.setAttribute('aria-label',t('Тип записи','Record type'));
+    const types=['A','AAAA','CNAME','NS','PTR','MX','SRV','TXT'];
+    for(const v of ['ALL',...types,'SOA']){const o=el('option','',v);o.value=v;filter.append(o);}
+    const fetchButton=el('button','',t('Показать','Show'));fetchButton.type='submit';query.append(owner,filter,fetchButton);
+    dialog.append(title,el('p','muted',t('Выберите имя в дереве зоны или укажите его здесь. @ — корень зоны. Изменение затрагивает только выбранное значение.','Choose a name in the zone tree or enter it here. @ is the zone root. Editing affects only the selected value.')),query,notice,body,editor,button(t('Закрыть','Close'),closeOperation));
+    if(!dialog.open)dialog.showModal();
+    const path='/dns/zones/'+enc(zone.name)+'/records';let serial=0;
+    async function refresh(){const id=++serial;message(notice,t('Загрузка…','Loading…'));try{
+      const records=await request(path+'?'+new URLSearchParams({name:owner.value,type:filter.value}));
+      if(generation!==dialogGeneration||id!==serial)return;
+      body.replaceChildren();const table=el('table'), head=el('tr');
+      for(const label of [t('Имя','Name'),t('Тип','Type'),t('Значение','Value'),t('Действия','Actions')])head.append(el('th','',label));
+      const thead=el('thead');thead.append(head);const tbody=el('tbody');table.append(thead,tbody);
+      for(const record of records){const tr=el('tr');for(const value of [record.name,record.type,record.data])tr.append(el('td','mono',value));
+        const actions=el('td');if(admin&&types.includes(record.type)){actions.append(button(t('Изменить','Edit'),()=>edit(record)),button(t('Удалить','Delete'),()=>edit(record,true),'danger'));}tr.append(actions);tbody.append(tr);}
+      body.append(table);if(!records.length)body.append(el('p','muted',t('Записи не найдены','No records found')));
+      if(admin)body.append(button(t('Добавить запись','Add record'),()=>edit(null)));
+      message(notice,'');
+    }catch(e){if(generation===dialogGeneration&&id===serial)message(notice,e.message,true);}}
+    function edit(record,remove=false){
+      editor.replaceChildren();const form=el('form','workspace-form');
+      form.append(el('h3','',remove?t('Удаление записи','Delete record'):record?t('Изменение записи','Edit record'):t('Новая запись','New record')));
+      const fields={};function input(key,label,value='',numeric=false){const l=el('label','',label),i=el('input');i.value=value;i.required=true;if(numeric){i.type='number';i.min='0';i.max='65535';i.step='1';}fields[key]=i;l.append(i);form.append(l);return i;}
+      const name=input('name',t('Имя','Name'),record?.name||owner.value);name.readOnly=!!record;
+      const label=el('label','',t('Тип','Type')),type=el('select');type.setAttribute('aria-label',t('Тип','Type'));for(const v of types){const o=el('option','',v);o.value=v;type.append(o);}type.value=record?.type||'A';type.disabled=!!record;label.append(type);form.append(label);
+      const dataBox=el('div');form.append(dataBox);
+      function rebuild(){dataBox.replaceChildren();const parts=(record?.data||'').trim().split(/\s+/);const typ=type.value;
+        function valueField(key,label,value,numeric){const i=input(key,label,value,numeric);dataBox.append(i.parentNode);i.readOnly=remove;}
+        if(typ==='SRV'){valueField('target',t('Целевой сервер','Target host'),parts[0]===''?'':parts[0],false);valueField('port',t('Порт','Port'),parts[1]||'389',true);valueField('priority',t('Приоритет','Priority'),parts[2]||'0',true);valueField('weight',t('Вес','Weight'),parts[3]||'0',true);}
+        else if(typ==='MX'){valueField('target',t('Почтовый сервер','Mail host'),record?parts[0]:'',false);valueField('priority',t('Приоритет','Preference'),parts[1]||'10',true);}
+        else valueField('data',typ==='A'||typ==='AAAA'?t('IP-адрес','IP address'):typ==='TXT'?t('TXT в формате DNS (например "текст")','DNS TXT syntax (e.g. "text")'):t('Целевое DNS-имя','Target DNS name'),record?.data||'',false);
+      }
+      type.addEventListener('change',rebuild);rebuild();
+      const confirm=el('input');confirm.type='checkbox';confirm.required=true;const consent=el('label','',t('Подтверждаю изменение выбранной записи','Confirm changing the selected record'));consent.prepend(confirm);form.append(consent);
+      const error=el('p','workspace-message'),submit=el('button',remove?'danger':'',remove?t('Удалить','Delete'):t('Сохранить','Save'));submit.type='submit';form.append(error,submit,button(t('Отмена','Cancel'),()=>editor.replaceChildren()));editor.append(form);
+      form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;
+        const typ=type.value;let data=typ==='SRV'?[fields.target.value,fields.port.value,fields.priority.value,fields.weight.value].join(' '):typ==='MX'?[fields.target.value,fields.priority.value].join(' '):fields.data.value;
+        const payload={name:name.value,type:typ};if(record&&!remove){payload.oldData=record.data;payload.newData=data;}else payload.data=remove?record.data:data;
+        submit.disabled=true;try{await request(path,remove?'DELETE':record?'PUT':'POST',payload);if(generation!==dialogGeneration)return;editor.replaceChildren();await refresh();}catch(err){if(generation===dialogGeneration)message(error,err.message,true);}finally{submit.disabled=false;}
+      });
+    }
+    query.addEventListener('submit',e=>{e.preventDefault();editor.replaceChildren();refresh();});
+    await refresh();
+  }
   async function openOperation(a,row) {
+    if(a.dnsEditor)return openDNSEditor(row,a.prefill?.(row)?.name||'@');
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
     if(a.filter)return openFilter(row);
