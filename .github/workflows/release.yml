@@ -22,6 +22,16 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           make release
+      - name: Build ALT p10 RPM
+        run: |
+          docker build -t sambaadm-rpm-builder:p10-amd64 -f packaging/alt/Dockerfile .
+          docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-amd64 bash packaging/alt/build-rpm.sh "${GITHUB_REF_NAME#v}" /src/dist/sambaadm-linux-amd64 /src/dist
+      - name: Verify ALT package lifecycle
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-amd64 bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-amd64
+      - name: Release checksums
+        run: |
+          cp deploy/sambaadm-package dist/sambaadm-package
+          cp docs/alt-install.md dist/sambaadm-alt-install.md
           cd dist && shasum -a 256 sambaadm-* > SHA256SUMS
       - name: Verify static Linux binaries
         run: |
@@ -43,4 +53,7 @@ jobs:
             dist/sambaadm-darwin-arm64
             dist/sambaadm-windows-amd64.exe
             dist/SHA256SUMS
+            dist/*.rpm
+            dist/sambaadm-package
+            dist/sambaadm-alt-install.md
           generate_release_notes: true

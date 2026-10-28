@@ -1,0 +1,55 @@
+server:
+  listen: "127.0.0.1:8080"
+  # tls:
+  #   cert: /etc/sambaadm/server.crt
+  #   key:  /etc/sambaadm/server.key
+  metrics: true
+
+ldap:
+  uri: "ldaps://dc1.example.com:636"
+  # uri: "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi"
+  # Дополнительный доверенный CA только для LDAP (без изменения системного хранилища).
+  # ca_cert: /etc/sambaadm/domain-ca.pem
+  base_dn: "DC=example,DC=com"
+  # Обязательная служебная запись для операций веб-сервера.
+  # Пароли пользователей проверяются на отдельных соединениях.
+  bind:
+    type: simple
+    user: "administrator@example.com"
+    password_env: SAMBAADM_PASSWORD
+
+auth:
+  session_ttl: 8h
+  roles:
+    admins:
+      - "CN=Domain Admins,CN=Users,DC=example,DC=com"
+    helpdesk:
+      - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
+
+gpo:
+  # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
+  editor_enabled: false
+  # Пусто: каталог BaseALT*.admx + ru-RU/*.adml в SYSVOL/<domain>/Policies/PolicyDefinitions
+  # Можно явно указать локальный каталог шаблонов или один ADMX.
+  admx_path: ""
+  # drs | smb | both — AD replication and/or native SMB SYSVOL delivery.
+  sync_mode: both
+  # Standard SMB port; use 1445 only for the loopback macOS lab.
+  smb_port: 445
+
+# Локальные файловые шары / принтеры (smb.conf на этой машине)
+samba:
+  smb_conf: /etc/samba/smb.conf
+  shares_root: /srv/samba
+  create_mode: "0755"
+  # false = путь шары обязан быть под shares_root
+  allow_any_path: false
+  reload_cmd: "smbcontrol all reload-config"
+
+audit:
+  file: /var/log/sambaadm/audit.log
+
+logging:
+  level: info
+  # Optional application events, separate from audit.file; parent directory must exist.
+  file: /var/log/sambaadm/events.log

@@ -1,0 +1,163 @@
+#!/bin/bash
+# Local RPM transactions. Never source config/env or download executables.
+set -euo pipefail
+umask 077
+export LC_ALL=C
+state=/var/lib/sambaadm-packages
+cache=/var/cache/sambaadm-packages
+unit=sambaadm.service
+usage() {
+ cat <<'HELP'
+Usage (root):
+  sambaadm-package install /path/sambaadm.rpm
+  sambaadm-package update /path/new.rpm [--previous-rpm /path/installed-version.rpm]
+  sambaadm-package list
+  sambaadm-package rollback SNAPSHOT_ID
+
+Updates preserve /etc/sambaadm; snapshots also include systemd overrides.
+Use only trusted RPMs. Digest checks do not establish publisher identity.
+HELP
+}
+die() { echo "sambaadm-package: $*" >&2; exit 1; }
+[[ ${1:-} != --help ]] || { usage; exit 0; }
+[[ $(id -u) == 0 ]] || die 'Run as root.'
+command -v rpm >/dev/null || die 'rpm is required.'
+command -v flock >/dev/null || die 'flock is required.'
+install -d -m0700 -o root -g root "$state" "$cache"
+exec 9>/run/lock/sambaadm-package.lock
+flock -n 9 || die 'Another package operation is running.'
+work=$(mktemp -d "$state/.work.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+# Keep executing this helper version after RPM replaces /usr/sbin/sambaadm-package.
+# Bash reads small scripts incrementally; load the full transaction body first.
+main() {
+ local operation=${1:-}; [[ $# -gt 0 ]] && shift
+ case $operation in
+ list)
+  [[ $# == 0 ]] || die 'list takes no arguments.'
+  for dir in "$state"/snapshot-*; do
+   [[ -f $dir/complete ]] || continue
+   printf '%s  %s  active=%s\n' "${dir##*/}" "$(cat "$dir/nevra")" "$(cat "$dir/active")"
+  done;;
+ install|update)
+  [[ $# == 1 || ( $operation == update && $# == 3 && $2 == --previous-rpm ) ]] || { usage; exit 2; }
+  cp -- "$1" "$work/target.rpm"; verify_rpm "$work/target.rpm"
+  local target; target=$(nevra_file "$work/target.rpm")
+  if [[ $operation == install ]]; then
+   rpm -q sambaadm >/dev/null 2>&1 && die 'Already installed; use update.'
+   [[ ! -e /etc/systemd/system/sambaadm.service && ! -e /usr/local/bin/sambaadm ]] || die 'Manual installation detected; follow docs/alt-install.md migration instructions first.'
+   if [[ -e /etc/sambaadm || -L /etc/sambaadm ]]; then
+    tar --acls --xattrs --numeric-owner -cpf "$work/existing-config.tar" -C / etc/sambaadm
+   fi
+   rpm -Uvh --test "$work/target.rpm"
+   rpm -Uvh "$work/target.rpm"
+   if [[ -f $work/existing-config.tar ]]; then
+    tar --acls --xattrs --numeric-owner -xpf "$work/existing-config.tar" -C /
+   fi
+   cache_rpm "$work/target.rpm" "$target"
+   echo 'Installed; configure /etc/sambaadm/config.yaml and /etc/sambaadm/env before enabling sambaadm.'
+  else
+   require_systemd
+   local current old snapshot
+   current=$(installed_nevra) || die 'sambaadm is not installed.'
+   [[ $target != "$current" ]] || die 'Target version is already installed.'
+   if [[ $# == 3 ]]; then
+    cp -- "$3" "$work/previous.rpm"; verify_rpm "$work/previous.rpm"
+    [[ $(nevra_file "$work/previous.rpm") == "$current" ]] || die '--previous-rpm does not match installed version.'
+    cache_rpm "$work/previous.rpm" "$current"
+   fi
+   old="$cache/$current.rpm"; [[ -f $old ]] || die 'Previous RPM is not cached; supply --previous-rpm matching the installed package.'
+   verify_rpm "$old"
+   rpm -Uvh --test "$work/target.rpm"
+   cache_rpm "$work/target.rpm" "$target"
+   snapshot=$(make_snapshot)
+   echo "Snapshot: $snapshot"
+   systemctl stop "$unit"
+   if ! rpm -Uvh "$work/target.rpm"; then recover "$snapshot"; die "Update failed; restored $snapshot."; fi
+   if ! systemctl daemon-reload; then recover "$snapshot"; die 'daemon-reload failed; previous package restored.'; fi
+   if [[ $(cat "$state/$snapshot/active") == yes ]] && ! start_and_check; then
+    recover "$snapshot"; die "New service failed; restored $snapshot. See journalctl -u sambaadm."
+   fi
+   echo "Updated to $target. Rollback: sambaadm-package rollback $snapshot"
+  fi;;
+ rollback)
+  [[ $# == 1 && $1 =~ ^snapshot-[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+$ ]] || die 'Specify a snapshot ID from list.'
+  require_systemd
+  local snapshot=$1 safety
+  [[ -f $state/$snapshot/complete ]] || die 'Snapshot not found or incomplete.'
+  verify_rpm "$state/$snapshot/package.rpm"
+  [[ $(nevra_file "$state/$snapshot/package.rpm") == "$(cat "$state/$snapshot/nevra")" ]] || die 'Snapshot package does not match metadata.'
+  rpm -Uvh --oldpackage --replacepkgs --test "$state/$snapshot/package.rpm"
+  safety=$(make_snapshot)
+  echo "Before rollback snapshot: $safety"
+  if ! restore_snapshot "$snapshot"; then
+   recover "$safety"; die "Rollback failed; restored pre-rollback snapshot $safety."
+  fi
+  echo "Restored $snapshot; undo with: sambaadm-package rollback $safety";;
+ *) usage; exit 2;;
+ esac
+}
+verify_rpm() {
+ [[ -f $1 ]] || die 'RPM file is missing.'
+ rpm --checksig "$1" >/dev/null || die 'RPM signature/digest verification failed.'
+ [[ $(rpm -qp --qf '%{NAME}' "$1") == sambaadm ]] || die 'Expected a sambaadm RPM.'
+ local arch; arch=$(rpm -qp --qf '%{ARCH}' "$1")
+ [[ $arch == "$(uname -m)" ]] || die "RPM architecture $arch differs from host $(uname -m)."
+}
+nevra_file() { rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "$1"; }
+installed_nevra() { rpm -q --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' sambaadm; }
+cache_rpm() {
+ local source=$1 key=$2
+ [[ $key =~ ^sambaadm-[A-Za-z0-9._+~-]+$ ]] || die 'Invalid package identity.'
+ if [[ -f $cache/$key.rpm ]]; then
+  cmp -s "$source" "$cache/$key.rpm" || die "Different bytes already cached for $key; use a new RPM release number."
+ else
+  cp -- "$source" "$cache/$key.rpm"; chmod 0600 "$cache/$key.rpm"
+ fi
+}
+require_systemd() { [[ -d /run/systemd/system ]] || die 'A running systemd host is required for update/rollback.'; }
+make_snapshot() {
+ local current dir active=no
+ current=$(installed_nevra) || die 'No installed package.'
+ [[ -f $cache/$current.rpm ]] || die "Installed RPM $current is not cached."
+ dir=$(mktemp -d "$state/snapshot-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
+ systemctl is-active --quiet "$unit" && active=yes
+ printf '%s\n' "$current" > "$dir/nevra"
+ printf '%s\n' "$active" > "$dir/active"
+ cp -- "$cache/$current.rpm" "$dir/package.rpm"
+ local paths=() p
+ for p in etc/sambaadm etc/systemd/system/sambaadm.service etc/systemd/system/sambaadm.service.d; do
+  [[ ! -e /$p && ! -L /$p ]] || paths+=("$p")
+ done
+ # GNU tar preserves ownership, modes, ACLs and xattrs (including file capabilities).
+ tar --acls --xattrs --numeric-owner -cpf "$dir/config.tar" -C / "${paths[@]}"
+ (cd "$dir" && sha256sum package.rpm config.tar nevra active > SHA256SUMS)
+ touch "$dir/complete"
+ basename "$dir"
+}
+start_and_check() {
+ systemctl start "$unit" || return 1
+ local pid restarts
+ pid=$(systemctl show -p MainPID --value "$unit") || return 1
+ restarts=$(systemctl show -p NRestarts --value "$unit") || return 1
+ [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+ sleep 5
+ systemctl is-active --quiet "$unit" || return 1
+ [[ $(systemctl show -p MainPID --value "$unit") == "$pid" && $(systemctl show -p NRestarts --value "$unit") == "$restarts" ]]
+}
+restore_snapshot() {
+ local dir="$state/$1"
+ (cd "$dir" && sha256sum -c SHA256SUMS >/dev/null) || return 1
+ verify_rpm "$dir/package.rpm"
+ systemctl stop "$unit" || return 1
+ rpm -Uvh --oldpackage --replacepkgs "$dir/package.rpm" || return 1
+ # Replace only application settings/overrides. Logs, shares, SYSVOL and AD are excluded.
+ rm -rf -- /etc/sambaadm /etc/systemd/system/sambaadm.service /etc/systemd/system/sambaadm.service.d || return 1
+ tar --acls --xattrs --numeric-owner -xpf "$dir/config.tar" -C / || return 1
+ systemctl daemon-reload || return 1
+ if [[ $(cat "$dir/active") == yes ]]; then start_and_check || return 1; fi
+}
+recover() {
+ if ! restore_snapshot "$1"; then die "Automatic recovery failed. Snapshot retained: $state/$1; service left for manual repair."; fi
+}
+main "$@"

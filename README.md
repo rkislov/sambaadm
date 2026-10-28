@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** v0.24.0 — структурированный редактор DNS и экран диагностики подключения. Актуальные выполненные и открытые задачи — в [дорожной карте](docs/ROADMAP.md).
+> **Статус:** v0.25.0 — RPM для ALT Linux, systemd и обновление с сохранением конфигурации и откатом. Актуальные выполненные и открытые задачи — в [дорожной карте](docs/ROADMAP.md).
 
 ---
 
@@ -257,7 +257,28 @@ configs/               примеры конфигурации
 
 ---
 
-## Установка на Linux (systemd)
+## Установка на ALT Linux (RPM)
+
+RPM устанавливает `/usr/bin/sambaadm`, systemd-unit и helper
+`/usr/sbin/sambaadm-package`. Обновления сохраняют YAML/env, а откат возвращает
+предыдущий RPM и снимок настроек. Первая установка не запускает сервис.
+
+```bash
+sudo bash deploy/sambaadm-package install ./sambaadm-0.25.0-alt1.x86_64.rpm
+sudoedit /etc/sambaadm/config.yaml
+sudoedit /etc/sambaadm/env
+sudo systemctl enable --now sambaadm
+# Последующие обновления:
+sudo sambaadm-package update ./new.rpm
+sudo sambaadm-package list
+sudo sambaadm-package rollback <snapshot-id>
+```
+
+Сборка: `make rpm-alt VERSION=0.25.0 RPM_ARCH=amd64` (Go + Docker).
+[Подробная инструкция, границы отката и переход с ручной установки](docs/alt-install.md).
+Проверки пакета ALT p10 отделены от приёмки на ALT СП 10.2.2.
+
+## Ручная установка на Linux (systemd)
 
 ```bash
 # Из каталога исходников соответствующей версии:
