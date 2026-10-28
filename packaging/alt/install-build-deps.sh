@@ -2,9 +2,9 @@
 # Run only inside the disposable ALT builder. Keep repository signature checks enabled.
 set -euo pipefail
 [[ -f /.dockerenv || ${SAMBAADM_RPM_CONTAINER_BUILD:-} == 1 ]] || { echo 'Use the ALT build container.' >&2; exit 1; }
-mirrors=${ALT_APT_MIRRORS:-'http://mirror.yandex.ru/altlinux http://ftp.altlinux.org/pub/distributions/ALTLinux'}
-update_timeout=${ALT_APT_UPDATE_TIMEOUT:-120}
-install_timeout=${ALT_APT_INSTALL_TIMEOUT:-240}
+mirrors=${ALT_APT_MIRRORS:-'http://mirror.yandex.ru/altlinux http://mirror.truenetwork.ru/altlinux http://ftp.altlinux.org/pub/distributions/ALTLinux'}
+update_timeout=${ALT_APT_UPDATE_TIMEOUT:-60}
+install_timeout=${ALT_APT_INSTALL_TIMEOUT:-180}
 for limit in "$update_timeout" "$install_timeout"; do
  [[ $limit =~ ^[1-9][0-9]*$ ]] || { echo 'APT timeout must be a positive integer.' >&2; exit 2; }
 done
