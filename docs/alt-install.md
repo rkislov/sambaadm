@@ -138,3 +138,39 @@ rpmbuild, зависимости Go не скачиваются в `%build`. В�
 
 Основание: [формат spec RPM](https://rpm.org/docs/latest/manual/spec.html),
 [официальный образ ALT](https://hub.docker.com/_/alt/).
+
+## Автоматическая сборка RPM и релизов
+
+Общий workflow `.github/workflows/rpm-build.yml` используется CI и релизами.
+RPM x86_64 и aarch64 собираются параллельно на нативных Ubuntu 24.04 x86/ARM
+раннерах, в ALT p10. Сборочный Docker-образ кешируется отдельно для каждой
+архитектуры через BuildKit/GitHub Actions cache.
+
+Для APT сначала используется `mirror.yandex.ru/altlinux`, затем официальный
+`ftp.altlinux.org`. На зеркало: максимум 120 секунд на индексы и 240 секунд на
+установку, с сетевым таймаутом 20 секунд и двумя повторами. Неуспешные индексы
+удаляются перед переключением. Загружаются только native-архитектура и noarch.
+Проверка подписей репозитория остаётся включённой. При недоступности обоих
+зеркал сборка завершается с ошибкой, а не публикует неполный релиз.
+
+Зеркала можно задать при локальной сборке:
+
+```sh
+docker build --build-arg 'ALT_APT_MIRRORS=http://mirror.example/altlinux http://ftp.altlinux.org/pub/distributions/ALTLinux' \
+  -t sambaadm-rpm-builder:p10-amd64 -f packaging/alt/Dockerfile .
+```
+
+В релизном workflow сначала собираются бинарники. RPM упаковывают именно эти
+бинарники из artifact, включая восстановление executable-бита после скачивания.
+Публикация зависит от успешных package/lifecycle/systemd-проверок обеих архитектур;
+итоговый SHA256SUMS включает оба RPM, бинарники, helper и инструкцию.
+
+Проверка без создания нового релиза:
+
+```sh
+gh workflow run release.yml --ref main -f version=0.25.1
+```
+
+Ручной запуск только сохраняет `release-verified` в Actions artifacts. Публикация
+GitHub Release выполняется при push числового тега `vX.Y.Z` после всех проверок.
+Текущий опубликованный релиз не перезаписывается пробным запуском.
