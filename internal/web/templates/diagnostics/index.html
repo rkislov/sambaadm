@@ -1,0 +1,25 @@
+{{define "diagnostics/index.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}</head><body>
+{{template "nav" .}}
+<main class="container">
+<h1>{{t .Lang "nav.diagnostics"}}</h1>
+<p>{{t .Lang "diagnostics.hint"}}</p>
+<form method="post" action="/diagnostics/run" hx-post="/diagnostics/run" hx-target="#diagnostic-report" hx-disabled-elt="find button" hx-indicator="#diagnostic-progress">
+<input type="hidden" name="csrf_token" value="{{.CSRF}}">
+<button type="submit">{{t .Lang "diagnostics.run"}}</button>
+<span id="diagnostic-progress" class="htmx-indicator" role="status">{{t .Lang "diagnostics.running"}}</span>
+</form>
+<section id="diagnostic-report" aria-live="polite">{{template "diagnostics/report" .}}</section>
+</main></body></html>
+{{end}}
+{{define "diagnostics/report"}}
+{{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+{{with .Content}}
+<p class="muted">{{.Platform}} · {{.Started.Format "2006-01-02 15:04:05 MST"}} → {{.Finished.Format "15:04:05 MST"}}</p>
+{{range .Checks}}
+<article class="job-card" style="margin-top:1rem">
+<div class="job-head"><strong>{{t $.Lang (printf "diagnostics.%s" .ID)}}</strong> <span class="badge {{if eq .Status "ok"}}badge-ok{{else if eq .Status "error"}}badge-failed{{end}}">{{t $.Lang (printf "diagnostics.status.%s" .Status)}}</span><span class="muted">{{.DurationMS}} ms</span></div>
+<p>{{.Detail}}</p>{{if .Hint}}<p class="field-hint">{{.Hint}}</p>{{end}}
+</article>
+{{end}}{{end}}
+{{end}}

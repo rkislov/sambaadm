@@ -2815,6 +2815,19 @@
                 "403": {"description": "Admin or CSRF required"}
                 "409": {"description": "Revision conflict"}
                 "502": {"description": "Domain or local host operation failed"}
+    "/system/diagnostics":
+        "post":
+            "summary": "Run read-only host and domain diagnostics (admin)"
+            "parameters":
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema": {"type": "string"}
+            "responses":
+                "200": {"description": "Report with per-check status, detail, recommendation and duration; failed probes remain HTTP 200"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Administrator and CSRF token required"}
+                "409": {"description": "Another diagnostic run is already active"}
 "components":
     "securitySchemes":
         "cookieAuth":

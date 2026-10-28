@@ -38,26 +38,28 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
-	cfg      *config.Config
-	svcs     *service.Services
-	sessions *auth.Store
-	rbac     *auth.RBAC
-	ldap     *ldapproto.Client
-	audit    *audit.Logger
-	tmpl     *template.Template
-	router   chi.Router
-	monitor  service.HostMonitor
+	cfg         *config.Config
+	svcs        *service.Services
+	sessions    *auth.Store
+	rbac        *auth.RBAC
+	ldap        *ldapproto.Client
+	audit       *audit.Logger
+	tmpl        *template.Template
+	router      chi.Router
+	monitor     service.HostMonitor
+	diagnostics *service.DiagnosticService
 }
 
 // New constructs the web server and router.
 func New(opts Options) (*Server, error) {
 	s := &Server{
-		cfg:      opts.Config,
-		svcs:     opts.Services,
-		sessions: opts.Sessions,
-		rbac:     opts.RBAC,
-		ldap:     opts.LDAP,
-		audit:    opts.Audit,
+		cfg:         opts.Config,
+		diagnostics: service.NewDiagnosticService(opts.Config),
+		svcs:        opts.Services,
+		sessions:    opts.Sessions,
+		rbac:        opts.RBAC,
+		ldap:        opts.LDAP,
+		audit:       opts.Audit,
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"year":        func() int { return time.Now().Year() },
@@ -138,6 +140,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/printers/new", s.handlePrinterCreateForm)
 		r.Post("/printers", s.handlePrinterCreatePost)
 		r.Get("/audit", s.handleAudit)
+		r.Get("/diagnostics", s.handleDiagnostics)
+		r.Post("/diagnostics/run", s.handleDiagnosticsRun)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsPost)
 	})
@@ -148,6 +152,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/shares/wizard", s.handleAPIShareWizard)
 		r.Get("/samba/profile", s.handleAPISambaProfile)
 		r.Put("/samba/profile", s.handleAPISambaProfile)
+		r.Post("/system/diagnostics", s.handleAPIDiagnostics)
 		r.Get("/system/metrics", s.handleAPIHostMetrics)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)
 		r.Get("/groups/{name}", s.handleAPIGroupGet)
