@@ -3,57 +3,103 @@ name: release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Dry-run package version (does not create a release or tag)
+        default: '0.25.1'
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Test
-        run: go test ./...
+      - name: Select version
+        id: version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          version=${REQUESTED_VERSION:-$GITHUB_REF_NAME}
+          [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected version X.Y.Z'; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Test and vet
+        run: go test ./... && go vet ./...
       - name: Build release assets
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           make release
-      - name: Build ALT p10 RPM
-        run: |
-          docker build -t sambaadm-rpm-builder:p10-amd64 -f packaging/alt/Dockerfile .
-          docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-amd64 bash packaging/alt/build-rpm.sh "${GITHUB_REF_NAME#v}" /src/dist/sambaadm-linux-amd64 /src/dist
-      - name: Verify ALT package lifecycle
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-amd64 bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-amd64
-      - name: Release checksums
-        run: |
           cp deploy/sambaadm-package dist/sambaadm-package
           cp docs/alt-install.md dist/sambaadm-alt-install.md
-          cd dist && shasum -a 256 sambaadm-* > SHA256SUMS
       - name: Verify static Linux binaries
         run: |
           for binary in dist/sambaadm-linux-*; do
             file "$binary"
             if readelf -lW "$binary" | grep -Eq 'INTERP|DYNAMIC'; then
-              echo "Linux release must not depend on a dynamic loader or glibc"
+              echo 'Linux release must not depend on a dynamic loader or glibc'
               exit 1
             fi
           done
           ./dist/sambaadm-linux-amd64 version
-      - name: Publish GitHub Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: dist/*
+          if-no-files-found: error
+
+  rpm:
+    needs: build
+    uses: ./.github/workflows/rpm-build.yml
+    with:
+      version: ${{ needs.build.outputs.version }}
+      binary_artifact: release-binaries
+
+  publish:
+    needs: [build, rpm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: alt-rpm-*
+          merge-multiple: true
+          path: dist
+      - name: Require both architectures and create checksums
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          version=${VERSION#v}
+          test -s "dist/sambaadm-$version-alt1.x86_64.rpm"
+          test -s "dist/sambaadm-$version-alt1.aarch64.rpm"
+          cd dist
+          sha256sum sambaadm-* > SHA256SUMS
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-verified
+          path: dist/*
+          if-no-files-found: error
+      - name: Publish GitHub Release (tags only)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/sambaadm-linux-amd64
-            dist/sambaadm-linux-arm64
-            dist/sambaadm-darwin-amd64
-            dist/sambaadm-darwin-arm64
-            dist/sambaadm-windows-amd64.exe
-            dist/SHA256SUMS
-            dist/*.rpm
-            dist/sambaadm-package
-            dist/sambaadm-alt-install.md
+          files: dist/*
+          fail_on_unmatched_files: true
           generate_release_notes: true

@@ -1,0 +1,86 @@
+name: ALT RPM build
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      binary_artifact:
+        description: Optional release binaries artifact from this workflow run
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: ALT RPM (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        if: inputs.binary_artifact == ''
+        with:
+          go-version-file: go.mod
+      - name: Build native static binary for CI
+        if: inputs.binary_artifact == ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          make build
+          mkdir -p dist
+          cp bin/sambaadm dist/sambaadm-linux-${{ matrix.arch }}
+      - uses: actions/download-artifact@v4
+        if: inputs.binary_artifact != ''
+        with:
+          name: ${{ inputs.binary_artifact }}
+          path: dist
+      - name: Restore executable mode after artifact download
+        run: chmod 755 dist/sambaadm-linux-${{ matrix.arch }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build cached ALT p10 environment
+        uses: docker/build-push-action@v6
+        timeout-minutes: 14
+        with:
+          context: .
+          file: packaging/alt/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          tags: sambaadm-rpm-builder:p10-${{ matrix.arch }}
+          cache-from: type=gha,scope=alt-p10-builder-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=alt-p10-builder-${{ matrix.arch }}
+      - name: Verify mirror fallback and deadlines
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-build-deps.sh
+      - name: Build RPM
+        env:
+          RPM_VERSION: ${{ inputs.version }}
+        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist
+      - name: ALT RPM lifecycle (systemd simulated)
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
+      - name: ALT p10 real systemd update and rollback
+        run: |
+          trap 'docker logs --tail 50 sambaadm-alt-systemd || true; docker rm -f sambaadm-alt-systemd || true' EXIT
+          docker run -d --name sambaadm-alt-systemd --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} /lib/systemd/systemd
+          ready=false
+          for attempt in $(seq 1 30); do
+            if docker exec sambaadm-alt-systemd systemctl show -p Version --value | grep -q .; then ready=true; break; fi
+            sleep 1
+          done
+          test "$ready" = true
+          docker exec -e SAMBAADM_REAL_SYSTEMD=1 sambaadm-alt-systemd bash /src/testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alt-rpm-${{ matrix.arch }}
+          path: dist/*.rpm
+          if-no-files-found: error
