@@ -1,0 +1,3 @@
+# Read by systemd; not a shell script. Set the service account password here.
+# Keep this file owned by root with mode 0600.
+# SAMBAADM_PASSWORD='replace-me'

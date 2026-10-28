@@ -3,6 +3,10 @@
 set -eu
 [ "$(id -u)" = 0 ] || { echo 'Run as root (sudo).' >&2; exit 1; }
 [ "$#" = 1 ] && [ -f "$1" ] || { echo "Usage: sudo $0 /path/to/sambaadm-linux-amd64" >&2; exit 1; }
+if command -v rpm >/dev/null 2>&1 && rpm -q sambaadm >/dev/null 2>&1; then
+  echo 'RPM installation detected; use sambaadm-package update instead.' >&2
+  exit 1
+fi
 source_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 getent group sambaadm >/dev/null || groupadd --system sambaadm
 if ! getent passwd sambaadm >/dev/null; then
