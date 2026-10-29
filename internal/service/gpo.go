@@ -24,12 +24,13 @@ type GPO struct {
 
 // GPOService manages GPOs over LDAP and SMB.
 type GPOService struct {
-	editorMu sync.Mutex
-	remote   *adremote.Client
-	ldap     *ldapproto.Client
-	audit    *audit.Logger
-	gpoCfg   config.GPOConfig
-	jobs     *jobStore
+	editorMu      sync.Mutex
+	consistencyMu sync.Mutex
+	remote        *adremote.Client
+	ldap          *ldapproto.Client
+	audit         *audit.Logger
+	gpoCfg        config.GPOConfig
+	jobs          *jobStore
 }
 
 // List returns GPOs through LDAP.

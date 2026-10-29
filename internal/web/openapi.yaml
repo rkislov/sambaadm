@@ -2828,6 +2828,31 @@
                 "401": {"description": "Session required"}
                 "403": {"description": "CSRF required"}
                 "502": {"description": "LDAP unavailable"}
+    "/gpo/{gpo}/consistency":
+        "parameters":
+            - "name": "gpo"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+        "post":
+            "summary": "Read-only LDAP and SYSVOL comparison across discovered domain controllers"
+            "description": "All authenticated roles; CSRF required. Reference is a comparison baseline, not an authoritative source. No replication or repair is performed."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "properties":
+                                "reference": {"type": "string", "description": "Optional discovered DC DNS name; unavailable explicit reference is not replaced"}
+            "responses":
+                "200": {"description": "Report with status consistent/different/incomplete/single-controller, complete, hasDifferences, reference, timestamps and per-DC LDAP/SYSVOL states, versions, file hashes, ACL fingerprints and differences. See docs/api.md."}
+                "400": {"description": "Invalid GPO, reference or controller count"}
+                "401": {"description": "Session required"}
+                "403": {"description": "CSRF required"}
+                "409": {"description": "Another consistency check is running"}
+                "502": {"description": "Discovery or source GPO unavailable"}
     "/gpo/{gpo}/delegation/full":
         "parameters":
             - "name": "gpo"

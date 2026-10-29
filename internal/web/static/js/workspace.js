@@ -62,6 +62,7 @@
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
       toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
+ {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Делегирование LDAP/SYSVOL','LDAP/SYSVOL delegation'),method:'PUT',fullDelegation:true},
  {label:t('Права объекта LDAP','LDAP object permissions'),method:'GET',delegation:true},
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
@@ -527,6 +528,7 @@
     if(a.explain)return openPolicyExplain();
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
+    if(a.consistency)return openConsistency(row);
     if(a.fullDelegation)return openFullDelegation(row);
     if(a.delegation)return openDelegation(row);
     if(a.filter)return openFilter(row);
@@ -598,6 +600,35 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  async function openConsistency(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Согласованность GPO между контроллерами','GPO consistency across controllers'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    dialog.append(title,el('p','muted',t('Чтение LDAP и SYSVOL всех обнаруженных DC. Сравниваются версии, SHA-256 файлов, владельцы, группы и DACL. Проверка не запускает репликацию и ничего не исправляет. Контроллер сравнения не считается заведомо правильной копией.','Reads LDAP and SYSVOL on all discovered DCs. Compares versions, file SHA-256, owners, groups and DACLs. Does not trigger replication or repair anything. The comparison controller is not assumed to be authoritative.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    try{
+      const controllers=await request('/sites/controllers');if(generation!==dialogGeneration)return;
+      const form=el('form','workspace-form'),select=el('select');select.setAttribute('aria-label',t('Контроллер для сравнения','Comparison controller'));
+      for(const [val,label] of [['',t('Автоматически: первая полностью прочитанная копия','Automatic: first fully read copy')],...controllers.map(dc=>[dc.dns,dc.dns])]){const o=el('option','',label);o.value=val;select.append(o);}
+      const label=el('label','',t('Контроллер для сравнения','Comparison controller'));label.append(select);const run=el('button','',t('Проверить согласованность','Check consistency'));run.type='submit';form.append(label,run);const result=el('section');result.setAttribute('aria-live','polite');body.append(form,result);form.addEventListener('change',()=>result.replaceChildren());
+      const statuses={consistent:t('Совпадает','Matches'),reference:t('Копия для сравнения','Comparison copy'),different:t('Есть расхождения','Differences found'),incomplete:t('Проверка неполная','Check incomplete'),unavailable:t('Недоступно','Unavailable'),changing:t('Изменилось во время чтения','Changed during read'),pending:t('Незавершённая запись','Pending write'),'single-controller':t('Один DC — сравнение между контроллерами невозможно','Single DC — cross-controller comparison unavailable'),'not-compared':t('Нет доступной копии для сравнения','No available comparison copy'),ok:t('Прочитано','Read'),missing:t('Отсутствует','Missing'),error:t('Ошибка чтения','Read error'),'not-checked':t('Не проверено','Not checked')};
+      const kinds={'local-version':t('LDAP и GPT.INI на одном DC','LDAP vs GPT.INI on one DC'),'ldap-version':t('Версия LDAP','LDAP version'),'gpt-version':t('Версия GPT.INI','GPT.INI version'),'ldap-acl':t('Права объекта LDAP','LDAP object permissions'),'ldap-metadata':t('Метаданные LDAP','LDAP metadata'),content:t('Содержимое файла','File content'),'sysvol-acl':t('Права SYSVOL','SYSVOL permissions'),missing:t('Нет на этом DC','Missing on this DC'),extra:t('Дополнительный путь','Additional path'),type:t('Тип объекта','Object type'),'path-case':t('Регистр имени пути','Path name case')};
+      const version=v=>v===undefined||v===null?'—':v+' (M: '+(v&65535)+', U: '+(v>>>16)+')';
+      form.addEventListener('submit',async event=>{event.preventDefault();run.disabled=true;select.disabled=true;result.replaceChildren();message(notice,t('Проверка контроллеров… Обычно до 45 секунд.','Checking controllers… Usually up to 45 seconds.'));
+        try{const report=await request('/gpo/'+enc(gpoID(row))+'/consistency','POST',{reference:select.value});if(generation!==dialogGeneration)return;
+          result.append(el('h3',report.status==='consistent'?'':'alert',statuses[report.status]||report.status),el('p','mono',report.started+' → '+report.finished),el('p','',t('Сравнение с: ','Compared with: ')+(report.reference||'—')));
+          if(!report.complete)result.append(el('p','alert error',t('Не все копии проверены. Совпадение доступных DC не подтверждает согласованность всего домена.','Not all copies were checked. Matching accessible DCs does not establish domain-wide consistency.')));
+          if(report.hasDifferences)result.append(el('p','alert error',t('Обнаружены подтверждённые расхождения в прочитанных данных.','Differences were found in the data read.')));
+          result.append(button(t('Скачать отчёт JSON','Download JSON report'),()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='gpo-consistency.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+          topologyTable(result,report.controllers.map(dc=>({dns:dc.dns,state:statuses[dc.status]||dc.status,ldap:statuses[dc.ldap]||dc.ldap,sysvol:statuses[dc.sysvol]||dc.sysvol,ldapVersion:version(dc.ldapVersion),gptVersion:version(dc.gptVersion),count:dc.files.length,diffs:dc.differenceCount})),[['dns','DC'],['state',t('Результат','Result')],['ldap','LDAP'],['sysvol','SYSVOL'],['ldapVersion',t('Версия LDAP','LDAP version')],['gptVersion','GPT.INI'],['count',t('Объектов','Objects')],['diffs',t('Различий','Differences')]]);
+          for(const dc of report.controllers){const details=el('details');details.open=dc.errors.length>0||dc.differenceCount>0;details.append(el('summary','',dc.dns+' · '+(statuses[dc.status]||dc.status)));for(const error of dc.errors)details.append(el('p','alert error',error));if(dc.pending)details.append(el('p','alert error',t('В SYSVOL найден журнал незавершённой записи.','A pending write journal exists in SYSVOL.')));
+            topologyTable(details,dc.differences.map(d=>({...d,kind:kinds[d.kind]||d.kind,reference:d.reference||'—',value:d.value||'—'})),[['kind',t('Что отличается','Difference')],['path',t('Путь / атрибут','Path / attribute')],['reference',t('Копия для сравнения','Comparison copy')],['value',t('Этот DC','This DC')]]);
+            if(dc.differenceCount>dc.differences.length)details.append(el('p','muted',t('Список различий сокращён; полный манифест файлов доступен в JSON.','Difference list truncated; the full file manifest is included in JSON.')));result.append(details);
+          }
+          result.append(el('p','muted',t('Это не атомарный снимок и не проверка применения GPO на клиенте. SACL и эффективный доступ не вычисляются. Служебные .sambaadm-* в корне исключены; журнал незавершённой записи учитывается отдельно.','This is not an atomic snapshot or proof of client-side application. SACL and effective access are not evaluated. Root .sambaadm-* metadata is excluded; a pending write journal is reported separately.')));message(notice,t('Отчёт готов','Report ready'));
+        }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{if(generation===dialogGeneration){run.disabled=false;select.disabled=false;}}
+      });
+    }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
   async function openFullDelegation(row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
