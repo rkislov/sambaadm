@@ -213,6 +213,53 @@ func TestIntegrationWebDomainOperations(t *testing.T) {
 	guid := findGUID(policy)
 	defer func() { request(admin, token, "DELETE", "/gpo/"+url.PathEscape(guid), nil, 200) }()
 	gpoPath := "/gpo/" + url.PathEscape(guid)
+	scriptsPath := gpoPath + "/scripts"
+	var scripts service.GPOScripts
+	if e = json.Unmarshal(request(viewer, viewerToken, "GET", scriptsPath, nil, 200), &scripts); e != nil {
+		t.Fatal(e)
+	}
+	fileBytes := []byte("#!/bin/sh\necho test\n")
+	scriptChange := service.ScriptChange{Revision: scripts.Revision, Scope: "Machine", Event: "startup", Kind: "script", Entries: []service.ScriptAssignment{{Command: "web-script.sh", Parameters: "--test"}}, Files: []service.ScriptFileChange{{Name: "web-script.sh", Data: fileBytes}}}
+	request(viewer, viewerToken, "PUT", scriptsPath, scriptChange, 403)
+	request(admin, "", "PUT", scriptsPath, scriptChange, 403)
+	if e = json.Unmarshal(request(admin, token, "PUT", scriptsPath, scriptChange, 200), &scripts); e != nil || scripts.Revision == scriptChange.Revision || scripts.Backup == "" {
+		t.Fatalf("HTTP script editor: %+v %v", scripts, e)
+	}
+	request(admin, token, "PUT", scriptsPath, scriptChange, 409)
+	filePath := scriptsPath + "/file?" + url.Values{"revision": {scripts.Revision}, "scope": {"Machine"}, "event": {"startup"}, "name": {"web-script.sh"}}.Encode()
+	if data := request(viewer, viewerToken, "GET", filePath, nil, 200); !bytes.Equal(data, fileBytes) {
+		t.Fatalf("HTTP script download changed bytes: %q", data)
+	}
+	fileResponse, downloadErr := viewer.Get(server.URL + "/api/v1" + filePath)
+	if downloadErr != nil {
+		t.Fatal(downloadErr)
+	}
+	fileResponse.Body.Close()
+	if fileResponse.Header.Get("Content-Type") != "application/octet-stream" || !strings.HasPrefix(fileResponse.Header.Get("Content-Disposition"), "attachment") || fileResponse.Header.Get("X-Content-Type-Options") != "nosniff" {
+		t.Fatal("script must download as a non-executable attachment", fileResponse.Header)
+	}
+	request(admin, token, "GET", scriptsPath+"/file?"+url.Values{"revision": {scripts.Revision}, "scope": {"Machine"}, "event": {"startup"}, "name": {"../../GPT.INI"}}.Encode(), nil, 400)
+	request(viewer, viewerToken, "GET", scriptsPath+"/maintenance", nil, 403)
+	request(viewer, viewerToken, "POST", scriptsPath+"/maintenance", map[string]string{"operation": "prune", "revision": "x"}, 403)
+	request(admin, "", "POST", scriptsPath+"/maintenance", map[string]string{"operation": "prune", "revision": "x"}, 403)
+	var maintenance service.ScriptMaintenance
+	if e = json.Unmarshal(request(admin, token, "GET", scriptsPath+"/maintenance", nil, 200), &maintenance); e != nil {
+		t.Fatal(e)
+	}
+	backupName := maintenance.Backups[0].Name
+	if raw := request(admin, token, "GET", scriptsPath+"/backup?"+url.Values{"name": {backupName}, "revision": {maintenance.Revision}}.Encode(), nil, 200); !json.Valid(raw) {
+		t.Fatal("invalid backup download")
+	}
+	for step := 0; step < 2; step++ {
+		var preview service.ScriptRestorePreview
+		if e = json.Unmarshal(request(admin, token, "GET", scriptsPath+"/preview?"+url.Values{"source": {backupName}, "mode": {"before"}}.Encode(), nil, 200), &preview); e != nil {
+			t.Fatal(e)
+		}
+		if e = json.Unmarshal(request(admin, token, "POST", scriptsPath+"/maintenance", service.ScriptMaintenanceChange{Operation: "restore", Source: backupName, Mode: "before", Revision: preview.Revision}, 200), &maintenance); e != nil {
+			t.Fatal(e)
+		}
+		backupName = maintenance.Backups[0].Name
+	}
 	altPath := gpoPath + "/alt-settings"
 	var alt service.ALTPolicy
 	if e = json.Unmarshal(request(viewer, viewerToken, "GET", altPath, nil, 200), &alt); e != nil {
@@ -245,14 +292,16 @@ lp=LoadParm();lp.load_default()
 creds=Credentials();creds.guess(lp);creds.set_domain("SAMBAADM")
 creds.set_username(os.environ["EDITOR_TEST_USER"]);creds.set_password(os.environ["EDITOR_TEST_PASSWORD"])
 conn=smb_connection("127.0.0.1","sysvol",lp=lp,creds=creds)
-data=conn.loadfile(sys.argv[1]);assert data[:4]==b"PReg"
+data=conn.loadfile(sys.argv[1]);assert data[:4]==b"PReg" if sys.argv[1].endswith("Registry.pol") else data.startswith(b"#!/bin/sh")
 if os.environ["EDITOR_TEST_WRITE"]=="1": conn.savefile(sys.argv[1],data)
 `
 	for _, who := range []struct{ user, password, write string }{{user, "Web-User-New-Pass2!", "0"}, {editorAdmin, "Editor-Admin-Pass1!", "1"}} {
-		cmd := exec.Command("/usr/bin/python3", "-c", script, `sambaadm.test\Policies\`+guid+`\Machine\Registry.pol`)
-		cmd.Env = append(os.Environ(), "EDITOR_TEST_USER="+who.user, "EDITOR_TEST_PASSWORD="+who.password, "EDITOR_TEST_WRITE="+who.write)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("inherited SMB policy permissions: %s %v", output, err)
+		for _, file := range []string{`\Machine\Registry.pol`, `\Machine\Scripts\Startup\web-script.sh`} {
+			cmd := exec.Command("/usr/bin/python3", "-c", script, `sambaadm.test\Policies\`+guid+file)
+			cmd.Env = append(os.Environ(), "EDITOR_TEST_USER="+who.user, "EDITOR_TEST_PASSWORD="+who.password, "EDITOR_TEST_WRITE="+who.write)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("inherited SMB policy permissions for %s: %s %v", file, output, err)
+			}
 		}
 	}
 	t.Log("new Registry.pol is readable by domain user and writable by a separate Domain Admin over SMB")

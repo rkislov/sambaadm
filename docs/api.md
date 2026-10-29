@@ -166,6 +166,29 @@ GPO не считаются конфликтом. Специальные дир�
 
 ### Просмотр сценариев GPO
 
-`GET /api/v1/gpo/{gpo}/scripts` доступен всем авторизованным ролям. Возвращает `controller`, признаки `machineDisabled` и `userDisabled`, массив `scripts`: `scope` (Machine/User), `event` (startup/shutdown/logon/logoff), `kind` (script/PowerShell), `order` (индекс с нуля внутри раздела и типа), `command`, `parameters`, `source` (относительный путь в GPO). Читаются scripts.ini и psscripts.ini в SYSVOL; редактор ALT и ADMX не требуются. Команды не исполняются. Отсутствующие файлы дают пустой массив; ошибка чтения или формата возвращается как ошибка, а не как отсутствие назначений.
+`GET /api/v1/gpo/{gpo}/scripts` доступен всем авторизованным ролям. Возвращает `controller`, `revision`, `version`, `files` (scope/event/name/size), признаки `machineDisabled` и `userDisabled`, массив `scripts`: `scope` (Machine/User), `event` (startup/shutdown/logon/logoff), `kind` (script/PowerShell), `order` (индекс с нуля внутри раздела и типа), `command`, `parameters`, `source` (относительный путь в GPO). Читаются scripts.ini и psscripts.ini в SYSVOL; редактор ALT и ADMX не требуются. Команды не исполняются. Отсутствующие файлы дают пустой массив; ошибка чтения или формата возвращается как ошибка, а не как отсутствие назначений.
 
 Отказы LDAP/DRS в доступе в расширенных операциях и проверке репликации возвращаются с HTTP 403, `code: upstream_access_denied`, исходным `error` и подсказкой `hint`. Ошибка недопустимого участника группы получает HTTP 400. Значения дат в JSON сохраняют формат LDAP; человекочитаемое представление формируется веб-интерфейсом. Объект компьютера дополнен полем `whenCreated`.
+
+
+### Запись сценариев
+
+`PUT /api/v1/gpo/{gpo}/scripts` — admin + X-CSRF-Token. JSON: `revision`, `scope` (Machine/User), `event` (startup/shutdown для Machine, logon/logoff для User), `kind` (script/PowerShell), `entries` (упорядоченный массив `{command, parameters}`), необязательный `files` (массив `{name, data}`, где data — base64 точных байтов файла). Пустой entries очищает только выбранное событие и тип. Удаление назначений не удаляет файлы. Загрузки создаются/заменяются в Scripts/<Event>; имя — только имя файла, без каталогов, потоков, специальных имён Windows и переходов по пути. Исполнение и физическое удаление файлов через этот API отсутствуют.
+
+До 128 назначений, 32 файлов, 2 МиБ на файл, 4 МиБ суммарных данных и 8 МиБ JSON. Ответ — свежая модель GET и `backup` с именем резервной копии, если была запись. HTTP 400 — недопустимый ввод; 403 — роль/CSRF/права служебной записи; 409 — изменившаяся ревизия или рассогласование версий. При неопределённом результате HTTP 502 сообщает о сохранённом журнале восстановления. Запись не требует ADMX или gpo.editor_enabled.
+
+`GET /api/v1/gpo/{gpo}/scripts/file?revision=...&scope=Machine&event=startup&name=example.sh` — скачивание существующего файла из модели GET. Возвращает application/octet-stream, Content-Disposition: attachment, X-Content-Type-Options: nosniff и Cache-Control: no-store. Путь берётся только из найденного файла снимка; произвольный доступ к SYSVOL не допускается. Изменение ревизии даёт 409; отсутствующий файл — 400.
+
+
+### Обслуживание копий и восстановление сценариев
+
+Все операции ниже требуют admin; POST дополнительно требует X-CSRF-Token.
+
+- `GET /api/v1/gpo/{gpo}/scripts/maintenance`: revision списка, backups (name/size/modified/protected), pending, recoveryError, keep/maxBytes/totalBytes и prunable — план очистки.
+- `GET /api/v1/gpo/{gpo}/scripts/backup?name=...&revision=...`: скачивание копии как вложения. name=pending выбирает журнал; произвольные пути не принимаются.
+- `GET /api/v1/gpo/{gpo}/scripts/preview?source=...&mode=before|after`: source=pending для возврата/завершения; имя копии с mode=before для исторического восстановления. Ответ: revision плана, scope, version/nextVersion, files (path/state/action/size) и conflicts.
+- `POST /api/v1/gpo/{gpo}/scripts/maintenance`: JSON operation=restore/delete/prune и revision. Для restore — revision предпросмотра, source и mode; при conflicts обязательно allowConflicts=true. Для delete — source с именем незапрещённой копии. Для delete/prune — revision списка. Пустая/устаревшая ревизия не разрешает изменение. Ответ — свежая модель обслуживания.
+
+Восстановление всегда повышает версию текущего раздела, создаёт страховочную копию и сохраняет журнал до успешного LDAP commit. HTTP 409 — изменившаяся ревизия/версия либо неподтверждённая замена конфликтов; 400 — недопустимый источник/план/защищённая копия; 403 — роль/CSRF/права службы. При сбое записи сохраняется журнал восстановления. Автоочистка после успешных сохранений использует gpo.script_backup_keep и gpo.script_backup_max_mib; последняя копия не удаляется, при pending очистка не выполняется.
+
+`POST /api/v1/system/diagnostics` принимает необязательный JSON `{ "gpo": "{GUID}" }`. Без тела проверяются общие возможности, а проверки прав выбранной GPO пропускаются. Ответ содержит serviceUser и gpo, отдельные проверки drs, ldap_permissions, sysvol_permissions. allowedAttributesEffective проверяется чтением, GPT.INI — открытием O_RDWR без записи/усечения. KCC не вызывается. Неверный GUID даёт 400, занятая диагностика — 409; результаты отдельных проверок остаются в отчёте HTTP 200.

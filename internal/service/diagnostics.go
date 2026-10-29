@@ -17,6 +17,7 @@ import (
 	"sambaadm/internal/adremote"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
+	"sambaadm/internal/policy"
 	"sambaadm/internal/smbconf"
 )
 
@@ -29,10 +30,12 @@ type DiagnosticCheck struct {
 	DurationMS int64  `json:"durationMs"`
 }
 type DiagnosticReport struct {
-	Started  time.Time         `json:"started"`
-	Finished time.Time         `json:"finished"`
-	Platform string            `json:"platform"`
-	Checks   []DiagnosticCheck `json:"checks"`
+	ServiceUser string            `json:"serviceUser"`
+	GPO         string            `json:"gpo,omitempty"`
+	Started     time.Time         `json:"started"`
+	Finished    time.Time         `json:"finished"`
+	Platform    string            `json:"platform"`
+	Checks      []DiagnosticCheck `json:"checks"`
 }
 type DiagnosticService struct {
 	cfg  *config.Config
@@ -45,6 +48,13 @@ func NewDiagnosticService(cfg *config.Config) *DiagnosticService {
 
 // Run uses an isolated connection so checks never change the application's LDAP identity.
 func (s *DiagnosticService) Run(ctx context.Context) (*DiagnosticReport, error) {
+	return s.RunFor(ctx, "")
+}
+
+func (s *DiagnosticService) RunFor(ctx context.Context, gpo string) (*DiagnosticReport, error) {
+	if gpo != "" && !looksLikeGUID(gpo) {
+		return nil, fmt.Errorf("%w: select a GPO GUID", policy.ErrInvalidValue)
+	}
 	select {
 	case s.gate <- struct{}{}:
 		defer func() { <-s.gate }()
@@ -54,7 +64,7 @@ func (s *DiagnosticService) Run(ctx context.Context) (*DiagnosticReport, error) 
 	ctx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
 	cfg := s.cfg
-	report := &DiagnosticReport{Started: time.Now().UTC(), Platform: runtime.GOOS + "/" + runtime.GOARCH}
+	report := &DiagnosticReport{Started: time.Now().UTC(), Platform: runtime.GOOS + "/" + runtime.GOARCH, ServiceUser: s.clean(cfg.LDAP.Bind.User), GPO: gpo}
 	type probe struct {
 		id  string
 		run func(context.Context) (string, string, string)
@@ -62,6 +72,9 @@ func (s *DiagnosticService) Run(ctx context.Context) (*DiagnosticReport, error) 
 	host := hostnameFromURI(cfg.LDAP.URI)
 	domain := dnsFromBaseDN(cfg.LDAP.BaseDN)
 	probes := []probe{
+		{"drs", s.checkDRSPermissions},
+		{"ldap_permissions", func(ctx context.Context) (string, string, string) { return s.checkLDAPPolicyPermissions(ctx, gpo) }},
+		{"sysvol_permissions", func(ctx context.Context) (string, string, string) { return s.checkSYSVOLPolicyPermissions(ctx, gpo) }},
 		{"ldap", func(ctx context.Context) (string, string, string) {
 			if cfg.LDAP.BaseDN == "" || cfg.LDAP.Bind.User == "" || cfg.BindPassword() == "" {
 				return "error", "LDAP service configuration is incomplete", "Configure ldap.base_dn, ldap.bind.user and the password environment variable."

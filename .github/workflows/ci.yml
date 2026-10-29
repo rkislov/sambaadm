@@ -76,6 +76,34 @@ jobs:
       - name: Web workspace contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/workspace.cjs
 
+  gpui-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install GPUI parser build dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qtbase5-dev libboost-dev g++ pkg-config
+      - name: Fetch pinned GPUI and gpupdate sources
+        run: |
+          git init "$RUNNER_TEMP/gpui"
+          git -C "$RUNNER_TEMP/gpui" fetch --depth 1 https://github.com/august-alt/gpui.git 2fc8c0b0fe09686c45272ba4e7052b5cd9c04262
+          git -C "$RUNNER_TEMP/gpui" checkout --detach FETCH_HEAD
+          git init "$RUNNER_TEMP/gpupdate"
+          git -C "$RUNNER_TEMP/gpupdate" fetch --depth 1 https://github.com/altlinux/gpupdate.git 00659d16fef4fff8bc46ef58b7d753551981cff4
+          git -C "$RUNNER_TEMP/gpupdate" checkout --detach FETCH_HEAD
+      - name: Actual GPUI INI plugin and ALT client roundtrip
+        run: |
+          mkdir -p "$RUNNER_TEMP/script-fixtures"
+          export SAMBAADM_GPUI_FIXTURES="$RUNNER_TEMP/script-fixtures"
+          go test ./internal/service -run '^TestGPUIINIInterop$' -count=1
+          g++ -std=c++17 -fPIC -I"$RUNNER_TEMP/gpui/src" $(pkg-config --cflags Qt5Core) testdata/gpui/roundtrip.cpp "$RUNNER_TEMP/gpui/src/io/inifile.cpp" -o "$RUNNER_TEMP/gpui-roundtrip" $(pkg-config --libs Qt5Core)
+          "$RUNNER_TEMP/gpui-roundtrip" "$SAMBAADM_GPUI_FIXTURES/input.ini" "$SAMBAADM_GPUI_FIXTURES/gpui.ini"
+          SAMBAADM_GPUI_ROUNDTRIP=1 go test ./internal/service -run '^TestGPUIINIInterop$' -count=1
+          python3 testdata/gpui/check_gpupdate.py "$RUNNER_TEMP/gpupdate" "$SAMBAADM_GPUI_FIXTURES"
+
   alt-rpm:
     uses: ./.github/workflows/rpm-build.yml
     with:

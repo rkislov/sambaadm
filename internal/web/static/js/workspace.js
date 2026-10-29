@@ -282,6 +282,78 @@
     dialog.append(button(t('Закрыть','Close'),closeOperation));dialog.showModal();message(notice,t('Загрузка…','Loading…'));
     try{await refresh();if(generation===dialogGeneration)message(notice,'');}catch(e){if(generation===dialogGeneration){message(notice,e.message,true);members.append(button(t('Повторить','Retry'),()=>openGroupMembers(row)));}}
   }
+  async function openScriptsEditor(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Сценарии групповой политики','Group policy scripts'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Команды выполняются на клиентах при обработке политики. Сохраняется выбранное событие и тип сценариев. Удаление назначения сохраняет файл в SYSVOL.','Commands run on clients during policy processing. Save updates the selected event and script type. Removing an assignment retains its SYSVOL file.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    if(admin)title.after(button(t('Резервные копии и восстановление','Backups and recovery'),()=>openScriptMaintenance(row)));
+    const path='/gpo/'+enc(row.guid)+'/scripts';let model,scope='Machine',event='startup',kind='script',entries=[],pending=[],dirty=false,busy=false,conflict=false;
+    const current=()=>generation===dialogGeneration;
+    const eventNames={startup:t('Запуск','Startup'),shutdown:t('Завершение работы','Shutdown'),logon:t('Вход','Logon'),logoff:t('Выход','Logoff')};
+    async function refresh(){busy=true;body.replaceChildren();message(notice,t('Чтение SYSVOL…','Reading SYSVOL…'));try{const data=await request(path);if(!current())return;model=data;conflict=false;reset();message(notice,'');}catch(e){if(current()){message(notice,e.message,true);body.replaceChildren(button(t('Повторить','Retry'),refresh));}}finally{busy=false;}}
+    function reset(){entries=(model.scripts||[]).filter(s=>s.scope===scope&&s.event===event&&s.kind===kind).sort((a,b)=>a.order-b.order).map(s=>({command:s.command,parameters:s.parameters}));pending=[];dirty=false;render();}
+    function render(){
+      body.replaceChildren();body.append(el('p','mono',model.controller+' · '+t('Версия ','Version ')+model.version));
+      if(scope==='Machine'?model.machineDisabled:model.userDisabled)body.append(el('p','alert',t('Этот раздел GPO отключён. Сценарии не применятся, пока раздел не будет включён.','This GPO scope is disabled. Scripts will not apply until the scope is enabled.')));
+      const selectors=el('div','workspace-tools');
+      function selector(label,values,value,change){const l=el('label','',label),input=el('select');input.setAttribute('aria-label',label);for(const [key,label]of values){const option=el('option','',label);option.value=key;input.append(option);}input.value=value;input.disabled=dirty;input.addEventListener('change',()=>{change(input.value);reset();});l.append(input);selectors.append(l);return input;}
+      const selects=[];selects.push(selector(t('Раздел сценариев','Script scope'),[['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]],scope,v=>{scope=v;event=v==='Machine'?'startup':'logon';}));
+      selects.push(selector(t('Событие сценариев','Script event'),(scope==='Machine'?['startup','shutdown']:['logon','logoff']).map(k=>[k,eventNames[k]]),event,v=>event=v));
+      selects.push(selector(t('Тип сценариев','Script type'),[['script',t('Обычные сценарии','Standard scripts')],['PowerShell','PowerShell']],kind,v=>kind=v));body.append(selectors);
+      const form=el('form','workspace-form'),list=el('div');form.append(list);body.append(form);
+      let save,confirm;
+      function changed(){dirty=true;selects.forEach(s=>s.disabled=true);if(confirm)confirm.checked=false;if(save)save.disabled=conflict;if(!conflict)message(notice,t('Есть несохранённые изменения. Сохраните или отмените их для перехода к другому событию.','Unsaved changes. Save or discard them before selecting another event.'));}
+      if(!entries.length)list.append(el('p','muted',t('Сценарии не назначены','No scripts assigned')));
+      entries.forEach((entry,i)=>{const card=el('fieldset');card.append(el('legend','',eventNames[event]+' · '+(i+1)));
+        for(const [key,label]of [['command',t('Команда сценария','Script command')],['parameters',t('Аргументы сценария','Script arguments')]]){const l=el('label','',label),input=el('input');input.setAttribute('aria-label',label+' '+(i+1));input.value=entry[key]||'';input.disabled=!admin;input.required=key==='command';input.maxLength=key==='command'?259:8192;input.addEventListener('input',()=>{entry[key]=input.value;changed();});l.append(input);card.append(l);}
+        if(admin){const actions=el('div','workspace-tools');for(const [label,delta]of [[t('Выше','Move up'),-1],[t('Ниже','Move down'),1]]){const move=button(label,()=>{[entries[i],entries[i+delta]]=[entries[i+delta],entries[i]];changed();render();});move.disabled=i+delta<0||i+delta>=entries.length;actions.append(move);}actions.append(button(t('Удалить назначение','Remove assignment'),()=>{entries.splice(i,1);changed();render();},'danger'));card.append(actions);}list.append(card);
+      });
+      if(admin)form.append(button(t('Добавить команду','Add command'),()=>{entries.push({command:'',parameters:''});changed();render();}));
+      const files=el('section');files.append(el('h3','',t('Файлы выбранного события','Files for this event')));
+      const assignedFiles=(model.files||[]).filter(f=>f.scope===scope&&f.event===event);
+      if(!assignedFiles.length)files.append(el('p','muted',t('Файлов в каталоге события нет','No files in the event directory')));
+      for(const file of assignedFiles){const line=el('p'),link=el('a','',file.name+' · '+file.size+' '+t('байт','bytes'));link.href=api+path+'/file?'+new URLSearchParams({scope,event,name:file.name,revision:model.revision});link.download=file.name;line.append(link);files.append(line);}
+      if(admin){const label=el('label','',t('Загрузить и назначить файлы','Upload and assign files')),upload=el('input');upload.type='file';upload.multiple=true;upload.setAttribute('aria-label',t('Загрузить и назначить файлы','Upload and assign files'));label.append(upload);files.append(label,el('p','muted',t('До 2 МиБ на файл и 4 МиБ за сохранение. Совпадающее имя заменяет содержимое файла после сохранения.','Up to 2 MiB per file and 4 MiB per save. Matching names replace file contents when saved.')));
+        upload.addEventListener('change',async()=>{const files=[...upload.files];if(!files.length)return;busy=true;form.querySelectorAll('button,input,select').forEach(e=>e.disabled=true);
+          try{if(files.some(f=>f.size>2*1024*1024)||files.reduce((n,f)=>n+f.size,0)+pending.reduce((n,f)=>n+f.size,0)>4*1024*1024)throw Error(t('Превышен размер файлов','File size limit exceeded'));const staged=[];for(const file of files){const bytes=new Uint8Array(await file.arrayBuffer());let value='';for(let i=0;i<bytes.length;i+=32768)value+=String.fromCharCode(...bytes.subarray(i,i+32768));staged.push({name:file.name,data:btoa(value),size:file.size});}if(!current())return;for(const file of staged){pending=pending.filter(f=>f.name.toLowerCase()!==file.name.toLowerCase());pending.push(file);if(!entries.some(s=>s.command.toLowerCase()===file.name.toLowerCase()))entries.push({command:file.name,parameters:''});}changed();render();message(notice,t('Файлы подготовлены. Проверьте назначения и сохраните.','Files staged. Review assignments and save.'));}
+          catch(e){if(current()){render();message(notice,e.message,true);}}finally{busy=false;}
+        });
+      }
+      for(const file of pending)files.append(el('p','',t('Будет загружен: ','Will upload: ')+file.name+' · '+file.size+' '+t('байт','bytes')));form.append(files);
+      if(admin){const l=el('label','',t('Подтверждаю сохранение сценариев выбранного раздела','Confirm saving scripts for this scope'));confirm=el('input');confirm.type='checkbox';confirm.required=true;l.prepend(confirm);save=el('button','',t('Сохранить сценарии','Save scripts'));save.type='submit';save.disabled=!dirty||conflict;form.append(l,save,button(t('Отменить изменения','Discard changes'),()=>{conflict=false;reset();message(notice,'');}));
+        form.addEventListener('submit',async e=>{e.preventDefault();if(busy||conflict||!dirty||!form.reportValidity())return;busy=true;form.querySelectorAll('button,input,select').forEach(e=>e.disabled=true);message(notice,t('Сохранение с резервной копией…','Saving with backup…'));
+          try{const result=await request(path,'PUT',{revision:model.revision,scope,event,kind,entries:entries.map(s=>({...s})),files:pending.map(({name,data})=>({name,data}))});if(!current())return;model=result;reset();message(notice,t('Сценарии сохранены. Проверьте применение на клиенте.','Scripts saved. Verify client application.'));if(result.backup)body.append(el('p','muted',t('Резервная копия в каталоге GPO: ','Backup in the GPO directory: ')+result.backup));if(result.backupWarning)body.append(el('p','alert',result.backupWarning));}
+          catch(e){if(!current())return;conflict=true;render();message(notice,e.message+t(' Правки сохранены в форме. Перечитайте политику перед повторным сохранением.','Your edits remain in the form. Reload the policy before saving again.'),true);body.append(button(t('Перечитать и сбросить правки','Reload and discard edits'),refresh));}finally{busy=false;}
+        });
+      }
+    }
+    await refresh();
+  }
+  async function openScriptMaintenance(row){
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();const title=el('h2','',t('Резервные копии и восстановление','Backups and recovery'));title.id='operation-title';
+    const notice=el('p','workspace-message'),list=el('div'),preview=el('section');notice.setAttribute('aria-live','polite');dialog.append(title,el('p','',row.displayName||row.guid),notice,list,preview,button(t('Вернуться к сценариям','Back to scripts'),()=>openScriptsEditor(row)),button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
+    const path='/gpo/'+enc(row.guid)+'/scripts';let state,working=false;const current=()=>generation===dialogGeneration;
+    async function refresh(){message(notice,t('Загрузка копий…','Loading backups…'));try{const data=await request(path+'/maintenance');if(!current())return;state=data;preview.replaceChildren();render();message(notice,'');}catch(e){if(current())message(notice,e.message,true);}}
+    function download(name,label){const link=el('a','btn',label);link.href=api+path+'/backup?'+new URLSearchParams({name,revision:state.revision});link.download=name==='pending'?'sambaadm-pending-recovery.json':name;return link;}
+    async function apply(payload){if(working)return;working=true;dialog.querySelectorAll('button,input').forEach(e=>e.disabled=true);message(notice,t('Применение…','Applying…'));try{await request(path+'/maintenance','POST',payload);if(!current())return;await refresh();message(notice,payload.operation==='restore'?t('Восстановление завершено. Версия GPO обновлена.','Recovery completed. GPO version updated.'):t('Список копий обновлён','Backups updated'));}catch(e){if(current()){message(notice,e.message,true);preview.replaceChildren();list.append(button(t('Перезагрузить список','Reload backups'),refresh));}}finally{working=false;if(current())dialog.querySelectorAll('button,input').forEach(e=>e.disabled=false);}}
+    function render(){list.replaceChildren();list.append(el('p','',t('Копий: ','Backups: ')+state.backups.length+' · '+state.totalBytes+' '+t('байт. Лимит: ','bytes. Limit: ')+state.keep+' / '+Math.round(state.maxBytes/1048576)+' MiB'),el('p','muted',t('Последняя копия защищена от удаления. При незавершённом сохранении очистка приостанавливается.','The newest backup is protected. Retention pauses while recovery is pending.')));
+      if(state.pending){const panel=el('div','alert');panel.append(el('strong','',t('Обнаружено незавершённое сохранение','An unfinished save was found')),el('p','',t('Сначала просмотрите состояние файлов и выберите возврат к исходному состоянию или завершение сохранения.','Preview file states, then choose to roll back or complete the save.')),download('pending',t('Скачать журнал','Download journal')));if(state.recoveryError)panel.append(el('p','error',state.recoveryError),el('p','',t('Можно выбрать корректную резервную копию и явно подтвердить замену повреждённого журнала.','Choose a valid backup to explicitly replace a damaged journal.')));else panel.append(button(t('Предпросмотр возврата','Preview rollback'),()=>showPreview('pending','before')),button(t('Предпросмотр завершения','Preview completion'),()=>showPreview('pending','after')));list.append(panel);}
+      if(!state.backups.length)list.append(el('p','muted',t('Резервных копий пока нет','No backups yet')));
+      for(const item of state.backups){const card=el('article','scope-link');card.append(el('p','mono',item.name),el('p','',new Date(item.modified).toLocaleString()+' · '+item.size+' '+t('байт','bytes')),download(item.name,t('Скачать копию','Download backup')),button(t('Предпросмотр восстановления','Preview restore'),()=>showPreview(item.name,'before')));
+        if(!item.protected){const form=el('form','workspace-tools'),check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю удаление этой копии','Confirm deleting this backup'));label.prepend(check);const remove=el('button','danger',t('Удалить копию','Delete backup'));remove.type='submit';form.append(label,remove);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())apply({operation:'delete',source:item.name,revision:state.revision});});card.append(form);}list.append(card);
+      }
+      if(!state.pending&&state.prunable.length){const form=el('form','workspace-form');form.append(el('p','',t('Очистка удалит копии сверх лимита: ','Retention will delete: ')+state.prunable.join(', ')));const check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю очистку копий сверх лимита','Confirm pruning backups above the limit'));label.prepend(check);const run=el('button','',t('Очистить по лимитам','Apply retention'));run.type='submit';form.append(label,run);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())apply({operation:'prune',revision:state.revision});});list.append(form);}
+    }
+    async function showPreview(source,mode){if(working)return;message(notice,t('Проверка состояния файлов…','Checking file states…'));try{const plan=await request(path+'/preview?'+new URLSearchParams({source,mode}));if(!current())return;preview.replaceChildren(el('h3','',t('План восстановления','Recovery plan')),el('p','',plan.scope+' · '+t('Версия ','Version ')+plan.version+' → '+plan.nextVersion),el('p','muted',t('Восстанавливаются перечисленные файлы целиком. До записи создаётся страховочная копия. Не сохраняйте эту GPO параллельно в другом редакторе.','Listed files are restored in full. A safety backup is created first. Do not save this GPO concurrently in another editor.')));
+        const statuses={before:t('Исходное состояние','Original state'),after:t('Результат сохранения','Saved state'),changed:t('Внешнее или частичное изменение','External or partial change')};for(const file of plan.files)preview.append(el('p','mono',(file.action==='delete'?t('Удалить: ','Delete: '):t('Записать: ','Write: '))+file.path+' · '+(statuses[file.state]||file.state)+' · '+file.size+' '+t('байт','bytes')));
+        const form=el('form','workspace-form');let conflicts;
+        if(plan.conflicts.length){form.append(el('p','alert',t('Будут заменены изменённые данные: ','Changed data will be replaced: ')+plan.conflicts.join(', ')));conflicts=el('input');conflicts.type='checkbox';conflicts.required=true;const label=el('label','',t('Разрешаю заменить перечисленные внешние или частичные изменения','Allow replacing listed external or partial changes'));label.prepend(conflicts);form.append(label);}
+        const check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю восстановление по этому плану','Confirm recovery using this plan'));label.prepend(check);const save=el('button','',t('Применить восстановление','Apply recovery'));save.type='submit';form.append(label,save);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())apply({operation:'restore',source,mode,revision:plan.revision,allowConflicts:!!conflicts?.checked});});preview.append(form);message(notice,'');preview.scrollIntoView({block:'start',behavior:'smooth'});
+      }catch(e){if(current()){preview.replaceChildren();message(notice,e.message,true);}}
+    }
+    await refresh();
+  }
   async function openUserCard(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
@@ -454,6 +526,7 @@
     if(a.scope)return openScope();
     if(a.filter)return openFilter(row);
     if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
+    if((typeof a.path==='function'?a.path(row):a.path)?.endsWith('/scripts'))return openScriptsEditor(row);
     if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
@@ -627,13 +700,6 @@
   }
   function renderResult(result,parent,a,row,query) {
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
-    if(endpoint?.endsWith('/scripts')){
-      parent.append(el('p','',t('Сценарии читаются из SYSVOL отдельно от административных шаблонов ADMX. Это назначенные команды, а не подтверждение выполнения на клиенте. Порядок указан внутри раздела и типа сценария.','Scripts are read from SYSVOL separately from ADMX administrative templates. These are assigned commands; client execution is not confirmed. Order is within each section and script type.')),el('p','mono',result.controller));
-      const events={startup:t('Запуск','Startup'),shutdown:t('Завершение работы','Shutdown'),logon:t('Вход','Logon'),logoff:t('Выход','Logoff')};
-      if(result.machineDisabled||result.userDisabled)parent.append(el('p','alert',t('В этой GPO отключены разделы: ','Disabled GPO sections: ')+[result.machineDisabled?t('Компьютер','Computer'):'',result.userDisabled?t('Пользователь','User'):''].filter(Boolean).join(', ')));
-      for(const script of result.scripts||[]){const card=el('section','scope-link');card.append(el('h3','',(script.scope==='Machine'?t('Компьютер','Computer'):t('Пользователь','User'))+' · '+(events[script.event]||script.event)+' · '+(script.kind==='script'?t('Сценарий','Script'):script.kind)+' · '+(script.order+1)));describe({[t('Команда','Command')]:script.command,[t('Аргументы','Arguments')]:script.parameters||'—',[t('Файл в SYSVOL','SYSVOL file')]:script.source},card);parent.append(card);}
-      if(!result.scripts?.length)parent.append(el('p','muted',t('Сценарии не назначены','No scripts assigned')));return;
-    }
     if(endpoint==='/sites/links'){
  parent.append(el('p','muted',t('Расписания Site Link заблокированы из-за ошибки KCC в Samba. Расписания отдельных соединений доступны в разделе «Репликация».','Site Link schedule writes are blocked due to a Samba KCC defect. Connection schedules are available under Replication.')));
       topologyTable(parent,result,[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Минуты','Minutes')]],

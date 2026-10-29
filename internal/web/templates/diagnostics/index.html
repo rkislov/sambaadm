@@ -1,11 +1,12 @@
 {{define "diagnostics/index.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}</head><body>
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/diagnostics.js" defer></script></head><body>
 {{template "nav" .}}
 <main class="container">
 <h1>{{t .Lang "nav.diagnostics"}}</h1>
 <p>{{t .Lang "diagnostics.hint"}}</p>
 <form method="post" action="/diagnostics/run" hx-post="/diagnostics/run" hx-target="#diagnostic-report" hx-disabled-elt="find button" hx-indicator="#diagnostic-progress">
 <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+<label>{{t .Lang "diagnostics.gpo"}}<select name="gpo" id="diagnostic-gpo"><option value="">{{t .Lang "diagnostics.no_gpo"}}</option></select></label>
 <button type="submit">{{t .Lang "diagnostics.run"}}</button>
 <span id="diagnostic-progress" class="htmx-indicator" role="status">{{t .Lang "diagnostics.running"}}</span>
 </form>
@@ -15,6 +16,7 @@
 {{define "diagnostics/report"}}
 {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 {{with .Content}}
+<p>{{t $.Lang "diagnostics.identity"}}: {{.ServiceUser}}{{if .GPO}} · GPO {{.GPO}}{{end}}</p>
 <p class="muted">{{.Platform}} · {{.Started.Format "2006-01-02 15:04:05 MST"}} → {{.Finished.Format "15:04:05 MST"}}</p>
 {{range .Checks}}
 <article class="job-card" style="margin-top:1rem">
