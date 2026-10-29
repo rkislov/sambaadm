@@ -2828,6 +2828,61 @@
                 "401": {"description": "Session required"}
                 "403": {"description": "CSRF required"}
                 "502": {"description": "LDAP unavailable"}
+    "/gpo/{gpo}/delegation":
+        "parameters":
+            - "name": "gpo"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+        "get":
+            "summary": "Read current GPO LDAP DACL; all authenticated roles"
+            "responses":
+                "200": {"description": "Revision and decoded ACEs; this endpoint does not offer removals"}
+                "401": {"description": "Session required"}
+                "502": {"description": "LDAP unavailable"}
+        "post":
+            "summary": "Preview additive LDAP-only permission grant; admin and CSRF required"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["revision", "principal", "profile"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "principal": {"type": "string", "description": "Domain principal DN or S-1-5-11"}
+                                "profile": {"type": "string", "enum": ["read", "read-apply", "edit-ldap"]}
+            "responses":
+                "200": {"description": "Preview token, added ACEs, unchanged count, resolved SID, profile and LDAP-only warnings"}
+                "400": {"description": "Invalid input or unsupported DACL ordering"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Stale revision"}
+                "502": {"description": "LDAP unavailable"}
+        "put":
+            "summary": "Apply the previewed LDAP-only grant; existing ACEs and SYSVOL preserved"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["revision", "principal", "profile", "preview"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "principal": {"type": "string"}
+                                "profile": {"type": "string", "enum": ["read", "read-apply", "edit-ldap"]}
+                                "preview": {"type": "string", "description": "Token returned by POST; bound to exact ACL, revision, profile and resolved SID"}
+            "responses":
+                "200": {"description": "Granted or already present; effective access is not evaluated"}
+                "400": {"description": "Invalid input"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Preview or revision changed; reload and preview again"}
+                "502": {"description": "LDAP unavailable"}
     "/gpo/model":
         "post":
             "summary": "Read-only domain/OU Registry.pol and ALT policy modeling with explicit filter assumptions"
