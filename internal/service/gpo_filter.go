@@ -150,7 +150,7 @@ func (s *GPOService) filterEntry(ctx context.Context, gpo string) (*ldap.Entry, 
 	if e != nil {
 		return nil, e
 	}
-	r, e := conn.Search(ldap.NewSearchRequest(p.DN, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false, "(objectClass=groupPolicyContainer)", []string{"nTSecurityDescriptor", "uSNChanged"}, []ldap.Control{daclControl}))
+	r, e := conn.Search(ldap.NewSearchRequest(p.DN, ldap.ScopeBaseObject, ldap.NeverDerefAliases, 0, 0, false, "(objectClass=groupPolicyContainer)", []string{"nTSecurityDescriptor", "uSNChanged", "objectGUID"}, []ldap.Control{daclControl}))
 	if e != nil {
 		return nil, e
 	}
@@ -188,11 +188,16 @@ func (s *GPOService) SecurityFilter(ctx context.Context, gpo string) (*GPFilter,
 	return out, nil
 }
 func (s *GPOService) SetSecurityFilter(ctx context.Context, gpo string, in FilterChange, actor, ip string) error {
+	s.editorMu.Lock()
+	defer s.editorMu.Unlock()
 	if (in.Principal == "") == (in.Remove == "") {
 		return topologyBad("choose a principal to allow or an explicit Apply ACE to remove")
 	}
 	entry, e := s.filterEntry(ctx, gpo)
 	if e != nil {
+		return e
+	}
+	if e := s.ensureNoDelegationPending(entry.DN); e != nil {
 		return e
 	}
 	if entry.GetAttributeValue("uSNChanged") != in.Revision {

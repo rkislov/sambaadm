@@ -28,6 +28,8 @@ auth:
 
 gpo:
   # Хранение копий сценариев: минимум одна последняя копия сохраняется всегда.
+  # Доверенный локальный журнал согласованных ACL; каталог 0700.
+  delegation_state_dir: /var/lib/sambaadm/delegation
   script_backup_keep: 10
   script_backup_max_mib: 64
   # Удалённый редактор ALT: LDAP и SMB к одному writable DC.

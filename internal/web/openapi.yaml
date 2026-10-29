@@ -2828,6 +2828,63 @@
                 "401": {"description": "Session required"}
                 "403": {"description": "CSRF required"}
                 "502": {"description": "LDAP unavailable"}
+    "/gpo/{gpo}/delegation/full":
+        "parameters":
+            - "name": "gpo"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+        "get":
+            "summary": "Read trusted local delegation history for this GPO/controller; admin only"
+            "responses":
+                "200": {"description": "records (ID, operation, source, profile, SID, state, created, revoked) and pending record ID"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Local state, LDAP or SYSVOL unavailable"}
+        "post":
+            "summary": "Preview coordinated LDAP/SYSVOL grant, revoke, completion or rollback; admin and CSRF required"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["operation"]
+                            "properties":
+                                "operation": {"type": "string", "enum": ["grant", "revoke", "complete", "rollback"]}
+                                "principal": {"type": "string", "description": "Grant only: domain principal DN or S-1-5-11"}
+                                "profile": {"type": "string", "enum": ["read", "read-apply", "edit"], "description": "Grant only"}
+                                "source": {"type": "string", "description": "Recorded grant ID for revoke; pending ID for complete/rollback"}
+            "responses":
+                "200": {"description": "preview token, operation, source, dn, sid, profile, LDAP state, file paths/states and conflicts; conflicts prevent writing"}
+                "400": {"description": "Invalid operation or record"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+                "502": {"description": "State, LDAP or SYSVOL unavailable; policy journal may require recovery"}
+        "put":
+            "summary": "Apply the exact preview; preserve trusted local recovery record on failure"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["operation", "preview"]
+                            "properties":
+                                "operation": {"type": "string", "enum": ["grant", "revoke", "complete", "rollback"]}
+                                "principal": {"type": "string"}
+                                "profile": {"type": "string", "enum": ["read", "read-apply", "edit"]}
+                                "source": {"type": "string"}
+                                "preview": {"type": "string"}
+            "responses":
+                "200": {"description": "ACLs verified and operation complete"}
+                "400": {"description": "Invalid request"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Stale preview or ACL/tree conflict; refresh and inspect pending state"}
+                "502": {"description": "Operation failed or outcome unknown; refresh history for recovery"}
     "/gpo/{gpo}/delegation":
         "parameters":
             - "name": "gpo"
