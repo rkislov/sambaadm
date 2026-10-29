@@ -53,7 +53,7 @@ var (
 	}
 	ComputerAttrs = []string{
 		AttrCN, AttrSAMAccountName, AttrDNSHostName, AttrOperatingSystem,
-		AttrDescription, AttrUserAccountCtrl, AttrObjectGUID, AttrObjectSID,
+		AttrDescription, AttrUserAccountCtrl, AttrObjectGUID, AttrObjectSID, AttrWhenCreated,
 	}
 )
 

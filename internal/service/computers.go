@@ -18,6 +18,7 @@ type Computer struct {
 	DNSHostName    string `json:"dnsHostName,omitempty"`
 	OS             string `json:"operatingSystem,omitempty"`
 	Description    string `json:"description,omitempty"`
+	WhenCreated    string `json:"whenCreated,omitempty"`
 }
 
 // ComputerService manages computer objects.
@@ -110,5 +111,6 @@ func entryToComputer(e *ldap.Entry) Computer {
 		DNSHostName:    e.GetAttributeValue(ldapproto.AttrDNSHostName),
 		OS:             e.GetAttributeValue(ldapproto.AttrOperatingSystem),
 		Description:    e.GetAttributeValue(ldapproto.AttrDescription),
+		WhenCreated:    e.GetAttributeValue(ldapproto.AttrWhenCreated),
 	}
 }

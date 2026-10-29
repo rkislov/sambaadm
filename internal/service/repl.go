@@ -211,6 +211,7 @@ func (s *ReplService) KCC(ctx context.Context, server, actor, ip string) error {
 	}
 	e = remote.KCC(ctx)
 	if e != nil {
+		e = fmt.Errorf("KCC on %s as service account %s (ldap.bind.user; browser login does not change this account): %w", remote.Host, remote.User, e)
 		s.audit.Failure(actor, "repl.kcc", remote.Host, ip, e)
 	} else {
 		s.audit.Success(actor, "repl.kcc", remote.Host, ip)

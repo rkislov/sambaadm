@@ -447,6 +447,19 @@
                   "required": true
                   "schema":
                     "type": "string"
+    "/gpo/{gpo}/scripts":
+        "get":
+            "summary": "Read assigned GPO scripts from SYSVOL without ADMX or ALT editor"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema": {"type": "string"}
+            "responses":
+                "200": {"description": "Controller, disabled scopes and assigned scripts; see docs/api.md"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Service account lacks directory permissions"}
+                "502": {"description": "SYSVOL read or script format error"}
     "/gpo/{gpo}/alt-settings":
         "get":
             "summary": "GPOALT"

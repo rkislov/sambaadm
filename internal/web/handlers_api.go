@@ -339,7 +339,7 @@ func (s *Server) handleAPIReplPartners(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAPIReplStatus(w http.ResponseWriter, r *http.Request) {
 	st, err := s.svcs.Repl.StatusFor(r.Context(), r.URL.Query().Get("dc"))
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		upstreamError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, st)

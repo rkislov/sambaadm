@@ -23,6 +23,10 @@ func topologyJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 func topologyResult(w http.ResponseWriter, v any, e error) {
 	if e != nil {
+		if !errors.Is(e, service.ErrTopologyInput) && !errors.Is(e, service.ErrTopologyConflict) {
+			upstreamError(w, e)
+			return
+		}
 		status := 502
 		if errors.Is(e, service.ErrTopologyInput) {
 			status = 400
