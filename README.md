@@ -11,7 +11,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** v0.28.0 — объяснение области действия GPO: наследование, причины исключения, приоритет и порядок условных кандидатов. Актуальные выполненные и открытые задачи — в [дорожной карте](docs/ROADMAP.md).
+> **Статус:** v0.29.0 — делегирование прав GPO в LDAP/SYSVOL с предпросмотром, доверенным журналом, восстановлением и отзывом. Актуальные выполненные и открытые задачи — в [дорожной карте](docs/ROADMAP.md).
 
 ---
 
@@ -264,7 +264,7 @@ RPM устанавливает `/usr/bin/sambaadm`, systemd-unit и helper
 предыдущий RPM и снимок настроек. Первая установка не запускает сервис.
 
 ```bash
-sudo bash deploy/sambaadm-package install ./sambaadm-0.28.0-alt1.x86_64.rpm
+sudo bash deploy/sambaadm-package install ./sambaadm-0.29.0-alt1.x86_64.rpm
 sudoedit /etc/sambaadm/config.yaml
 sudoedit /etc/sambaadm/env
 sudo systemctl enable --now sambaadm
@@ -274,7 +274,7 @@ sudo sambaadm-package list
 sudo sambaadm-package rollback <snapshot-id>
 ```
 
-Сборка: `make rpm-alt VERSION=0.28.0 RPM_ARCH=amd64` (Go + Docker).
+Сборка: `make rpm-alt VERSION=0.29.0 RPM_ARCH=amd64` (Go + Docker).
 [Подробная инструкция, границы отката и переход с ручной установки](docs/alt-install.md).
 Проверки пакета ALT p10 отделены от приёмки на ALT СП 10.2.2.
 
