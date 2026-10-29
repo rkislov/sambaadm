@@ -163,3 +163,9 @@ GPO не считаются конфликтом. Специальные дир�
 ### Диагностика
 
 `POST /api/v1/system/diagnostics` — admin + CSRF, отчёт `started`, `finished`, `platform`, `checks` (`id`, `status`, `detail`, `hint`, `durationMs`). Не изменяет конфигурацию или файлы. HTTP 409 при уже активном запуске.
+
+### Просмотр сценариев GPO
+
+`GET /api/v1/gpo/{gpo}/scripts` доступен всем авторизованным ролям. Возвращает `controller`, признаки `machineDisabled` и `userDisabled`, массив `scripts`: `scope` (Machine/User), `event` (startup/shutdown/logon/logoff), `kind` (script/PowerShell), `order` (индекс с нуля внутри раздела и типа), `command`, `parameters`, `source` (относительный путь в GPO). Читаются scripts.ini и psscripts.ini в SYSVOL; редактор ALT и ADMX не требуются. Команды не исполняются. Отсутствующие файлы дают пустой массив; ошибка чтения или формата возвращается как ошибка, а не как отсутствие назначений.
+
+Отказы LDAP/DRS в доступе в расширенных операциях и проверке репликации возвращаются с HTTP 403, `code: upstream_access_denied`, исходным `error` и подсказкой `hint`. Ошибка недопустимого участника группы получает HTTP 400. Значения дат в JSON сохраняют формат LDAP; человекочитаемое представление формируется веб-интерфейсом. Объект компьютера дополнен полем `whenCreated`.

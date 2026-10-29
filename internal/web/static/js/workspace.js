@@ -39,11 +39,11 @@
     '/groups':{title:t('Группы','Groups'),endpoint:'/groups',directory:'groups',id:r=>r.samAccountName,
       columns:[['samAccountName',t('Группа','Group')],['description',t('Описание','Description')],['members',t('Участники','Members')],['dn','DN']],
       create:action(t('Создать группу','Create group'),'POST','/groups',[name(),ou(),description()]),
-      actions:[view(t('Свойства','Properties'),r=>'/groups/'+enc(r.samAccountName)),view(t('Участники','Members'),r=>'/groups/'+enc(r.samAccountName)+'/members'),
-        action(t('Добавить участника','Add member'),'POST',r=>'/groups/'+enc(r.samAccountName)+'/members',[dn('memberDN')]),
-        action(t('Исключить участника','Remove member'),'DELETE',r=>'/groups/'+enc(r.samAccountName)+'/members',[dn('memberDN')],{confirm:true}),remove(r=>'/groups/'+enc(r.samAccountName))]},
+      actions:[view(t('Свойства','Properties'),r=>'/groups/'+enc(r.samAccountName)),{...view(t('Участники','Members'),r=>'/groups/'+enc(r.samAccountName)+'/members'),groupMembers:true},
+        {label:t('Добавить участника','Add member'),method:'POST',groupMembers:true},
+        {label:t('Исключить участника','Remove member'),method:'DELETE',groupMembers:true},remove(r=>'/groups/'+enc(r.samAccountName))]},
     '/computers':{title:t('Компьютеры','Computers'),endpoint:'/computers',directory:'computers',id:r=>r.samAccountName,
-      columns:[['samAccountName',t('Имя','Name')],['dnsHostName','DNS'],['operatingSystem',t('ОС','OS')],['dn','DN']],
+      columns:[['samAccountName',t('Имя','Name')],['dnsHostName','DNS'],['operatingSystem',t('ОС','OS')],['whenCreated',t('Дата создания','Created')],['dn','DN']],
       actions:[view(t('Свойства','Properties'),r=>'/computers/'+enc(r.samAccountName)),move(r=>'/computers/'+enc(r.samAccountName)+'/move'),remove(r=>'/computers/'+enc(r.samAccountName))]},
     '/ou':{title:t('Подразделения','Organizational units'),endpoint:'/ou',directory:'ou',id:r=>r.dn,
       columns:[['name',t('Имя','Name')],['description',t('Описание','Description')],['dn','DN']],
@@ -64,6 +64,7 @@
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
  {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
+        view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),
         action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[dn('container')]),
         action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[dn('container')],{confirm:true}),
         action(t('Резервная копия','Back up'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/backup',[text('path','Каталог на сервере','Directory on server')]),
@@ -90,11 +91,12 @@
       toolbar:[action(t('Перечитать конфигурацию Samba','Reload Samba configuration'),'POST','/shares/reload',[],{confirm:true}),view(t('Права каталога','Directory permissions'),'/acl',[text('path','Путь на сервере','Path on server')]),
         action(t('Изменить права каталога','Change directory permissions'),'POST','/acl',[text('path','Путь на сервере','Path on server'),text('owner','Владелец user:group','Owner user:group',{optional:true}),text('mode','Режим например 0770','Mode e.g. 0770',{optional:true}),text('acl','POSIX ACL','POSIX ACL',{optional:true}),text('defaultAcl','ACL по умолчанию','Default ACL',{optional:true}),text('recursive','Рекурсивно','Recursive',{type:'checkbox'}),text('defaultRecursive','Рекурсивно для ACL по умолчанию','Recursive default ACL',{type:'checkbox'}),text('clearAcl','Очистить ACL','Clear ACL',{type:'checkbox'}),text('clearDefault','Очистить ACL по умолчанию','Clear default ACL',{type:'checkbox'}),text('removeAcl','Удалить запись ACL','Remove ACL entry',{optional:true}),text('copyToDefault','Скопировать ACL в наследуемый','Copy to default ACL',{type:'checkbox'}),text('xattrName','Имя расширенного атрибута','Extended attribute name',{optional:true}),text('xattrValue','Значение расширенного атрибута','Extended attribute value',{optional:true}),text('xattrRemove','Удалить расширенный атрибут','Remove extended attribute',{optional:true})],{confirm:true})],
       actions:[{label:t('Права и ACL','Access and ACL'),method:'GET',href:r=>'/shares/'+enc(r.name)+'/acl'},
-        view(t('Свойства','Properties'),r=>'/shares/'+enc(r.name)),action(t('Параметр Samba','Samba parameter'),'POST',r=>'/shares/'+enc(r.name)+'/param',[text('key','Параметр','Parameter'),text('value','Значение','Value')]),remove(r=>'/shares/'+enc(r.name))]},
+        view(t('Свойства','Properties'),r=>'/shares/'+enc(r.name)),action(t('Параметр Samba','Samba parameter'),'POST',r=>'/shares/'+enc(r.name)+'/param',[text('key','Параметр','Parameter',{list:'samba-parameters',placeholder:'read only'}),text('value','Значение','Value',{optional:true})],{sambaParam:true,help:t('Изменяет параметр выбранной секции в smb.conf на сервере sambaadm и перечитывает конфигурацию Samba. Например: read only = yes — только чтение; browseable = no — скрыть из списка; valid users = @Finance — разрешить группе. Права файловой системы настраиваются в «Права и ACL».','Updates this share section in smb.conf on the sambaadm host and reloads Samba configuration. Examples: read only = yes; browseable = no; valid users = @Finance. Configure filesystem permissions under Access and ACL.')}),remove(r=>'/shares/'+enc(r.name))]},
     '/printers':{title:t('Принтеры','Printers'),endpoint:'/printers',id:r=>r.name,
       columns:[['name',t('Имя','Name')],['printerName',t('Очередь','Queue')],['path',t('Путь','Path')]],
       create:{label:t('Добавить принтер','Add printer'),href:'/printers/new',method:'POST'},actions:[remove(r=>'/printers/'+enc(r.name))]}
   };
+  const sambaParameters=el('datalist');sambaParameters.id='samba-parameters';for(const key of ['comment','browseable','read only','valid users','write list','read list','create mask','directory mask','inherit acls','map acl inherit']){const option=el('option');option.value=key;sambaParameters.append(option);}root.append(sambaParameters);
   const cfg = configs[root.dataset.module];
   if (!cfg) return;
   let rows = [], tree = null, selectedDN = '', selectedIDs = null, selectedObject = '', selectedContainer = '', search = '', loadID = 0;
@@ -116,7 +118,7 @@
     const type=response.headers.get('content-type')||'';
     if(!type.includes('application/json')) throw new Error(t('Сервер вернул неожиданный ответ. Обновите страницу.','Unexpected server response. Reload this page.'));
     const result=await response.json();
-    if(!response.ok) {const error=new Error(result.error || `HTTP ${response.status}`);error.status=response.status;throw error;}
+    if(!response.ok) {const hint=result.code==='upstream_access_denied'?t('Служебной учётной записи ldap.bind.user не хватает прав в AD. Вход администратором в браузере не меняет эту учётную запись. ','The configured ldap.bind.user lacks AD permissions. Browser login does not change this account. '):(result.hint?result.hint+' ':'');const error=new Error(hint+(result.error || `HTTP ${response.status}`));error.status=response.status;throw error;}
     return result;
   }
   const head=el('div','workspace-head');
@@ -144,6 +146,28 @@
   if(cfg.create)addAction(tools,cfg.create);
   (cfg.toolbar||[]).forEach(a=>addAction(tools,a));
   function value(v) {if(v===true)return t('Включён','Enabled');if(v===false)return t('Отключён','Disabled');if(Array.isArray(v))return v.length;return v??'—';}
+  function attributeValue(key, values) {
+    key=key.toLowerCase();
+    const filetime=['accountexpires','pwdlastset','lastlogontimestamp','lastlogon','lockouttime'].includes(key);
+    if(!filetime&&!['whencreated','whenchanged'].includes(key))return undefined;
+    return (Array.isArray(values)?values:[values]).map(raw=>{
+      if(raw==null||raw==='')return '—';
+      const text=String(raw);let date;
+      if(filetime){
+        if(!/^\d+$/.test(text))return text;
+        const ticks=BigInt(text);
+        if(key==='accountexpires'&&(ticks===0n||ticks===9223372036854775807n))return t('Никогда','Never');
+        if(ticks===0n)return key==='pwdlastset'?t('Сменить пароль при следующем входе','Change password at next sign-in'):key==='lockouttime'?t('Не заблокирована','Not locked'):t('Нет данных о входе','No sign-in recorded');
+        date=new Date(Number(ticks/10000n-11644473600000n));
+      }else{
+        const match=/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:[.,](\d+))?(Z|[+-]\d{4})$/.exec(text);
+        if(!match)return text;
+        const [,y,m,d,h,min,sec,fraction,zone]=match;
+        date=new Date(`${y}-${m}-${d}T${h}:${min}:${sec}.${(fraction||'0').slice(0,3).padEnd(3,'0')}${zone==='Z'?'Z':zone.slice(0,3)+':'+zone.slice(3)}`);
+      }
+      return Number.isNaN(date.getTime())?text:date.toLocaleString(ru?'ru-RU':'en-US',{timeZoneName:'short'});
+    }).join('; ');
+  }
   function normalizeSearch(text){return text.normalize('NFKC').toLocaleLowerCase().trim();}
   function renderRows() {
     tbody.replaceChildren();let count=0;
@@ -152,7 +176,7 @@
       if(selectedObject && cfg.id(row)!==selectedObject)continue;
       if(search && !normalizeSearch(search).split(/\s+/).every(word=>normalizeSearch(JSON.stringify(row)).includes(word)))continue;
       count++;const r=el('tr');
-      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',value(key==='displayName'?(row[key]||row.name):row[key]));r.append(cell);});
+      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',attributeValue(key,row[key])??value(key==='displayName'?(row[key]||row.name):row[key]));r.append(cell);});
       const cell=el('td','workspace-actions');(cfg.actions||[]).forEach(a=>addAction(cell,a,row));r.append(cell);tbody.append(r);
     }
     if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=cfg.columns.length+1;const r=el('tr');r.append(cell);tbody.append(r);}
@@ -191,7 +215,7 @@
         };d.addEventListener('toggle',loadNodes);
         li.append(button(t('Запросить запись…','Query record…'),()=>openOperation(cfg.actions[0],row),'linkish'));
       }
-      if(cfg===configs['/gpo']){const branch=el('details');branch.append(el('summary','',t('Параметры политики','Policy settings')));for(const a of cfg.actions.slice(0,3))branch.append(button(a.label,()=>openOperation(a,row)));li.append(branch);}
+      if(cfg===configs['/gpo']){const branch=el('details');branch.append(el('summary','',t('Параметры политики','Policy settings')));for(const a of cfg.actions.slice(0,4))branch.append(button(a.label,()=>openOperation(a,row)));li.append(branch);}
       list.append(li);
     });sidebar.append(list);
     if(cfg===configs['/gpo'] && tree){
@@ -217,7 +241,7 @@
     if(result==null){parent.append(el('p','muted',t('Нет данных','No data')));return;}
     if(typeof result!=='object'){parent.append(el('pre','workspace-output',String(result)));return;}
     if(Array.isArray(result)) {if(!result.length)parent.append(el('p','muted',t('Нет данных','No data')));else result.forEach(r=>describe(r,parent));return;}
-    const dl=el('dl','workspace-properties');Object.entries(result).forEach(([k,v])=>{dl.append(el('dt','',k));const dd=el('dd');if(v&&typeof v==='object')describe(v,dd);else dd.textContent=value(v);dl.append(dd);});parent.append(dl);
+    const dl=el('dl','workspace-properties');Object.entries(result).forEach(([k,v])=>{dl.append(el('dt','',k));const dd=el('dd');const formatted=attributeValue(k,v);if(formatted!==undefined){dd.append(el('span','',formatted));const raw=el('details');raw.append(el('summary','',t('Исходное значение LDAP','Raw LDAP value')),el('code','',Array.isArray(v)?v.join('; '):String(v)));dd.append(raw);}else if(v&&typeof v==='object')describe(v,dd);else dd.textContent=value(v);dl.append(dd);});parent.append(dl);
   }
   function describeTree(data,parent){
     if(!data||typeof data!=='object'){describe(data,parent);return;}
@@ -225,6 +249,39 @@
   }
   function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
+  async function openGroupMembers(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Участники группы','Group members'));title.id='operation-title';
+    const notice=el('p','workspace-message'),members=el('div'),results=el('div');notice.setAttribute('aria-live','polite');
+    dialog.append(title,el('p','',row.samAccountName),el('p','muted',t('Участниками могут быть пользователи, группы и компьютеры. Основная группа пользователя задаётся атрибутом primaryGroupID и не отображается в списке прямого членства.','Members may be users, groups or computers. A user’s primary group is set by primaryGroupID and is not listed as direct membership.')),notice,members);
+    const path='/groups/'+enc(row.samAccountName)+'/members';let current=new Set(),serial=0;
+    async function change(memberDN,method,trigger){
+      trigger.disabled=true;
+      try{await request(path,method,{memberDN});if(generation!==dialogGeneration)return;await refresh();serial++;results.replaceChildren();message(notice,t('Членство обновлено','Membership updated'));await load();}
+      catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
+      finally{trigger.disabled=false;}
+    }
+    async function refresh(){
+      const list=await request(path);if(generation!==dialogGeneration)return;
+      current=new Set((list||[]).map(dn=>dn.toLowerCase()));members.replaceChildren(el('h3','',t('Прямые участники','Direct members')));
+      if(!current.size)members.append(el('p','muted',t('Прямых участников нет','No direct members')));
+      for(const member of list||[]){const line=el('div','scope-link');line.append(el('span','mono',member));if(admin){const confirmation=el('input');confirmation.type='checkbox';const label=el('label','',t('Подтверждаю исключение','Confirm removal'));label.prepend(confirmation);const remove=button(t('Исключить','Remove'),()=>{if(confirmation.checked)change(member,'DELETE',remove);},'danger');remove.disabled=true;confirmation.addEventListener('change',()=>remove.disabled=!confirmation.checked);line.append(label,remove);}members.append(line);}
+    }
+    if(admin){
+      const search=el('form','workspace-filter'),input=el('input');input.type='search';input.required=true;input.placeholder=t('Имя или логин участника','Member name or login');input.setAttribute('aria-label',input.placeholder);
+      const kind=el('select');kind.setAttribute('aria-label',t('Тип участника','Member type'));for(const [key,label] of [['users',t('Пользователи','Users')],['groups',t('Группы','Groups')],['computers',t('Компьютеры','Computers')]]){const option=el('option','',label);option.value=key;kind.append(option);}
+      const find=el('button','',t('Найти участника','Find member'));find.type='submit';search.append(input,kind,find);dialog.append(el('h3','',t('Добавить участника','Add member')),search,results);
+      kind.addEventListener('change',()=>{serial++;results.replaceChildren();});input.addEventListener('input',()=>{serial++;results.replaceChildren();});
+      search.addEventListener('submit',async e=>{e.preventDefault();if(!search.reportValidity())return;const id=++serial;find.disabled=true;message(notice,t('Поиск…','Searching…'));
+        try{const matches=await request('/'+kind.value+'?q='+enc(input.value.trim()));if(generation!==dialogGeneration||id!==serial)return;results.replaceChildren();let count=0;
+          for(const match of matches){if(match.dn.toLowerCase()===row.dn.toLowerCase())continue;count++;const line=el('div','scope-link');line.append(el('strong','',match.samAccountName),el('p','mono',match.dn));const add=button(t('Добавить','Add'),()=>change(match.dn,'POST',add));add.disabled=current.has(match.dn.toLowerCase());line.append(add);results.append(line);}
+          message(notice,count?'':t('Объекты не найдены','No objects found'));
+        }catch(e){if(generation===dialogGeneration&&id===serial)message(notice,e.message,true);}finally{find.disabled=false;}
+      });
+    }
+    dialog.append(button(t('Закрыть','Close'),closeOperation));dialog.showModal();message(notice,t('Загрузка…','Loading…'));
+    try{await refresh();if(generation===dialogGeneration)message(notice,'');}catch(e){if(generation===dialogGeneration){message(notice,e.message,true);members.append(button(t('Повторить','Retry'),()=>openGroupMembers(row)));}}
+  }
   async function openUserCard(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
@@ -253,7 +310,7 @@
         ['Организация','Organization',[['company','Организация','Company',64],['division','Отделение','Division',256],['employeeID','Табельный идентификатор','Employee ID',16],['employeeNumber','Табельный номер','Employee number',512]]]];
       for(const [ru,en,fields] of sections){const section=el('fieldset');section.append(el('legend','',t(ru,en)));for(const [key,ruLabel,enLabel,max] of fields){const label=el('label','',t(ruLabel,enLabel));const input=el('input');const values=profile.attributes?.[key]||[];input.value=values[0]||'';input.maxLength=max;input.disabled=!admin||values.length>1;label.append(input);section.append(label);extraControls.push([key,input]);}extraForm.append(section);}
       if(admin){const save=el('button','',t('Сохранить расширенные атрибуты','Save extended attributes'));save.type='submit';extraForm.append(save);extraForm.addEventListener('submit',async e=>{e.preventDefault();if(!extraForm.reportValidity())return;const changes={};for(const [key,input] of extraControls)if(!input.disabled&&input.value!==(profile.attributes?.[key]?.[0]||''))changes[key]=input.value;if(!Object.keys(changes).length){message(notice,t('Нет изменений','No changes'));return;}save.disabled=true;try{const updated=await request(path,'PUT',{revision:profile.revision,attributes:changes});if(generation!==dialogGeneration)return;profile=updated;render();message(notice,t('Атрибуты сохранены','Attributes saved'));await load();}catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);save.disabled=err.status===409;}});}
-      extended.append(extraForm,el('h3','',t('Учётная запись и LDAP-атрибуты (просмотр)','Account and LDAP attributes (read only)')),el('p','muted',t('Значения показаны в формате LDAP; временные поля AD могут содержать FILETIME. Права безопасности и делегирование этим редактором не изменяются.','Values use LDAP format; AD timestamps may contain FILETIME. This editor does not modify security permissions or delegation.')));
+      extended.append(extraForm,el('h3','',t('Учётная запись и LDAP-атрибуты (просмотр)','Account and LDAP attributes (read only)')),el('p','muted',t('Даты показаны в часовом поясе браузера; исходное значение LDAP можно раскрыть. Права безопасности и делегирование этим редактором не изменяются.','Dates use the browser time zone; expand to see the raw LDAP value. This editor does not modify security permissions or delegation.')));
       describe({cn:profile.name||'',...(profile.attributes||{})},extended);
       const account=el('div','workspace-tools');cfg.actions.slice(1).forEach(action=>addAction(account,action,profile));attributes.append(account);
       const groups=el('section');groups.dataset.profileTab='groups';groups.append(el('h3','',t('Группы пользователя','User groups')),el('p','muted',t('Прямое членство и основная группа. Вложенные группы здесь не перечисляются.','Direct memberships and primary group. Nested memberships are not listed.')));body.append(groups);
@@ -335,7 +392,7 @@
       const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''));if(generation!==dialogGeneration||requestID!==loading)return;model=result;
       category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
       render();message(notice,'');
-    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
+    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
     scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';refresh();});search.addEventListener('input',render);category.addEventListener('change',render);
     await refresh();
   }
@@ -397,12 +454,14 @@
     if(a.scope)return openScope();
     if(a.filter)return openFilter(row);
     if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
+    if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
     if(row)dialog.append(el('p','mono',cfg.id(row)||row.dn||''));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
+    if(a.help)dialog.append(el('p','muted',a.help));
     if(a.danger)dialog.append(el('p','alert error',t('Изменение применяется в домене. Проверьте выбранный объект. Удаление может быть необратимым.','This changes the domain. Check the selected object. Deletion may be irreversible.')));
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
     let fields=a.fields;
@@ -429,6 +488,11 @@
         const confirm=el('label','',t('Повторите пароль','Repeat password'));const repeat=el('input');repeat.type='password';repeat.autocomplete='new-password';repeat.required=!f.optional;confirm.append(repeat);form.append(confirm);
         const validate=()=>repeat.setCustomValidity(repeat.value===input.value?'':t('Пароли не совпадают','Passwords do not match'));repeat.addEventListener('input',validate);input.addEventListener('input',validate);validate();
       }
+    }
+    if(a.sambaParam){
+      const key=inputs.find(([f])=>f.key==='key')[1],valueInput=inputs.find(([f])=>f.key==='value')[1],current=el('p','muted');form.append(current);
+      function showCurrent(fill){const stored=Object.entries(row.params||{}).find(([name])=>name.toLowerCase()===key.value.trim().toLowerCase());current.textContent=stored?t('Сейчас в smb.conf: ','Current smb.conf value: ')+stored[1]:t('Параметр явно не задан в этой секции; могут действовать значения по умолчанию.','Not explicitly set in this section; defaults may apply.');if(fill)valueInput.value=stored?.[1]||'';}
+      key.addEventListener('change',()=>showCurrent(true));showCurrent(false);
     }
     if(a.danger||a.confirm){const label=el('label','workspace-confirm',t('Подтверждаю операцию для выбранного объекта','I confirm this operation on the selected object'));const c=el('input');c.type='checkbox';c.required=true;label.prepend(c);form.append(label);}
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');form.append(notice);
@@ -563,6 +627,13 @@
   }
   function renderResult(result,parent,a,row,query) {
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
+    if(endpoint?.endsWith('/scripts')){
+      parent.append(el('p','',t('Сценарии читаются из SYSVOL отдельно от административных шаблонов ADMX. Это назначенные команды, а не подтверждение выполнения на клиенте. Порядок указан внутри раздела и типа сценария.','Scripts are read from SYSVOL separately from ADMX administrative templates. These are assigned commands; client execution is not confirmed. Order is within each section and script type.')),el('p','mono',result.controller));
+      const events={startup:t('Запуск','Startup'),shutdown:t('Завершение работы','Shutdown'),logon:t('Вход','Logon'),logoff:t('Выход','Logoff')};
+      if(result.machineDisabled||result.userDisabled)parent.append(el('p','alert',t('В этой GPO отключены разделы: ','Disabled GPO sections: ')+[result.machineDisabled?t('Компьютер','Computer'):'',result.userDisabled?t('Пользователь','User'):''].filter(Boolean).join(', ')));
+      for(const script of result.scripts||[]){const card=el('section','scope-link');card.append(el('h3','',(script.scope==='Machine'?t('Компьютер','Computer'):t('Пользователь','User'))+' · '+(events[script.event]||script.event)+' · '+(script.kind==='script'?t('Сценарий','Script'):script.kind)+' · '+(script.order+1)));describe({[t('Команда','Command')]:script.command,[t('Аргументы','Arguments')]:script.parameters||'—',[t('Файл в SYSVOL','SYSVOL file')]:script.source},card);parent.append(card);}
+      if(!result.scripts?.length)parent.append(el('p','muted',t('Сценарии не назначены','No scripts assigned')));return;
+    }
     if(endpoint==='/sites/links'){
  parent.append(el('p','muted',t('Расписания Site Link заблокированы из-за ошибки KCC в Samba. Расписания отдельных соединений доступны в разделе «Репликация».','Site Link schedule writes are blocked due to a Samba KCC defect. Connection schedules are available under Replication.')));
       topologyTable(parent,result,[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Минуты','Minutes')]],

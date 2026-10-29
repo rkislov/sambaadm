@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,27 @@ import (
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
 )
+
+var ErrGroupMemberInput = errors.New("invalid group member")
+
+func (s *GroupService) validateMember(ctx context.Context, groupDN, memberDN string) error {
+	dn, err := ldap.ParseDN(memberDN)
+	if err != nil || len(dn.RDNs) == 0 {
+		return fmt.Errorf("%w: a user, group or computer DN is required", ErrGroupMemberInput)
+	}
+	group, err := ldap.ParseDN(groupDN)
+	if err != nil {
+		return err
+	}
+	if group.EqualFold(dn) {
+		return fmt.Errorf("%w: a group cannot be its own member", ErrGroupMemberInput)
+	}
+	_, err = s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: memberDN, Scope: ldapproto.ScopeBase(), Filter: "(|(objectClass=user)(objectClass=group))", Attributes: []string{"objectClass"}})
+	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
+		return fmt.Errorf("%w: select an existing user, group or computer; OU and containers cannot be members", ErrGroupMemberInput)
+	}
+	return err
+}
 
 // Group is a security/distribution group.
 type Group struct {
@@ -106,6 +128,9 @@ func (s *GroupService) Delete(ctx context.Context, name, actor, ip string) error
 func (s *GroupService) AddMember(ctx context.Context, group, memberDN, actor, ip string) error {
 	g, err := s.Show(ctx, group)
 	if err != nil {
+		return err
+	}
+	if err := s.validateMember(ctx, g.DN, memberDN); err != nil {
 		return err
 	}
 	if err := s.ldap.AddAttrValues(ctx, g.DN, ldapproto.AttrMember, memberDN); err != nil {

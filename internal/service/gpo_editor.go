@@ -18,7 +18,7 @@ import (
 )
 
 var ErrPolicyConflict = errors.New("policy changed; reload before saving")
-var ErrEditorUnavailable = errors.New("ALT editor requires editor_enabled, an ALT ADMX template and SMB access to DC SYSVOL")
+var ErrEditorUnavailable = errors.New("ALT editor unavailable")
 
 const editorJournal = ".sambaadm-editor.pending"
 const registryCSE = "[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F72-3407-48AE-BA88-E8213C6761F1}]"
@@ -150,7 +150,7 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 }
 func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool, scope string) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {
-		return nil, ErrEditorUnavailable
+		return nil, fmt.Errorf("%w: enable gpo.editor_enabled to edit administrative templates", ErrEditorUnavailable)
 	}
 	if !looksLikeGUID(gpo) {
 		return nil, fmt.Errorf("GPO GUID required")
@@ -282,8 +282,11 @@ func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPo
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
 	var out *ALTPolicy
-	if !s.gpoCfg.EditorEnabled || s.remote == nil {
-		return nil, ErrEditorUnavailable
+	if !s.gpoCfg.EditorEnabled {
+		return nil, fmt.Errorf("%w: set gpo.editor_enabled: true; installed ADMX files alone do not enable the editor", ErrEditorUnavailable)
+	}
+	if s.remote == nil {
+		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
 	}
 	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
 		snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
@@ -333,8 +336,11 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 			s.audit.Failure(actor, "gpo.alt.set", gpo+"/"+change.Scope+"/"+change.ID, ip, err)
 		}
 	}()
-	if !s.gpoCfg.EditorEnabled || s.remote == nil {
-		return nil, ErrEditorUnavailable
+	if !s.gpoCfg.EditorEnabled {
+		return nil, fmt.Errorf("%w: set gpo.editor_enabled: true; installed ADMX files alone do not enable the editor", ErrEditorUnavailable)
+	}
+	if s.remote == nil {
+		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
 	}
 	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
 		out, err = s.setALTSetting(ctx, gpo, change, actor, ip, share)

@@ -31,6 +31,11 @@ func (s *Server) handleAPIGPOALT(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, result)
 }
+
+func (s *Server) handleAPIGPOScripts(w http.ResponseWriter, r *http.Request) {
+	result, err := s.svcs.GPO.Scripts(r.Context(), chi.URLParam(r, "gpo"))
+	apiResult(w, result, err)
+}
 func (s *Server) handleAPIGPOALTSet(w http.ResponseWriter, r *http.Request) {
 	if !requireRole(w, r, auth.CanAdmin) {
 		return

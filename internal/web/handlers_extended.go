@@ -12,7 +12,7 @@ import (
 
 func apiResult(w http.ResponseWriter, result any, err error) {
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		upstreamError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
