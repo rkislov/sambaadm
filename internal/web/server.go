@@ -187,6 +187,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/gpo/{gpo}/delegation", s.handleAPIGPODelegation)
 		r.Post("/gpo/{gpo}/delegation", s.handleAPIGPODelegation)
 		r.Put("/gpo/{gpo}/delegation", s.handleAPIGPODelegation)
+		r.Post("/gpo/{gpo}/consistency", s.handleAPIGPOConsistency)
 		r.Get("/gpo/{gpo}/filter", s.handleAPIGPOFilter)
 		r.Put("/gpo/{gpo}/filter", s.handleAPIGPOFilter)
 		r.Put("/dns/zones/{zone}/records", s.handleAPIDNSRecordUpdate)
