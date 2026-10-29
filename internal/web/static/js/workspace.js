@@ -62,6 +62,7 @@
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
       toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
+ {label:t('Права объекта LDAP','LDAP object permissions'),method:'GET',delegation:true},
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
  {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
         view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),
@@ -525,6 +526,7 @@
     if(a.explain)return openPolicyExplain();
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
+    if(a.delegation)return openDelegation(row);
     if(a.filter)return openFilter(row);
     if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
     if((typeof a.path==='function'?a.path(row):a.path)?.endsWith('/scripts'))return openScriptsEditor(row);
@@ -594,6 +596,51 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  async function openDelegation(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Права объекта GPO · LDAP','GPO object permissions · LDAP'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    const path='/gpo/'+enc(gpoID(row))+'/delegation';
+    dialog.append(title,el('p','muted',t('Выдача дополнительных разрешений на объект и дочерние объекты LDAP. Существующие ACE сохраняются. Права файлов SYSVOL и роли sambaadm не меняются; для редактирования файлов политики потребуется отдельное разрешение SYSVOL. Запреты и членство в группах могут влиять на фактический доступ.','Grant additional permissions on the LDAP object and its descendants. Existing ACEs are preserved. SYSVOL file permissions and sambaadm roles are unchanged; editing policy files requires separate SYSVOL access. Deny entries and group membership may affect effective access.')),notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    let serial=0;
+    const permissionName=e=>e.mask===0x20094?t('Чтение LDAP','Read LDAP'):e.mask===0x200b7?t('Редактирование LDAP','Edit LDAP'):e.apply&&e.mask===0x100?t('Применение GPO','Apply GPO'):t('Другие или совмещённые права','Other or combined permissions');
+    const aceName=e=>[0,5].includes(e.type)?t('Разрешение','Allow'):[1,6].includes(e.type)?t('Запрет','Deny'):t('Нестандартная ACE','Nonstandard ACE');
+    const profiles=[['read',t('Чтение LDAP','Read LDAP')],['read-apply',t('Чтение LDAP и применение GPO','Read LDAP and apply GPO')],['edit-ldap',t('Редактирование LDAP без изменения DACL/владельца','Edit LDAP without changing DACL/owner')]];
+    async function refresh(){const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
+      try {
+        const [model,groups,users,computers]=await Promise.all([request(path),admin?request('/groups'):[],admin?request('/users'):[],admin?request('/computers'):[]]);
+        if(generation!==dialogGeneration||current!==serial)return;message(notice,'');
+        topologyTable(body,model.entries.map(e=>({name:e.name||e.sid||'—',sid:e.sid||'—',rights:permissionName(e),type:aceName(e),mask:'0x'+e.mask.toString(16),inherited:e.inherited?t('Да','Yes'):t('Нет','No')})),[['name',t('Получатель','Principal')],['sid','SID'],['rights',t('Права','Permissions')],['type',t('Тип ACE','ACE type')],['mask',t('Маска прав','Access mask')],['inherited',t('Наследуется','Inherited')]]);
+        if(!admin)return;
+        const form=el('form','workspace-form'),principal=el('select'),profile=el('select');principal.setAttribute('aria-label',t('Получатель разрешения','Permission recipient'));profile.setAttribute('aria-label',t('Профиль разрешений','Permission profile'));
+        for(const [val,label] of [['S-1-5-11','Authenticated Users'],...[...groups,...users,...computers].filter(p=>p.dn).map(p=>[p.dn,(p.samAccountName||p.name||p.dn)+' · '+p.dn])]){const o=el('option','',label);o.value=val;principal.append(o);}
+        for(const [val,label] of profiles){const o=el('option','',label);o.value=val;profile.append(o);}
+        const principalLabel=el('label','',t('Получатель разрешения','Permission recipient')),profileLabel=el('label','',t('Профиль разрешений','Permission profile'));principalLabel.append(principal);profileLabel.append(profile);
+        const preview=el('button','',t('Предпросмотр прав','Preview permissions'));preview.type='submit';const result=el('div');form.append(principalLabel,profileLabel,preview);body.append(form,result);
+        let plan=null,payload=null;
+        form.addEventListener('change',()=>{plan=null;payload=null;result.replaceChildren();});
+        form.addEventListener('submit',async event=>{
+          event.preventDefault();plan=null;result.replaceChildren();preview.disabled=true;principal.disabled=true;profile.disabled=true;
+          const input={revision:model.revision,principal:principal.value,profile:profile.value};
+          try {
+            const p=await request(path,'POST',input);if(generation!==dialogGeneration||current!==serial)return;plan=p;payload=input;
+            result.append(el('h3','',t('Будут добавлены разрешения','Permissions to add')),el('p','mono',p.dn+' · '+p.sid),el('p','',t('Существующих ACE сохраняется: ','Existing ACEs preserved: ')+p.unchanged));
+            topologyTable(result,p.added.map(e=>({sid:e.sid,rights:permissionName(e),type:aceName(e),mask:'0x'+e.mask.toString(16)})),[['sid','SID'],['rights',t('Права','Permissions')],['type',t('Тип ACE','ACE type')],['mask',t('Маска прав','Access mask')]]);
+            if(!p.added.length){result.append(el('p','',t('Такие явные разрешения уже существуют. Изменений нет.','These explicit permissions already exist. No changes.')));return;}
+            const confirmation=el('form','workspace-form'),check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю выдачу показанных прав только в LDAP','Confirm granting the shown LDAP-only permissions'));label.prepend(check);
+            const apply=el('button','',t('Выдать права LDAP','Grant LDAP permissions'));apply.type='submit';confirmation.append(label,apply);result.append(confirmation);
+            confirmation.addEventListener('submit',async e=>{
+              e.preventDefault();if(!confirmation.reportValidity()||!plan)return;apply.disabled=true;preview.disabled=true;principal.disabled=true;profile.disabled=true;
+              try{await request(path,'PUT',{...payload,preview:plan.preview});if(generation!==dialogGeneration||current!==serial)return;await refresh();message(notice,t('Права LDAP выданы. Права SYSVOL не изменялись.','LDAP permissions granted. SYSVOL permissions unchanged.'));}
+              catch(err){if(generation===dialogGeneration&&current===serial){plan=null;result.replaceChildren();message(notice,err.message,true);preview.disabled=true;principal.disabled=true;profile.disabled=true;}}
+            });
+          }catch(e){if(generation===dialogGeneration&&current===serial)message(notice,e.message,true);}
+          finally{if(generation===dialogGeneration&&current===serial){preview.disabled=false;principal.disabled=false;profile.disabled=false;}}
+        });
+      }catch(e){if(generation===dialogGeneration&&current===serial)message(notice,e.message,true);}
+    }
+    await refresh();
   }
   async function openPolicyExplain() {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
