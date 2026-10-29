@@ -125,7 +125,10 @@ func (s *GPOService) Scope(ctx context.Context) (*GPScope, error) {
 					l.Missing = false
 					l.Name = p.GetAttributeValue("displayName")
 					l.GUID = p.GetAttributeValue("cn")
-					l.Flags, _ = strconv.Atoi(p.GetAttributeValue("flags"))
+					l.Flags, e = strconv.Atoi(p.GetAttributeValue("flags"))
+					if e != nil {
+						l.Flags = -1
+					}
 					l.WMI = p.GetAttributeValue("gPCWQLFilter")
 					break
 				}
