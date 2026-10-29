@@ -18,7 +18,7 @@
 apt-get update
 apt-get install bash coreutils tar util-linux shadow-utils systemd
 # Скачайте sambaadm-package вместе с RPM из того же релиза:
-sudo bash ./sambaadm-package install ./sambaadm-0.25.0-alt1.x86_64.rpm
+sudo bash ./sambaadm-package install ./sambaadm-0.27.0-alt1.x86_64.rpm
 sudoedit /etc/sambaadm/config.yaml
 sudoedit /etc/sambaadm/env
 sudo systemctl enable --now sambaadm.service
@@ -41,7 +41,7 @@ root:sambaadm. Пакетный пример слушает **127.0.0.1:8080**. 
 ## Обновление
 
 ```sh
-sudo sambaadm-package update ./sambaadm-0.26.0-alt1.x86_64.rpm
+sudo sambaadm-package update ./sambaadm-0.27.0-alt1.x86_64.rpm
 # Если предыдущая версия устанавливалась без helper:
 sudo sambaadm-package update ./new.rpm --previous-rpm ./installed-version.rpm
 ```
@@ -125,11 +125,11 @@ Helper откажется устанавливать RPM поверх неё, ч
 
 ```sh
 # На рабочей машине с Go и Docker, внутри будет ALT p10:
-make rpm-alt VERSION=0.25.0 RPM_ARCH=amd64
-make rpm-alt VERSION=0.25.0 RPM_ARCH=arm64
+make rpm-alt VERSION=0.27.0 RPM_ARCH=amd64
+make rpm-alt VERSION=0.27.0 RPM_ARCH=arm64
 # На ALT с готовым статическим ELF и rpm-build, file и systemd-analyze:
 mkdir -p dist
-bash packaging/alt/build-rpm.sh 0.25.0 ./sambaadm-linux-amd64 ./dist
+bash packaging/alt/build-rpm.sh 0.27.0 ./sambaadm-linux-amd64 ./dist
 ```
 
 Это пакет бинарной поставки, не исходный пакет Sisyphus: Go-бинарник собран вне
@@ -168,9 +168,11 @@ docker build --build-arg 'ALT_APT_MIRRORS=http://mirror.example/altlinux http://
 Проверка без создания нового релиза:
 
 ```sh
-gh workflow run release.yml --ref main -f version=0.25.1
+gh workflow run release.yml --ref main -f version=0.27.0
 ```
 
 Ручной запуск только сохраняет `release-verified` в Actions artifacts. Публикация
 GitHub Release выполняется при push числового тега `vX.Y.Z` после всех проверок.
 Текущий опубликованный релиз не перезаписывается пробным запуском.
+
+В релизе v0.27.0 и новее архив `sambaadm-documentation-<version>.tar.gz` содержит актуальные Markdown-инструкции и иллюстрации. Для обслуживания сценариев GPO см. docs/admin.md в архиве: восстановление по журналу, копии и лимиты хранения, диагностика полномочий.

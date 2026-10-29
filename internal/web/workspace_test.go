@@ -71,6 +71,8 @@ func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 		{"POST", "/api/v1/sites/links"}, {"PUT", "/api/v1/sites/links/WAN"}, {"DELETE", "/api/v1/sites/links/WAN"}, {"PUT", "/api/v1/sites/links/WAN/schedule"}, {"POST", "/api/v1/sites/controllers/DC2/move"}, {"PUT", "/api/v1/subnets/site"}, {"POST", "/api/v1/repl/connections"}, {"PUT", "/api/v1/repl/connections/manual-test"}, {"DELETE", "/api/v1/repl/connections/manual-test"}, {"POST", "/api/v1/repl/kcc"},
 		{"PUT", "/api/v1/users/alice"},
 		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/alt-settings"},
+		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/scripts"},
+		{"POST", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/scripts/maintenance"},
 		{"POST", "/api/v1/users/alice/move"}, {"POST", "/api/v1/computers/pc/move"},
 		{"POST", "/api/v1/groups/Finance/members"}, {"DELETE", "/api/v1/groups/Finance/members"},
 		{"POST", "/api/v1/ou/move"}, {"POST", "/api/v1/subnets/delete"},
@@ -128,7 +130,10 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{BaseDN: "DC=example,DC=com"}), nil, service.ServiceOptions{})
 	for _, role := range []auth.Role{auth.RoleAdmin, auth.RoleHelpdesk, auth.RoleReadonly} {
 		sess, _ := s.sessions.Create("fixture@example.com", "CN=fixture", role)
-		for _, path := range []string{"", "shares/new", "settings", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
+		for _, path := range []string{"", "shares/new", "settings", "diagnostics", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
+			if path == "diagnostics" && role != auth.RoleAdmin {
+				continue
+			}
 			req := httptest.NewRequest("GET", "/"+path, nil)
 			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
 			rec := httptest.NewRecorder()

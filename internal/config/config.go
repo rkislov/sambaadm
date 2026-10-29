@@ -32,11 +32,13 @@ type SambaConfig struct {
 
 // GPOConfig controls remote policy editing and SYSVOL distribution.
 type GPOConfig struct {
-	SMBPort       int    `mapstructure:"smb_port"`
-	EditorEnabled bool   `mapstructure:"editor_enabled"`
-	ADMXPath      string `mapstructure:"admx_path"`
-	SysvolPath    string `mapstructure:"sysvol_path"` // Deprecated: remote editor ignores local SYSVOL.
-	SyncMode      string `mapstructure:"sync_mode"`   // drs | smb | both (legacy rsync aliases smb)
+	ScriptBackupKeep   int    `mapstructure:"script_backup_keep"`
+	ScriptBackupMaxMiB int    `mapstructure:"script_backup_max_mib"`
+	SMBPort            int    `mapstructure:"smb_port"`
+	EditorEnabled      bool   `mapstructure:"editor_enabled"`
+	ADMXPath           string `mapstructure:"admx_path"`
+	SysvolPath         string `mapstructure:"sysvol_path"` // Deprecated: remote editor ignores local SYSVOL.
+	SyncMode           string `mapstructure:"sync_mode"`   // drs | smb | both (legacy rsync aliases smb)
 }
 
 type ServerConfig struct {
@@ -111,6 +113,9 @@ func Load(cfgFile string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	if cfg.GPO.ScriptBackupKeep < 1 || cfg.GPO.ScriptBackupKeep > 100 || cfg.GPO.ScriptBackupMaxMiB < 1 || cfg.GPO.ScriptBackupMaxMiB > 1024 {
+		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
+	}
 	cfg.Source = v.ConfigFileUsed()
 	return &cfg, nil
 }
@@ -120,6 +125,8 @@ func setDefaults(v *viper.Viper) {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)
+	v.SetDefault("gpo.script_backup_keep", 10)
+	v.SetDefault("gpo.script_backup_max_mib", 64)
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)
 	v.SetDefault("ldap.uri", "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi")

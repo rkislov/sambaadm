@@ -109,10 +109,11 @@ func readPolicyFile(root policyStore, path string) ([]byte, error) {
 	return b, e
 }
 func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
-	if strings.ContainsRune(string(data), 0) {
-		return 0, nil, fmt.Errorf("unsupported GPT.INI encoding; expected UTF-8")
+	text, wide, err := decodePolicyText(data)
+	if err != nil {
+		return 0, nil, err
 	}
-	lines := strings.Split(string(data), "\n")
+	lines := strings.Split(text, "\n")
 	general := false
 	found := false
 	var v uint64
@@ -146,7 +147,7 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	if !found {
 		return 0, nil, fmt.Errorf("GPT.INI version is missing")
 	}
-	return uint32(v), []byte(strings.Join(lines, "\n")), nil
+	return uint32(v), encodePolicyText(strings.Join(lines, "\n"), wide), nil
 }
 func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool, scope string) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {
@@ -301,12 +302,12 @@ func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPo
 
 // writePolicyFile updates existing files in place so their ownership, ACL and
 // extended attributes survive. A durable journal allows detecting interrupted saves.
-func writePolicyFile(root policyStore, path string, data []byte) error {
+func writePolicyFile(root policyStore, path string, data []byte) (err error) {
 	f, e := root.OpenFile(path, os.O_RDWR, 0644)
 	if e != nil {
 		return e
 	}
-	defer f.Close()
+	defer func() { err = errors.Join(err, f.Close()) }()
 	info, e := f.Stat()
 	if e != nil {
 		return e
@@ -314,8 +315,10 @@ func writePolicyFile(root policyStore, path string, data []byte) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("not a regular policy file")
 	}
-	if _, e = f.WriteAt(data, 0); e != nil {
+	if n, e := f.WriteAt(data, 0); e != nil {
 		return e
+	} else if n != len(data) {
+		return io.ErrShortWrite
 	}
 	if e = f.Truncate(int64(len(data))); e != nil {
 		return e

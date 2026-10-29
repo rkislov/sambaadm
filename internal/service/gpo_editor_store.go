@@ -1,12 +1,14 @@
 package service
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/policy"
 	"sort"
 	"strings"
@@ -31,6 +33,8 @@ type policyStore interface {
 	Open(string) (policyFile, error)
 	OpenFile(string, int, os.FileMode) (policyFile, error)
 	Remove(string) error
+	Mkdir(string, os.FileMode) error
+	Rename(string, string) error
 }
 type smbPolicyStore struct {
 	share *smb2.Share
@@ -95,6 +99,52 @@ func (s *smbPolicyStore) Remove(name string) error {
 		return e
 	}
 	return s.share.Remove(p)
+}
+
+func (s *smbPolicyStore) Mkdir(name string, mode os.FileMode) error {
+	p, err := s.checked(name, true)
+	if err != nil {
+		return err
+	}
+	return s.share.Mkdir(p, mode)
+}
+
+func (s *smbPolicyStore) Rename(from, to string) error {
+	a, err := s.checked(from, false)
+	if err != nil {
+		return err
+	}
+	b, err := s.checked(to, true)
+	if err != nil {
+		return err
+	}
+	return s.share.Rename(a, b)
+}
+
+type policySecurityStore interface {
+	GetACL(string) ([]byte, error)
+	SetACL(string, []byte) error
+}
+
+func (s *smbPolicyStore) GetACL(name string) ([]byte, error) {
+	p, e := s.checked(name, false)
+	if e != nil {
+		return nil, e
+	}
+	return s.share.SecurityInfoRaw(p, smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation)
+}
+func (s *smbPolicyStore) SetACL(name string, data []byte) error {
+	p, e := s.checked(name, false)
+	if e != nil {
+		return e
+	}
+	flags := smb2.OwnerSecurityInformation | smb2.GroupSecurityInformation | smb2.DACLSecurityInformation
+	if len(data) >= 4 && binary.LittleEndian.Uint16(data[2:4])&0x1000 != 0 {
+		flags |= 0x80000000
+	} else {
+		flags |= 0x20000000
+	}
+	return s.share.SetSecurityInfoRaw(p, flags, adremote.SecurityBytes(data))
 }
 
 // Empty admx_path selects the domain Central Store; a local directory or

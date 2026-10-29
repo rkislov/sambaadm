@@ -57,3 +57,19 @@ func TestDiagnosticsReportEscapesRemoteErrors(t *testing.T) {
 		t.Fatalf("invalid report: %s", body)
 	}
 }
+
+func TestScriptBackupEndpointsRequireAdmin(t *testing.T) {
+	s := testWorkspaceServer(t)
+	for _, role := range []auth.Role{auth.RoleReadonly, auth.RoleHelpdesk} {
+		sess, _ := s.sessions.Create("test", "CN=test", role)
+		for _, suffix := range []string{"maintenance", "preview?source=pending&mode=before", "backup?name=pending&revision=x"} {
+			req := httptest.NewRequest("GET", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/scripts/"+suffix, nil)
+			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
+			rec := httptest.NewRecorder()
+			s.Router().ServeHTTP(rec, req)
+			if rec.Code != 403 {
+				t.Fatalf("%s %s: %d", role, suffix, rec.Code)
+			}
+		}
+	}
+}

@@ -15,7 +15,7 @@ func (s *GPOService) policyEntry(ctx context.Context, policy string) (*ldap.Entr
 	if err != nil {
 		return nil, err
 	}
-	return s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: "CN=" + ldap.EscapeDN(braceGUID(guid)) + ",CN=Policies,CN=System," + s.ldap.BaseDN(), Scope: ldapproto.ScopeBase(), Filter: "(objectClass=groupPolicyContainer)", Attributes: []string{"displayName", "name", "gPCFileSysPath", "versionNumber", "flags", "gPCFunctionalityVersion"}})
+	return s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: "CN=" + ldap.EscapeDN(braceGUID(guid)) + ",CN=Policies,CN=System," + s.ldap.BaseDN(), Scope: ldapproto.ScopeBase(), Filter: "(objectClass=groupPolicyContainer)", Attributes: []string{"displayName", "name", "gPCFileSysPath", "versionNumber", "flags", "gPCFunctionalityVersion", "uSNChanged", "gPCMachineExtensionNames", "gPCUserExtensionNames"}})
 }
 
 // Retain order and options of every unrelated link; reject malformed attributes

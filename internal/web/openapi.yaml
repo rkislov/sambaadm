@@ -456,10 +456,138 @@
                   "required": true
                   "schema": {"type": "string"}
             "responses":
-                "200": {"description": "Controller, disabled scopes and assigned scripts; see docs/api.md"}
+                "200": {"description": "Controller, revision, version, disabled scopes, assignments and event files; see docs/api.md"}
                 "401": {"description": "Session required"}
                 "403": {"description": "Service account lacks directory permissions"}
+                "409": {"description": "LDAP and SYSVOL versions disagree"}
                 "502": {"description": "SYSVOL read or script format error"}
+        "put":
+            "summary": "Save ordered scripts and upload or replace files for one event (admin)"
+            "parameters":
+                - "in": "path"
+                  "name": "gpo"
+                  "required": true
+                  "schema": {"type": "string"}
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema": {"type": "string"}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["revision", "scope", "event", "kind", "entries"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "scope": {"type": "string", "enum": ["Machine", "User"]}
+                                "event": {"type": "string", "enum": ["startup", "shutdown", "logon", "logoff"]}
+                                "kind": {"type": "string", "enum": ["script", "PowerShell"]}
+                                "entries":
+                                    "type": "array"
+                                    "maxItems": 128
+                                    "items":
+                                        "type": "object"
+                                        "required": ["command", "parameters"]
+                                        "properties":
+                                            "command": {"type": "string", "maxLength": 259}
+                                            "parameters": {"type": "string"}
+                                "files":
+                                    "type": "array"
+                                    "maxItems": 32
+                                    "items":
+                                        "type": "object"
+                                        "required": ["name", "data"]
+                                        "properties":
+                                            "name": {"type": "string"}
+                                            "data": {"type": "string", "format": "byte"}
+            "responses":
+                "200": {"description": "Fresh scripts model and backup name; empty entries clears this event only"}
+                "400": {"description": "Invalid scope, event, filename, command or payload size"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin, CSRF or service-account permissions missing"}
+                "409": {"description": "Policy revision changed; edits must be reconciled"}
+                "502": {"description": "Save failed; recovery journal retained if outcome is uncertain"}
+    "/gpo/{gpo}/scripts/file":
+        "get":
+            "summary": "Download an event file as an attachment without executing it"
+            "parameters":
+                - {"in": "path", "name": "gpo", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "revision", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "scope", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "event", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "name", "required": true, "schema": {"type": "string"}}
+            "responses":
+                "200": {"description": "application/octet-stream attachment"}
+                "400": {"description": "Invalid file selection"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Service-account permissions missing"}
+                "409": {"description": "Policy changed; reload before downloading"}
+                "502": {"description": "SYSVOL read failed"}
+    "/gpo/{gpo}/scripts/maintenance":
+        "get":
+            "summary": "List script backups, retention plan and pending recovery (admin)"
+            "parameters":
+                - {"in": "path", "name": "gpo", "required": true, "schema": {"type": "string"}}
+            "responses":
+                "200": {"description": "revision, backups, pending, recoveryError, keep, maxBytes, totalBytes, prunable"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Cannot read backup state"}
+        "post":
+            "summary": "Apply reviewed script recovery, delete backup or prune retention (admin)"
+            "parameters":
+                - {"in": "path", "name": "gpo", "required": true, "schema": {"type": "string"}}
+                - {"in": "header", "name": "X-CSRF-Token", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["operation", "revision"]
+                            "properties":
+                                "operation": {"type": "string", "enum": ["restore", "delete", "prune"]}
+                                "revision": {"type": "string"}
+                                "source": {"type": "string"}
+                                "mode": {"type": "string", "enum": ["before", "after"]}
+                                "allowConflicts": {"type": "boolean"}
+            "responses":
+                "200": {"description": "Fresh maintenance state"}
+                "400": {"description": "Invalid backup, scope or protected deletion"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin, CSRF or service permissions missing"}
+                "409": {"description": "Stale plan, pending cleanup or unacknowledged changes"}
+                "502": {"description": "Recovery/cleanup failed; retain recovery journal"}
+    "/gpo/{gpo}/scripts/preview":
+        "get":
+            "summary": "Preview exact script recovery files and new GPO version (admin)"
+            "parameters":
+                - {"in": "path", "name": "gpo", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "source", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "mode", "required": true, "schema": {"type": "string", "enum": ["before", "after"]}}
+            "responses":
+                "200": {"description": "revision, scope, versions, files and conflicts; no changes applied"}
+                "400": {"description": "Invalid or unsupported recovery data"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+                "409": {"description": "Unexpected LDAP version"}
+                "502": {"description": "Read failed"}
+    "/gpo/{gpo}/scripts/backup":
+        "get":
+            "summary": "Download a managed backup or pending journal as an attachment (admin)"
+            "parameters":
+                - {"in": "path", "name": "gpo", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "name", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "revision", "required": true, "schema": {"type": "string"}}
+            "responses":
+                "200": {"description": "application/octet-stream recovery JSON attachment"}
+                "400": {"description": "Invalid backup name"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+                "409": {"description": "Backup list changed"}
+                "502": {"description": "Cannot read backup"}
     "/gpo/{gpo}/alt-settings":
         "get":
             "summary": "GPOALT"
@@ -2831,13 +2959,22 @@
     "/system/diagnostics":
         "post":
             "summary": "Run read-only host and domain diagnostics (admin)"
+            "requestBody":
+                "required": false
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "gpo": {"type": "string", "description": "Optional GPO GUID for LDAP effective attributes and GPT.INI write-open checks"}
             "parameters":
                 - "in": "header"
                   "name": "X-CSRF-Token"
                   "required": true
                   "schema": {"type": "string"}
             "responses":
-                "200": {"description": "Report with per-check status, detail, recommendation and duration; failed probes remain HTTP 200"}
+                "200": {"description": "serviceUser, gpo, checks including drs/ldap_permissions/sysvol_permissions, statuses, hints and durations; no data written"}
+                "400": {"description": "Invalid diagnostic request or GPO GUID"}
                 "401": {"description": "Session required"}
                 "403": {"description": "Administrator and CSRF token required"}
                 "409": {"description": "Another diagnostic run is already active"}

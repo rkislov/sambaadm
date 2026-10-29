@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         description: Dry-run package version (does not create a release or tag)
-        default: '0.25.1'
+        default: '0.27.0'
         required: true
         type: string
 
@@ -42,6 +42,7 @@ jobs:
           make release
           cp deploy/sambaadm-package dist/sambaadm-package
           cp docs/alt-install.md dist/sambaadm-alt-install.md
+          tar --exclude='*.docx' -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs
       - name: Verify static Linux binaries
         run: |
           for binary in dist/sambaadm-linux-*; do

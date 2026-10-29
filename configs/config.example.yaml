@@ -27,6 +27,9 @@ auth:
       - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
 
 gpo:
+  # Хранение копий сценариев: минимум одна последняя копия сохраняется всегда.
+  script_backup_keep: 10
+  script_backup_max_mib: 64
   # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
   editor_enabled: false
   # Пусто: каталог BaseALT*.admx + ru-RU/*.adml в SYSVOL/<domain>/Policies/PolicyDefinitions

@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +14,112 @@ import (
 	"unicode/utf16"
 
 	smb2 "github.com/cloudsoda/go-smb2"
+	"github.com/go-ldap/ldap/v3"
 )
+
+func TestIntegrationGPUIStyleScriptEdits(t *testing.T) {
+	s, _ := integrationServices(t, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	name := fmt.Sprintf("Script-Editor-%d", time.Now().UnixNano())
+	if _, err := s.GPO.Create(ctx, name, "integration", ""); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := s.GPO.Delete(context.Background(), name, "integration", ""); err != nil {
+			t.Error(err)
+		}
+	})
+	entry, err := s.GPO.policyEntry(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := s.GPO.policyPath(ctx, entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := encodePolicyText("[Startup]\r\n0CmdLine=old.sh\r\n0Parameters=--old\r\n[Shutdown]\r\n0CmdLine=stop.sh\r\n0Parameters=--keep\r\n", true)
+	err = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+		if err := sh.MkdirAll(base+`\Machine\Scripts`, 0755); err != nil {
+			return err
+		}
+		if err := sh.WriteFile(base+`\Machine\Scripts\scripts.ini`, original, 0644); err != nil {
+			return err
+		}
+		return sh.WriteFile(base+`\Machine\Registry.pol`, []byte("registry sentinel"), 0644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := ldap.NewModifyRequest(entry.DN, nil)
+	req.Replace("gPCMachineExtensionNames", []string{registryCSE})
+	if err := s.GPO.ldap.Modify(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.GPO.Scripts(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := []byte("#!/bin/sh\nprintf 'hello'\n")
+	in := ScriptChange{Revision: before.Revision, Scope: "Machine", Event: "startup", Kind: "script", Entries: []ScriptAssignment{{"пример.sh", "--ключ=значение"}, {"second.sh", "--two"}}, Files: []ScriptFileChange{{Name: "пример.sh", Data: file}}}
+	saved, err := s.GPO.SetScripts(ctx, name, in, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Version != 1 || saved.Revision == before.Revision || saved.Backup == "" || len(saved.Scripts) != 3 || len(saved.Files) != 1 {
+		t.Fatalf("unexpected saved policy: %+v", saved)
+	}
+	data, err := s.GPO.ScriptFile(ctx, name, saved.Revision, "Machine", "startup", "пример.sh")
+	if err != nil || !bytes.Equal(data, file) {
+		t.Fatalf("download changed bytes: %q %v", data, err)
+	}
+	if _, err := s.GPO.SetScripts(ctx, name, in, "integration", ""); !errors.Is(err, ErrPolicyConflict) {
+		t.Fatalf("stale write accepted: %v", err)
+	}
+	meta, err := s.GPO.policyEntry(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ext := meta.GetAttributeValue("gPCMachineExtensionNames")
+	if !strings.Contains(ext, registryCSE) || !strings.Contains(ext, "42B5FAAE-") {
+		t.Fatalf("other CSE lost: %s", ext)
+	}
+	err = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+		registry, err := sh.ReadFile(base + `\Machine\Registry.pol`)
+		if err != nil || string(registry) != "registry sentinel" {
+			return fmt.Errorf("registry changed: %v", err)
+		}
+		if _, err := sh.Stat(base + `\` + saved.Backup); err != nil {
+			return err
+		}
+		return sh.WriteFile(base+`\Machine\Scripts\scripts.ini`, encodePolicyText("[Startup]\r\n0CmdLine=gpui-edit.sh\r\n0Parameters=--external\r\n", true), 0644)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Revision = saved.Revision
+	if _, err := s.GPO.SetScripts(ctx, name, in, "integration", ""); !errors.Is(err, ErrPolicyConflict) {
+		t.Fatalf("unversioned GPUI edit overwritten: %v", err)
+	}
+	fresh, err := s.GPO.Scripts(ctx, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := s.GPO.SetScripts(ctx, name, ScriptChange{Revision: fresh.Revision, Scope: "User", Event: "logon", Kind: "PowerShell", Entries: []ScriptAssignment{{"login.ps1", "--user"}}}, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.Version != 65537 {
+		t.Fatalf("wrong version halves: %d", user.Version)
+	}
+	cleared, err := s.GPO.SetScripts(ctx, name, ScriptChange{Revision: user.Revision, Scope: "Machine", Event: "startup", Kind: "script", Entries: []ScriptAssignment{}}, "integration", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Version != 65538 || len(cleared.Files) != 1 || len(cleared.Scripts) != 1 || cleared.Scripts[0].Scope != "User" {
+		t.Fatalf("clear changed other scope or removed files: %+v", cleared)
+	}
+}
 
 func TestIntegrationGPOScriptsWithoutADMXEditor(t *testing.T) {
 	s, _ := integrationServices(t, true)
@@ -88,7 +195,15 @@ func TestReadGPOScriptsCaseInsensitiveAndMissingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	rows, err := readGPOScripts(localPolicyStore{root})
+	if err := root.WriteFile("GPT.INI", []byte("[General]\nVersion=0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	entry := ldap.NewEntry("CN=GPO", map[string][]string{"versionNumber": {"0"}, "uSNChanged": {"1"}})
+	snap, err := loadScriptSnapshot(localPolicyStore{root}, entry, "dc", false)
+	var rows []GPOScript
+	if snap != nil {
+		rows = snap.view.Scripts
+	}
 	if err != nil || len(rows) != 1 || !strings.Contains(rows[0].Source, "Scripts.INI") {
 		t.Fatalf("incorrect SYSVOL discovery: %+v %v", rows, err)
 	}
@@ -96,7 +211,7 @@ func TestReadGPOScriptsCaseInsensitiveAndMissingFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "User"), []byte("not a directory"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readGPOScripts(localPolicyStore{root}); err == nil {
+	if _, err := loadScriptSnapshot(localPolicyStore{root}, entry, "dc", false); err == nil {
 		t.Fatal("non-directory silently treated as absent scripts")
 	}
 }
