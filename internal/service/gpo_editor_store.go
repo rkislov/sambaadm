@@ -16,6 +16,21 @@ import (
 	smb2 "github.com/cloudsoda/go-smb2"
 )
 
+// Delegation writes DACL only: owner, group and SACL remain untouched.
+func (s *smbPolicyStore) SetDACL(name string, data []byte) error {
+	p, e := s.checked(name, false)
+	if e != nil {
+		return e
+	}
+	flags := smb2.DACLSecurityInformation
+	if len(data) >= 4 && binary.LittleEndian.Uint16(data[2:4])&0x1000 != 0 {
+		flags |= 0x80000000
+	} else {
+		flags |= 0x20000000
+	}
+	return s.share.SetSecurityInfoRaw(p, flags, adremote.SecurityBytes(data))
+}
+
 // The editor only sees paths relative to one validated GPO in SYSVOL.
 // SMB FLUSH makes file data durable; CREATE/DELETE are acknowledged by the DC.
 type policyFile interface {

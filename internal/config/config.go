@@ -32,6 +32,7 @@ type SambaConfig struct {
 
 // GPOConfig controls remote policy editing and SYSVOL distribution.
 type GPOConfig struct {
+	DelegationStateDir string `mapstructure:"delegation_state_dir"`
 	ScriptBackupKeep   int    `mapstructure:"script_backup_keep"`
 	ScriptBackupMaxMiB int    `mapstructure:"script_backup_max_mib"`
 	SMBPort            int    `mapstructure:"smb_port"`
@@ -125,6 +126,7 @@ func setDefaults(v *viper.Viper) {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)
+	v.SetDefault("gpo.delegation_state_dir", "/var/lib/sambaadm/delegation")
 	v.SetDefault("gpo.script_backup_keep", 10)
 	v.SetDefault("gpo.script_backup_max_mib", 64)
 	v.SetDefault("server.listen", ":8080")

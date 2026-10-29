@@ -62,6 +62,7 @@
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
       toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
+ {label:t('Делегирование LDAP/SYSVOL','LDAP/SYSVOL delegation'),method:'PUT',fullDelegation:true},
  {label:t('Права объекта LDAP','LDAP object permissions'),method:'GET',delegation:true},
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
  {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
@@ -526,6 +527,7 @@
     if(a.explain)return openPolicyExplain();
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
+    if(a.fullDelegation)return openFullDelegation(row);
     if(a.delegation)return openDelegation(row);
     if(a.filter)return openFilter(row);
     if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
@@ -596,6 +598,54 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  async function openFullDelegation(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Делегирование GPO · LDAP и SYSVOL','GPO delegation · LDAP and SYSVOL'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div'),path='/gpo/'+enc(gpoID(row))+'/delegation/full';let serial=0;
+    dialog.append(title,el('p','muted',t('Согласованная выдача прав объекту GPO и существующим файлам/каталогам SYSVOL. Исходные ACL сохраняются в закрытом журнале на сервере sambaadm. На время операции остановите другие редакторы этой GPO. Роли sambaadm не меняются.','Coordinated permissions for the GPO and existing SYSVOL files/directories. Original ACLs are stored in a private journal on the sambaadm server. Stop other editors of this GPO during the operation. Sambaadm roles are unchanged.')),notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const profiles=[['read',t('Чтение LDAP/SYSVOL','Read LDAP/SYSVOL')],['read-apply',t('Чтение и применение GPO','Read and apply GPO')],['edit',t('Редактирование LDAP/SYSVOL','Edit LDAP/SYSVOL')]];
+    const operations={grant:t('Выдача','Grant'),revoke:t('Отзыв','Revoke'),complete:t('Завершение','Complete'),rollback:t('Возврат исходных ACL','Restore original ACLs')};
+    async function refresh(){const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
+      try{
+        const [state,groups,users,computers]=await Promise.all([request(path),request('/groups'),request('/users'),request('/computers')]);if(generation!==dialogGeneration||current!==serial)return;message(notice,'');
+        const result=el('section');result.setAttribute('aria-live','polite');
+        if(state.pending){body.append(el('p','alert error',t('Незавершённая операция: ','Pending operation: ')+state.pending));body.append(button(t('Предпросмотр завершения','Preview completion'),()=>preview({operation:'complete',source:state.pending})),button(t('Предпросмотр возврата','Preview rollback'),()=>preview({operation:'rollback',source:state.pending})));}
+        else{
+          const form=el('form','workspace-form'),principal=el('select'),profile=el('select');principal.setAttribute('aria-label',t('Получатель делегирования','Delegation recipient'));profile.setAttribute('aria-label',t('Профиль LDAP/SYSVOL','LDAP/SYSVOL profile'));
+          for(const [val,label] of [['',t('Выберите получателя','Select a recipient')],['S-1-5-11','Authenticated Users'],...[...groups,...users,...computers].filter(p=>p.dn).map(p=>[p.dn,(p.samAccountName||p.name||p.dn)+' · '+p.dn])]){const o=el('option','',label);o.value=val;principal.append(o);}principal.required=true;
+          for(const [val,label] of profiles){const o=el('option','',label);o.value=val;profile.append(o);}
+          const a=el('label','',t('Получатель делегирования','Delegation recipient')),b=el('label','',t('Профиль LDAP/SYSVOL','LDAP/SYSVOL profile'));a.append(principal);b.append(profile);const run=el('button','',t('Предпросмотр выдачи','Preview grant'));run.type='submit';form.append(a,b,run);body.append(form);
+          form.addEventListener('change',()=>result.replaceChildren());form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())preview({operation:'grant',principal:principal.value,profile:profile.value});});
+        }
+        body.append(el('h3','',t('Журнал делегирования','Delegation history')));
+        for(const record of state.records){const card=el('div','scope-link');card.append(el('strong','',(operations[record.operation]||record.operation)+' · '+record.sid),el('p','',(profiles.find(([v])=>v===record.profile)?.[1]||record.profile)+' · '+record.created),el('p','mono',record.id),el('p','',record.revoked?t('Отозвано','Revoked'):({pending:t('Не завершено','Pending'),complete:t('Завершено','Completed'),'rolled-back':t('Исходные ACL восстановлены','Original ACLs restored')})[record.state]||record.state));
+          if(!state.pending&&record.operation==='grant'&&record.state==='complete'&&!record.revoked)card.append(button(t('Предпросмотр отзыва','Preview revocation'),()=>preview({operation:'revoke',source:record.id})));body.append(card);
+        }
+        if(!state.records.length)body.append(el('p','muted',t('Записанных выдач пока нет','No recorded grants yet')));
+        body.append(el('p','muted',t('Отзыв возвращает ACL до выбранной выдачи и сохраняет исходный доступ. При изменении ACL или состава файлов операция блокируется; существующие права могут сохраняться через другие ACE и группы. Отзыв старых выдач обычно требует сначала отозвать более новые.','Revocation restores ACLs from before the selected grant and preserves original access. Changed ACLs or file inventory block the operation; other ACEs and groups may still grant access. Older grants usually require newer grants to be revoked first.')),result);
+        let previewSerial=0;
+        async function preview(input){const attempt=++previewSerial;result.replaceChildren();for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;message(notice,t('Чтение ACL и расчёт…','Reading ACLs and calculating…'));
+          try{const p=await request(path,'POST',input);if(generation!==dialogGeneration||current!==serial||attempt!==previewSerial)return;
+            result.append(el('h3','',operations[input.operation]),el('p','mono',p.dn+' · '+p.sid),el('p','',profiles.find(([v])=>v===p.profile)?.[1]||p.profile));
+            const states={before:t('Исходные права','Original permissions'),after:t('Права после операции','Permissions after operation'),unchanged:t('Без изменения','Unchanged'),conflict:t('Конфликт','Conflict')};
+            result.append(el('p','', 'LDAP: '+(states[p.ldapState]||p.ldapState)));
+            function aclDetails(label,added,removed){if(!(added?.length||removed?.length))return;const box=el('details');box.append(el('summary','',label));topologyTable(box,[...(added||[]).map(a=>({...a,action:t('Добавить','Add')})),...(removed||[]).map(a=>({...a,action:t('Удалить','Remove')}))].map(a=>({sid:a.sid||'—',action:a.action,type:a.type,mask:'0x'+a.mask.toString(16)})),[['action',t('Изменение','Change')],['sid','SID'],['type',t('Тип ACE','ACE type')],['mask',t('Маска прав','Access mask')]]);result.append(box);}
+            aclDetails(t('Изменения ACL в LDAP','LDAP ACL changes'),p.ldapAdded,p.ldapRemoved);
+            topologyTable(result,p.files.map(f=>({path:f.path,state:states[f.state]||f.state,changed:f.changed?t('Да','Yes'):t('Нет','No')})),[['path',t('Путь SYSVOL','SYSVOL path')],['state',t('Состояние','State')],['changed',t('ACL меняется','ACL changes')]]);
+            for(const f of p.files)aclDetails('SYSVOL · '+f.path,f.added,f.removed);
+            if(p.conflicts.length){for(const conflict of p.conflicts)result.append(el('p','alert error',t('Конфликт: ','Conflict: ')+conflict));message(notice,t('Операция заблокирована: состояние изменилось.','Operation blocked: state changed.'),true);return;}
+            const confirm=el('form','workspace-form'),check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю показанное изменение прав LDAP и SYSVOL','Confirm the shown LDAP and SYSVOL permission changes'));label.prepend(check);const apply=el('button','',t('Применить согласованные права','Apply coordinated permissions'));apply.type='submit';confirm.append(label,apply);result.append(confirm);message(notice,t('Предпросмотр готов','Preview ready'));
+            confirm.addEventListener('submit',async e=>{e.preventDefault();if(!confirm.reportValidity())return;for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;
+              try{await request(path,'PUT',{...input,preview:p.preview});if(generation!==dialogGeneration||current!==serial)return;await refresh();message(notice,t('Операция завершена и проверена','Operation completed and verified'));}
+              catch(err){if(generation===dialogGeneration&&current===serial){await refresh();message(notice,err.message,true);}}
+            });
+          }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
+          finally{if(generation===dialogGeneration&&current===serial)for(const c of body.querySelectorAll('button,input,select'))c.disabled=false;}
+        }
+      }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
+    }
+    await refresh();
   }
   async function openDelegation(row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();

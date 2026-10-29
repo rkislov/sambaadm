@@ -189,11 +189,16 @@ func (s *GPOService) DelegationPreview(ctx context.Context, gpo string, in GPDel
 	return p, err
 }
 func (s *GPOService) GrantDelegation(ctx context.Context, gpo string, in GPDelegationChange, actor, ip string) error {
+	s.editorMu.Lock()
+	defer s.editorMu.Unlock()
 	if in.Preview == "" {
 		return topologyBad("preview required")
 	}
 	p, sd, err := s.delegationPlan(ctx, gpo, in)
 	if err != nil {
+		return err
+	}
+	if err := s.ensureNoDelegationPending(p.DN); err != nil {
 		return err
 	}
 	if p.Preview != in.Preview {

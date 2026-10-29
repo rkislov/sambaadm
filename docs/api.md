@@ -212,3 +212,17 @@ GPO не считаются конфликтом. Специальные дир�
 `POST` на тот же адрес выполняет предпросмотр, `PUT` — запись. Обе операции требуют admin и CSRF. Тело предпросмотра: `{"revision":"123","principal":"CN=Editors,OU=Groups,DC=example,DC=com","profile":"edit-ldap"}`. Профили: `read`, `read-apply`, `edit-ldap`. Ответ содержит `preview`, `revision`, `dn`, `sid`, `profile`, список `added`, число неизменённых ACE `unchanged`, `ldapOnly:true` и `warnings`. Для PUT передайте те же поля запроса и токен `preview` из ответа.
 
 Разрешены только дополнительные allow ACE: `read` — маска `0x20094`, `edit-ldap` — `0x200b7`, флаг Container Inherit. `read-apply` дополнительно добавляет object ACE с маской `0x100` и GUID Apply Group Policy. Точные дубликаты пропускаются. Токен предпросмотра связывает исходный и будущий DACL, ревизию, профиль и SID; 409 требует обновления и нового предпросмотра. SYSVOL, владелец, роли приложения и существующие ACE не изменяются. Это не расчёт эффективных прав и не полноценное делегирование доступа к файлам GPO.
+
+### Согласованные ACL LDAP/SYSVOL
+
+`/api/v1/gpo/{gpo}/delegation/full` доступен только admin; POST/PUT требуют CSRF. GET возвращает `records` и ID `pending`. История содержит только операции этого доверенного локального журнала для текущего контроллера/GPO.
+
+POST выполняет предпросмотр:
+
+- Выдача: `{"operation":"grant","principal":"CN=Editors,OU=Groups,DC=example,DC=com","profile":"edit"}`. Профили: `read`, `read-apply`, `edit`.
+- Отзыв: `{"operation":"revoke","source":"UUID-завершённой-выдачи"}`.
+- Восстановление: `{"operation":"complete","source":"UUID-незавершённой-операции"}` или `rollback`.
+
+Ответ: `preview`, `operation`, `source`, `dn`, `sid`, `profile`, `ldapState`, `ldapChanged`, `ldapAdded`/`ldapRemoved`, `files` (path/state/changed/added/removed), `conflicts`. Состояния: `before`, `after`, `unchanged`, `conflict`. PUT принимает те же параметры плюс `preview`. Токен связан с локальной записью, текущими DACL, набором путей и ревизией LDAP; устаревший токен даёт 409. После любой ошибки PUT обновите GET: если появилась pending-операция, выполните её предпросмотр восстановления. Конфликты не допускают применения.
+
+Профиль `edit` соответствует LDAP `edit-ldap`; на существующих файлах SYSVOL добавляется `0x1301bf`, на каталогах — `0x1201ff` с Object/Container Inherit (без DELETE на сам каталог). Профили чтения добавляют `0x1200a9`. Исходные ACE сохраняются. Отзыв и восстановление работают с записанными DACL, не меняют владельца/группу/SACL и не восстанавливают содержимое файлов. Сторонние изменения ACL или набора путей блокируются; новых разрешений на изменение ACL/владельца профили не дают.
