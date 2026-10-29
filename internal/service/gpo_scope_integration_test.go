@@ -65,6 +65,39 @@ func TestIntegrationGPOScopeAndFilter(t *testing.T) {
 	if e != nil || len(v) == 0 || v[0].GUID != p.GUID || !v[0].Enforced {
 		t.Fatalf("%+v %v", v, e)
 	}
+
+	// Explanation is LDAP-only, including when the editor and SMB access are disabled.
+	editorEnabled, remote := s.GPO.gpoCfg.EditorEnabled, s.GPO.remote
+	s.GPO.gpoCfg.EditorEnabled, s.GPO.remote = false, nil
+	report, explainErr := s.GPO.Explain(ctx, GPExplainInput{Computer: ou.DN})
+	s.GPO.gpoCfg.EditorEnabled, s.GPO.remote = editorEnabled, remote
+	if explainErr != nil || len(report.Sections) != 1 {
+		t.Fatalf("explain: %+v %v", report, explainErr)
+	}
+	found := false
+	for _, link := range report.Sections[0].Links {
+		if link.GUID == p.GUID {
+			found = link.Status == "conditional" && link.Priority == 1
+		}
+	}
+	if !found {
+		t.Fatalf("missing conditional policy: %+v", report)
+	}
+	user, err := s.Users.Create(ctx, CreateUserInput{Login: name, OU: ou.DN}, actor, ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Users.Delete(context.Background(), name, actor, ip) })
+	report, explainErr = s.GPO.Explain(ctx, GPExplainInput{User: user.DN})
+	if explainErr != nil || report.Sections[0].Container != ou.DN {
+		t.Fatalf("user explanation: %+v %v", report, explainErr)
+	}
+	if _, err = s.GPO.Explain(ctx, GPExplainInput{Computer: user.DN}); err == nil {
+		t.Fatal("user accepted as computer")
+	}
+	if _, err = s.GPO.Explain(ctx, GPExplainInput{User: "CN=x,DC=other"}); err == nil {
+		t.Fatal("foreign target accepted")
+	}
 	before, e := s.GPO.SecurityFilter(ctx, p.GUID)
 	if e != nil {
 		t.Fatal(e)

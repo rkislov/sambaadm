@@ -60,7 +60,7 @@
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
-      toolbar:[{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
+      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
  {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
@@ -522,6 +522,7 @@
   }
   async function openOperation(a,row) {
     if(a.dnsEditor)return openDNSEditor(row,a.prefill?.(row)?.name||'@');
+    if(a.explain)return openPolicyExplain();
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
     if(a.filter)return openFilter(row);
@@ -593,6 +594,39 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  async function openPolicyExplain() {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Почему применяется GPO','Why a GPO applies'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
+    dialog.append(title,el('p','muted',t('Проверка связей и разделов по LDAP. Условный кандидат ещё не означает применение на клиенте: права, SYSVOL, WMI, сайт и loopback требуют отдельной проверки.','LDAP link and section checks. A conditional candidate does not prove client application: permissions, SYSVOL, WMI, site and loopback need separate verification.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    try {
+      const [model,users,computers]=await Promise.all([request('/gpo/scope'),request('/users'),request('/computers')]);if(generation!==dialogGeneration)return;
+      const form=el('form','workspace-form'),controls={};
+      for(const [key,label,rows] of [['user',t('Пользователь или его OU','User or user OU'),users],['computer',t('Компьютер или его OU','Computer or computer OU'),computers]]){
+        const wrap=el('label','',label),select=el('select');select.name=key;select.setAttribute('aria-label',label);
+        for(const [dn,name] of [['',t('Не выбран','Not selected')],...rows.filter(r=>r.dn).map(r=>[r.dn,r.samAccountName+' · '+r.dn]),...model.containers.map(c=>[c.dn,c.dn])]){const option=el('option','',name);option.value=dn;select.append(option);}wrap.append(select);form.append(wrap);controls[key]=select;
+      }
+      const run=el('button','',t('Объяснить применение','Explain application'));run.type='submit';form.append(run);const result=el('section');result.setAttribute('aria-live','polite');body.append(form,result);form.addEventListener('change',()=>result.replaceChildren());
+      const codes={'link-options':t('Параметры ссылки','Link options'),'link-enabled':t('Ссылка включена','Link enabled'),'policy-exists':t('GPO видна в LDAP','GPO visible in LDAP'),'inheritance':t('Наследование; при отказе указан блокирующий контейнер','Inheritance; on failure, the blocking container is shown'),'enforced':t('Принудительная ссылка проходит блокировку наследования','Enforced link bypasses inheritance blocking'),'section-enabled':t('Раздел включён','Section enabled'),'security':t('Токен получателя и права чтения/применения GPO','Target token and GPO read/apply permissions'),'sysvol':t('Чтение SYSVOL получателем','Target SYSVOL read access'),'wmi':t('Результат WMI-фильтра','WMI filter result'),'no-wmi-filter':t('WMI-фильтр отсутствует','No WMI filter'),'higher-priority-link':t('Та же GPO уже учтена по ссылке выше приоритетом','Same GPO already represented by a higher-priority link')};
+      form.addEventListener('submit',async event=>{
+        event.preventDefault();if(!controls.user.value&&!controls.computer.value){message(notice,t('Выберите пользователя, компьютер или OU.','Select a user, computer or OU.'),true);return;}
+        result.replaceChildren();for(const c of form.elements)c.disabled=true;message(notice,t('Чтение LDAP…','Reading LDAP…'));
+        try {
+          const report=await request('/gpo/explain','POST',{user:controls.user.value,computer:controls.computer.value});if(generation!==dialogGeneration)return;
+          result.append(el('h3','',t('Объяснение области действия','Scope explanation')),el('p','mono',report.generatedAt),button(t('Скачать отчёт JSON','Download JSON report'),()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='gpo-explanation.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+          for(const section of report.sections){
+            const part=el('section');part.append(el('h3','',section.scope==='Machine'?t('Конфигурация компьютера','Computer configuration'):t('Конфигурация пользователя','User configuration')),el('p','mono',section.target));
+            part.append(el('h4','',t('Путь наследования: домен → OU','Inheritance path: domain → OU')));
+            for(const c of section.path)part.append(el('p','mono',c.dn+(c.block?' · '+t('Наследование заблокировано','Inheritance blocked'):'')));
+            part.append(el('p','muted',t('Приоритет 1 — наивысший. Порядок обработки показан для условных кандидатов; фильтры могут сократить этот список.','Priority 1 is highest. Processing order is shown for conditional candidates; filters may reduce this list.')));
+            topologyTable(part,section.links.map(l=>({...l,priority:l.priority||'—',processingOrder:l.processingOrder||'—',status:l.status==='excluded'?t('Исключена из расчёта','Excluded from calculation'):t('Условный кандидат — требуется проверка','Conditional candidate — verification required')})),[['priority',t('Приоритет','Priority')],['processingOrder',t('Обработка','Processing')],['name','GPO'],['source',t('Источник','Source')],['status',t('Решение','Decision')]]);
+            for(const link of section.links){const detail=el('details');detail.append(el('summary','',link.name+' · '+link.source));topologyTable(detail,link.checks.map(c=>({condition:codes[c.code]||c.code,state:({pass:t('Подтверждено','Confirmed'),fail:t('Исключает из расчёта','Excludes from calculation'),unknown:t('Не проверено','Not verified')})[c.state]||c.state,detail:c.detail||'—'})),[['condition',t('Условие','Condition')],['state',t('Результат','Result')],['detail',t('Основание','Evidence')]]);part.append(detail);}result.append(part);
+          }
+          result.append(el('p','muted',t('Это снимок LDAP, а не отчёт gpresult. Локальные и сайтовые политики, loopback, исполнение расширений и изменения каталога во время чтения не учитываются.','This is an LDAP snapshot, not gpresult. Local/site policies, loopback, extension execution and directory changes during the read are not evaluated.')));message(notice,t('Отчёт готов','Report ready'));
+        }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{if(generation===dialogGeneration)for(const c of form.elements)c.disabled=false;}
+      });
+    }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
   async function openPolicyModel() {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();

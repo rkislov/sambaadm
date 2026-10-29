@@ -2808,6 +2808,26 @@
                 "502":
                     "description": "LDAP or Samba RPC failed"
             "summary": "Delete connection; KCC may recreate generated connections"
+    "/gpo/explain":
+        "post":
+            "summary": "Explain domain/OU GPO eligibility using LDAP facts without filter assumptions"
+            "description": "All authenticated roles; CSRF required. Does not require the policy editor, SMB or ADMX. Conditional candidates are not proof of client application."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "properties":
+                                "user": {"type": "string", "description": "User or domain/OU DN; at least one target is required"}
+                                "computer": {"type": "string", "description": "Computer or domain/OU DN"}
+            "responses":
+                "200": {"description": "Sections with target, container, inheritance path and links; each link contains checks (pass/fail/unknown), status (excluded/conditional), optional priority and processingOrder. See docs/api.md."}
+                "400": {"description": "Invalid target or request"}
+                "401": {"description": "Session required"}
+                "403": {"description": "CSRF required"}
+                "502": {"description": "LDAP unavailable"}
     "/gpo/model":
         "post":
             "summary": "Read-only domain/OU Registry.pol and ALT policy modeling with explicit filter assumptions"
