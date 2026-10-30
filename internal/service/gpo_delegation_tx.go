@@ -296,7 +296,7 @@ func delegationRecords(root *os.Root, host, dn string, objectID ...string) ([]De
 		if err != nil {
 			return nil, err
 		}
-		if rec.Host == host && dnEqual(rec.DN, dn) && (len(objectID) == 0 || rec.ObjectID == objectID[0]) {
+		if (host == "" || rec.Host == host) && dnEqual(rec.DN, dn) && (len(objectID) == 0 || rec.ObjectID == objectID[0]) {
 			out = append(out, *rec)
 		}
 	}

@@ -63,6 +63,7 @@
       toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
+ {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
  {label:t('Делегирование LDAP/SYSVOL','LDAP/SYSVOL delegation'),method:'PUT',fullDelegation:true},
  {label:t('Права объекта LDAP','LDAP object permissions'),method:'GET',delegation:true},
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
@@ -529,6 +530,7 @@
     if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
     if(a.consistency)return openConsistency(row);
+    if(a.repair)return openRepair(row);
     if(a.fullDelegation)return openFullDelegation(row);
     if(a.delegation)return openDelegation(row);
     if(a.filter)return openFilter(row);
@@ -601,6 +603,37 @@
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
   }
+  async function openRepair(row) {
+    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    const title=el('h2','',t('Исправление SYSVOL','Repair SYSVOL'));title.id='operation-title';
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div'),endpoint='/gpo/'+enc(gpoID(row))+'/repair';let serial=0;
+    dialog.append(title,el('p','alert',t('Выполняйте в окне обслуживания: остановите другие редакторы GPO и синхронизацию SYSVOL. При переключении каталог GPO кратковременно недоступен. Источник выбирает администратор; LDAP не изменяется.','Use a maintenance window: stop other GPO editors and SYSVOL synchronizers. The GPO directory is briefly unavailable during cutover. The administrator chooses the source; LDAP is unchanged.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const states={pending:t('Требуется восстановление','Recovery required'),complete:t('Завершено','Completed'),'rolled-back':t('Исходная копия возвращена','Original copy restored')};
+    async function refresh(){const current=++serial;body.replaceChildren();
+      try{const [records,dcs]=await Promise.all([request(endpoint),request('/sites/controllers')]);if(generation!==dialogGeneration||current!==serial)return;
+        const result=el('section');result.setAttribute('aria-live','polite');const form=el('form','workspace-form'),source=el('select'),target=el('select');
+        for(const [select,labelText] of [[source,t('Источник SYSVOL','SYSVOL source')],[target,t('Целевой DC','Target DC')]]){select.required=true;select.setAttribute('aria-label',labelText);for(const [value,text] of [['',t('Выберите DC','Select DC')],...dcs.map(d=>[d.dns,d.dns])]){const option=el('option','',text);option.value=value;select.append(option);}const label=el('label','',labelText);label.append(select);form.append(label);}
+        const run=el('button','',t('Предпросмотр исправления','Preview repair'));run.type='submit';form.append(run);form.addEventListener('change',()=>result.replaceChildren());form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())preview({operation:'repair',source:source.value,target:target.value});});body.append(form,el('h3','',t('Журнал исправлений','Repair history')));
+        for(const record of records){const card=el('div','scope-link');card.append(el('strong','',record.source+' → '+record.target),el('p','',states[record.state]||record.state),el('p','mono',record.id+' · '+record.created));if(record.state==='pending')card.append(button(t('Предпросмотр завершения','Preview completion'),()=>preview({operation:'complete',record:record.id})));if(record.state!=='rolled-back')card.append(button(t('Предпросмотр отката','Preview rollback'),()=>preview({operation:'rollback',record:record.id})));body.append(card);}
+        body.append(result);
+        async function preview(input){result.replaceChildren();for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;message(notice,t('Чтение копий и расчёт изменений…','Reading copies and calculating changes…'));
+          try{const plan=await request(endpoint,'POST',input);if(generation!==dialogGeneration||current!==serial)return;
+            result.append(el('h3','',t('Предпросмотр','Preview')),el('p','',plan.source+' → '+plan.target),el('p','alert',t('Будет заменено дерево SYSVOL на целевом DC. Исходная копия сохраняется на DC и в закрытом локальном журнале. Копируются содержимое обычных файлов, владельцы, группы и DACL. SACL, альтернативные потоки и расширенные атрибуты не переносятся. Служебные копии sambaadm остаются в исходном каталоге.','The target SYSVOL tree will be replaced. The original is retained on the DC and in a private local journal. Ordinary file contents, owners, groups and DACLs are copied. SACLs, alternate streams and extended attributes are not copied. Sambaadm service backups remain in the original directory.')));
+            const kinds={add:t('Добавить','Add'),remove:t('Удалить','Remove'),content:t('Заменить содержимое','Replace content'),type:t('Заменить тип объекта','Replace object type'),'sysvol-acl':t('Заменить права','Replace permissions')};topologyTable(result,plan.changes.map(c=>({...c,kind:kinds[c.kind]||c.kind})),[['path',t('Путь','Path')],['kind',t('Изменение','Change')]]);
+            for(const acl of plan.aclChanges||[]){const details=el('details');details.append(el('summary','',t('Права: ','Permissions: ')+acl.path),el('p','',t('Владелец: ','Owner: ')+(acl.OwnerBefore||'—')+' → '+(acl.OwnerAfter||'—')),el('p','',t('Группа: ','Group: ')+(acl.GroupBefore||'—')+' → '+(acl.GroupAfter||'—')),el('p','',t('Защита DACL: ','DACL protected: ')+acl.ProtectedBefore+' → '+acl.ProtectedAfter));topologyTable(details,[...(acl.Before||[]).map(a=>({...a,side:t('До','Before')})),...(acl.After||[]).map(a=>({...a,side:t('После','After')}))].map(a=>({side:a.side,sid:a.sid,type:a.type,mask:'0x'+a.mask.toString(16),inherited:a.inherited})),[['side',t('Состояние','State')],['sid','SID'],['type',t('Тип','Type')],['mask',t('Маска','Mask')],['inherited',t('Унаследовано','Inherited')]]);result.append(details);}
+            const confirm=el('form','workspace-form'),check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю выбранные DC, изменения и окно обслуживания','Confirm the selected DCs, changes and maintenance window'));label.prepend(check);const apply=el('button','',t('Применить исправление SYSVOL','Apply SYSVOL repair'));apply.type='submit';confirm.append(label,apply);result.append(confirm);message(notice,t('Предпросмотр готов','Preview ready'));
+            confirm.addEventListener('submit',async e=>{e.preventDefault();if(!confirm.reportValidity())return;for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;
+              try{const done=await request(endpoint,'PUT',{...input,preview:plan.preview});if(generation!==dialogGeneration||current!==serial)return;await refresh();message(notice,(states[done.state]||done.state)+' · '+done.record+(done.verificationError?' · '+done.verificationError:done.report?' · '+t('Повторная проверка: ','Recheck: ')+({consistent:t('копии совпадают','copies match'),different:t('есть расхождения','differences remain'),incomplete:t('неполная','incomplete'),'single-controller':t('один DC','single DC')}[done.report.status]||done.report.status):''),!!done.verificationError);}
+              catch(err){if(generation===dialogGeneration&&current===serial){await refresh();message(notice,err.message,true);}}
+            });
+          }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
+          finally{if(generation===dialogGeneration&&current===serial)for(const c of body.querySelectorAll('button,input,select'))c.disabled=false;}
+        }
+      }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
+    }
+    await refresh();
+  }
+
   async function openConsistency(row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
     const title=el('h2','',t('Согласованность GPO между контроллерами','GPO consistency across controllers'));title.id='operation-title';

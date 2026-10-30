@@ -2828,6 +2828,63 @@
                 "401": {"description": "Session required"}
                 "403": {"description": "CSRF required"}
                 "502": {"description": "LDAP unavailable"}
+    "/gpo/{gpo}/repair":
+        "parameters":
+            - "name": "gpo"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+        "get":
+            "summary": "Admin-only durable SYSVOL repair history"
+            "responses":
+                "200": {"description": "Array of id, source, target, state (pending/complete/rolled-back), created"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+        "post":
+            "summary": "Preview SYSVOL tree repair, completion or rollback; admin and CSRF required"
+            "description": "Read-only domain operation. Requires matching LDAP identity/version/metadata/security. Explicit source and target DCs for repair; record ID for recovery. Maintenance window required for apply."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["operation"]
+                            "additionalProperties": false
+                            "properties":
+                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback"]}
+                                "source": {"type": "string", "description": "Discovered source DC DNS; repair only"}
+                                "target": {"type": "string", "description": "Discovered target DC DNS; repair only"}
+                                "record": {"type": "string", "format": "uuid", "description": "Completion/rollback record"}
+            "responses":
+                "200": {"description": "preview token, operation, source, target, record, changes, aclChanges and warnings; no file contents"}
+                "400": {"description": "Invalid request"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "State changed or recovery conflict"}
+                "502": {"description": "LDAP/SYSVOL or journal unavailable, or safety precondition failed"}
+        "put":
+            "summary": "Apply previewed SYSVOL repair or recovery; admin and CSRF required"
+            "description": "Same request as POST plus required preview token. Saves private local snapshots before SMB writes. Preserves original directory; cutover is recoverable, not atomic. Does not change LDAP."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["operation", "preview"]
+                            "additionalProperties": false
+                            "properties":
+                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback"]}
+                                "source": {"type": "string"}
+                                "target": {"type": "string"}
+                                "record": {"type": "string", "format": "uuid"}
+                                "preview": {"type": "string"}
+            "responses":
+                "200": {"description": "record, state, consistency report or verificationError"}
+                "400": {"description": "Invalid request or missing preview"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Stale preview or state conflict"}
+                "502": {"description": "Failure; inspect history for a pending repair ID and recover"}
     "/gpo/{gpo}/consistency":
         "parameters":
             - "name": "gpo"
