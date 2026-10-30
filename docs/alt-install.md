@@ -18,7 +18,7 @@
 apt-get update
 apt-get install bash coreutils tar util-linux shadow-utils systemd
 # Скачайте sambaadm-package вместе с RPM из того же релиза:
-sudo bash ./sambaadm-package install ./sambaadm-0.30.0-alt1.x86_64.rpm
+sudo bash ./sambaadm-package install ./sambaadm-0.31.0-alt1.x86_64.rpm
 sudoedit /etc/sambaadm/config.yaml
 sudoedit /etc/sambaadm/env
 sudo systemctl enable --now sambaadm.service
@@ -41,7 +41,7 @@ root:sambaadm. Пакетный пример слушает **127.0.0.1:8080**. 
 ## Обновление
 
 ```sh
-sudo sambaadm-package update ./sambaadm-0.30.0-alt1.x86_64.rpm
+sudo sambaadm-package update ./sambaadm-0.31.0-alt1.x86_64.rpm
 # Если предыдущая версия устанавливалась без helper:
 sudo sambaadm-package update ./new.rpm --previous-rpm ./installed-version.rpm
 ```
@@ -125,11 +125,11 @@ Helper откажется устанавливать RPM поверх неё, ч
 
 ```sh
 # На рабочей машине с Go и Docker, внутри будет ALT p10:
-make rpm-alt VERSION=0.30.0 RPM_ARCH=amd64
-make rpm-alt VERSION=0.30.0 RPM_ARCH=arm64
+make rpm-alt VERSION=0.31.0 RPM_ARCH=amd64
+make rpm-alt VERSION=0.31.0 RPM_ARCH=arm64
 # На ALT с готовым статическим ELF и rpm-build, file и systemd-analyze:
 mkdir -p dist
-bash packaging/alt/build-rpm.sh 0.30.0 ./sambaadm-linux-amd64 ./dist
+bash packaging/alt/build-rpm.sh 0.31.0 ./sambaadm-linux-amd64 ./dist
 ```
 
 Это пакет бинарной поставки, не исходный пакет Sisyphus: Go-бинарник собран вне
@@ -168,7 +168,7 @@ docker build --build-arg 'ALT_APT_MIRRORS=http://mirror.example/altlinux http://
 Проверка без создания нового релиза:
 
 ```sh
-gh workflow run release.yml --ref main -f version=0.30.0
+gh workflow run release.yml --ref main -f version=0.31.0
 ```
 
 Ручной запуск только сохраняет `release-verified` в Actions artifacts. Публикация
@@ -184,3 +184,13 @@ GitHub Release выполняется при push числового тега `v
 Добавлена проверка GPO → «Согласованность SYSVOL» на обнаруженных контроллерах. Новые параметры конфигурации и миграция данных не требуются. Служебной записи нужны права чтения LDAP/SYSVOL и ACL на проверяемых DC; сетевые имена и порты должны быть доступны с сервера приложения. Проверка не запускает репликацию и ничего не исправляет. Неполный отчёт не подтверждает согласованность домена.
 
 В архив документации включены обновлённые инструкции API, Web UI, администратора и дорожная карта. Приёмка на целевом домене ALT СП 10.2.2 остаётся отдельным шагом после установки.
+
+## Обновление до v0.31.0
+
+Добавлено административное действие GPO → «Исправление SYSVOL»: явный выбор источника и одного целевого DC, предпросмотр файлов и ACL, сохранение исходной копии, завершение после сбоя и откат. Новые параметры конфигурации и миграция данных не требуются.
+
+Перед использованием выделите окно обслуживания, остановите сторонние редакторы и синхронизаторы SYSVOL и используйте один активный экземпляр sambaadm. При переключении каталог GPO кратковременно отсутствует. LDAP не изменяется; его идентичность, версия, метаданные и безопасность должны совпадать на источнике и приёмнике. Копируются обычные файлы, владельцы, группы и DACL; SACL, альтернативные потоки и расширенные атрибуты не переносятся.
+
+Служебной записи нужны права создания/переименования каталогов в SYSVOL/Policies и установки владельцев, групп и DACL. Журнал с исходными и желаемыми данными хранится в `gpo.delegation_state_dir/repair` (0700, файлы 0600); включите его в резервное копирование. Исходный каталог сохраняется на DC. Автоматической очистки архивов нет: контролируйте свободное место. Откат RPM не откатывает изменения SYSVOL — используйте журнал исправления.
+
+Подробный порядок восстановления и ограничения приведены в docs/admin.md из архива документации. Приёмка на целевом домене ALT СП 10.2.2 остаётся отдельным шагом.
