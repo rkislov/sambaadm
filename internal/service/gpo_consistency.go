@@ -116,6 +116,11 @@ func consistencyACL(sd []byte) (string, error) {
 	return consistencyHash([]any{ids, dacl}), nil
 }
 func scanConsistencyTree(ctx context.Context, root policyStore) (*consistencySnapshot, error) {
+	return scanPolicyTree(ctx, root, false)
+}
+
+// Repair must also be able to preserve a target with a malformed/missing GPT.INI.
+func scanPolicyTree(ctx context.Context, root policyStore, allowBadGPT bool) (*consistencySnapshot, error) {
 	secure, ok := root.(policySecurityStore)
 	if !ok {
 		return nil, fmt.Errorf("SYSVOL ACL read unavailable")
@@ -186,10 +191,12 @@ func scanConsistencyTree(ctx context.Context, root policyStore) (*consistencySna
 					return fmt.Errorf("%w: GPT.INI", errConsistencyChanged)
 				}
 				v, _, err := gptVersion(data, nil)
-				if err != nil {
+				if err != nil && !allowBadGPT {
 					return err
 				}
-				snap.GPT = &v
+				if err == nil {
+					snap.GPT = &v
+				}
 			}
 		}
 		snap.Files = append(snap.Files, item)
@@ -220,7 +227,7 @@ func scanConsistencyTree(ctx context.Context, root policyStore) (*consistencySna
 	if err := walk(".", 0); err != nil {
 		return snap, err
 	}
-	if snap.GPT == nil {
+	if snap.GPT == nil && !allowBadGPT {
 		return snap, fmt.Errorf("GPT.INI is missing")
 	}
 	sort.Slice(snap.Files, func(i, j int) bool { return snap.Files[i].Path < snap.Files[j].Path })
