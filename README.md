@@ -1,5 +1,11 @@
 # sambaadm
 
+<!-- owner-maintenance:start -->
+**Автор проекта, изменений и публикаций — Кислов Роман Сергеевич ([@rkislov](https://github.com/rkislov)).**
+
+Ошибки и предложения принимаются через **Issues**, изменения — через **Pull Requests** из форков. Прямую запись в основной репозиторий и публикацию версий выполняет только владелец `rkislov`.
+<!-- owner-maintenance:end -->
+
 **Аналог RSAT для Samba4 Active Directory** — управление доменом из одного бинарника: CLI, веб-интерфейс и REST API.
 
 ```text
