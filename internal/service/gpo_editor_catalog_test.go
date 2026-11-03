@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
-
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/policy"
 )
@@ -40,7 +38,7 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 	s.GPO.gpoCfg.ADMXPath = ""
 	s.GPO.gpoCfg.SysvolPath = "/no-local-sysvol"
 	template := `sambaadm.test\Policies\PolicyDefinitions\BaseALTEditorIntegration.admx`
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		if e := sh.MkdirAll(`sambaadm.test\Policies\PolicyDefinitions`, 0755); e != nil {
 			return e
 		}
@@ -56,7 +54,7 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() {
-		e := s.GPO.remote.SYSVOL(context.Background(), s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error { return sh.Remove(template) })
+		e := s.GPO.sysvol(context.Background(), s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error { return sh.Remove(template) })
 		if e != nil {
 			t.Error(e)
 		}
@@ -75,7 +73,7 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 		t.Fatalf("wrong scope/version %+v", saved)
 	}
 	var userData []byte
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root := `sambaadm.test\Policies\` + guid
 		var e error
 		userData, e = sh.ReadFile(root + `\User\Registry.pol`)
@@ -120,7 +118,7 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 	if e != nil || machine.Version != 65537 {
 		t.Fatalf("machine version: %+v %v", machine, e)
 	}
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		data, e := sh.ReadFile(`sambaadm.test\Policies\` + guid + `\User\Registry.pol`)
 		if e == nil && !bytes.Equal(data, userData) {
 			return fmt.Errorf("machine save overwrote user file")

@@ -32,3 +32,33 @@ func TestMalformedDefaultConfigFails(t *testing.T) {
 		t.Fatal("silently ignored invalid config")
 	}
 }
+
+func TestRepairRetentionConfig(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if e := os.WriteFile(p, []byte("logging:\n  level: info\n"), 0600); e != nil {
+		t.Fatal(e)
+	}
+	c, e := Load(p)
+	if e != nil || c.GPO.RepairBackupKeep != 10 || c.GPO.RepairBackupMaxMiB != 512 {
+		t.Fatalf("defaults: %+v %v", c, e)
+	}
+	t.Setenv("SAMBAADM_GPO_REPAIR_BACKUP_KEEP", "2")
+	t.Setenv("SAMBAADM_GPO_REPAIR_BACKUP_MAX_MIB", "128")
+	c, e = Load(p)
+	if e != nil || c.GPO.RepairBackupKeep != 2 || c.GPO.RepairBackupMaxMiB != 128 {
+		t.Fatalf("environment: %+v %v", c, e)
+	}
+	for _, value := range []string{"0", "101", "-1"} {
+		t.Setenv("SAMBAADM_GPO_REPAIR_BACKUP_KEEP", value)
+		if _, e := Load(p); e == nil {
+			t.Fatal("invalid keep accepted", value)
+		}
+	}
+	t.Setenv("SAMBAADM_GPO_REPAIR_BACKUP_KEEP", "2")
+	for _, value := range []string{"0", "10241", "-1"} {
+		t.Setenv("SAMBAADM_GPO_REPAIR_BACKUP_MAX_MIB", value)
+		if _, e := Load(p); e == nil {
+			t.Fatal("invalid budget accepted", value)
+		}
+	}
+}

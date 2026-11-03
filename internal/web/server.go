@@ -61,6 +61,10 @@ func New(opts Options) (*Server, error) {
 		ldap:        opts.LDAP,
 		audit:       opts.Audit,
 	}
+	if opts.Services != nil {
+		s.monitor.Helpers = opts.Services.Helpers
+		s.diagnostics = service.NewDiagnosticService(opts.Config, opts.Services.Helpers)
+	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
 		"year":        func() int { return time.Now().Year() },
 		"urlpath":     url.PathEscape,
@@ -233,6 +237,10 @@ func (s *Server) buildRouter() chi.Router {
 
 		r.Get("/sites/topology", s.handleAPITopology)
 		r.Get("/sites/controllers", s.handleAPIControllers)
+		r.Get("/sites/controllers/{name}/rodc", s.handleAPIRODC)
+		r.Post("/sites/controllers/{name}/rodc", s.handleAPIRODC)
+		r.Put("/sites/controllers/{name}/rodc", s.handleAPIRODC)
+		r.Get("/sites/controllers/{name}/rodc/authentications", s.handleAPIRODCAuth)
 		r.Post("/sites/controllers/{name}/move", s.handleAPIMoveController)
 		r.Get("/sites/links", s.handleAPISiteLinks)
 		r.Post("/sites/links", s.handleAPISiteLinks)

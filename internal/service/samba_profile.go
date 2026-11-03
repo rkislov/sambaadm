@@ -99,6 +99,11 @@ func patchGlobal(raw []byte, params map[string]string) ([]byte, error) {
 	return []byte(strings.Join(out, "\n")), nil
 }
 func (s *ShareService) PlanProfile(ctx context.Context, profile string) (*SambaProfilePlan, error) {
+	if s.helpers != nil {
+		var out SambaProfilePlan
+		e := s.hostCall(ctx, "samba.profile.plan", HostOperation{Name: profile}, &out)
+		return &out, e
+	}
 	raw, e := os.ReadFile(s.cfg.SMBConf)
 	if e != nil {
 		return nil, e
@@ -130,6 +135,10 @@ func (s *ShareService) PlanProfile(ctx context.Context, profile string) (*SambaP
 	return plan, nil
 }
 func (s *ShareService) ApplyProfile(ctx context.Context, profile, revision, actor, ip string) (backup string, err error) {
+	if s.helpers != nil {
+		err = s.hostCall(ctx, "samba.profile.apply", HostOperation{Name: profile, Revision: revision, Actor: actor, IP: ip}, &backup)
+		return backup, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	defer func() {

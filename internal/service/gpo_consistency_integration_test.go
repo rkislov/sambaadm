@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	smb2 "github.com/cloudsoda/go-smb2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,9 +82,9 @@ func TestIntegrationConsistencyAcrossTwoDCs(t *testing.T) {
 	remote := *s.GPO.remote
 	remote.Host = dc2.DNS
 	t.Cleanup(func() {
-		remote.SYSVOL(context.Background(), s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error { return sh.RemoveAll(base) })
+		s.GPO.sysvol(context.Background(), &remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error { return sh.RemoveAll(base) })
 	})
-	if e = remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error { return installPolicySnapshot(sh, base, snapshot) }); e != nil {
+	if e = s.GPO.sysvol(ctx, &remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error { return installPolicySnapshot(sh, base, snapshot) }); e != nil {
 		t.Fatal(e)
 	}
 	report, e = s.GPO.CheckConsistency(ctx, id, ConsistencyInput{Reference: dc1.DNS})
@@ -96,7 +95,7 @@ func TestIntegrationConsistencyAcrossTwoDCs(t *testing.T) {
 		t.Fatalf("matching DC snapshots: %+v", report.Controllers)
 	}
 	// Keep the same Version but change bytes and DACL on one replica.
-	e = remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, &remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		store := &smbPolicyStore{share: sh, base: strings.ReplaceAll(base, `\`, "/")}
 		data, e := readPolicyFile(store, "GPT.INI")
 		if e != nil {
@@ -139,7 +138,7 @@ func TestIntegrationConsistencyAcrossTwoDCs(t *testing.T) {
 		t.Fatalf("drift not detected: %+v", report)
 	}
 	// A pending journal prevents a healthy report even if content is otherwise readable.
-	if e = remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error { return sh.WriteFile(base+`\`+editorJournal, []byte("unfinished"), 0600) }); e != nil {
+	if e = s.GPO.sysvol(ctx, &remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error { return sh.WriteFile(base+`\`+editorJournal, []byte("unfinished"), 0600) }); e != nil {
 		t.Fatal(e)
 	}
 	report, e = s.GPO.CheckConsistency(ctx, id, ConsistencyInput{Reference: dc1.DNS})

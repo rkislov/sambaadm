@@ -9,6 +9,7 @@ import (
 	"github.com/go-ldap/ldap/v3"
 
 	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
@@ -31,6 +32,7 @@ type GPOService struct {
 	audit         *audit.Logger
 	gpoCfg        config.GPOConfig
 	jobs          *jobStore
+	helpers       *agent.Client
 }
 
 // List returns GPOs through LDAP.

@@ -12,12 +12,14 @@ import (
 )
 
 type repairTestVolume struct {
-	failStage     bool
-	root          *os.Root
-	acl           map[string][]byte
-	baseACL       []byte
-	renames, fail int
-	uncertain     bool
+	failStage           bool
+	root                *os.Root
+	acl                 map[string][]byte
+	baseACL             []byte
+	renames, fail       int
+	uncertain           bool
+	removes, failRemove int
+	uncertainRemove     bool
 }
 type repairTestTree struct {
 	v    *repairTestVolume
@@ -68,11 +70,34 @@ func (s *repairTestTree) OpenFile(n string, f int, m os.FileMode) (policyFile, e
 	}
 	return file, e
 }
-func (s *repairTestTree) Remove(n string) error               { return s.v.root.Remove(s.p(n)) }
+func (s *repairTestTree) Remove(n string) error {
+	s.v.removes++
+	if s.v.removes == s.v.failRemove && !s.v.uncertainRemove {
+		return errors.New("injected remove failure")
+	}
+	if e := s.v.root.Remove(s.p(n)); e != nil {
+		return e
+	}
+	if s.v.removes == s.v.failRemove {
+		return errors.New("remove succeeded but response lost")
+	}
+	return nil
+}
 func (s *repairTestTree) Mkdir(n string, m os.FileMode) error { return s.v.Mkdir(s.p(n)) }
-func (s *repairTestTree) Rename(a, b string) error            { return s.v.root.Rename(s.p(a), s.p(b)) }
-func (s *repairTestTree) GetACL(n string) ([]byte, error)     { return s.v.acl[s.p(n)], nil }
-func (s *repairTestTree) SetACL(n string, b []byte) error     { s.v.acl[s.p(n)] = b; return nil }
+func (s *repairTestTree) Rename(a, b string) error {
+	if e := s.v.root.Rename(s.p(a), s.p(b)); e != nil {
+		return e
+	}
+	for p, acl := range s.v.acl {
+		if p == s.p(a) || strings.HasPrefix(p, s.p(a)+"/") {
+			delete(s.v.acl, p)
+			s.v.acl[s.p(b)+strings.TrimPrefix(p, s.p(a))] = acl
+		}
+	}
+	return nil
+}
+func (s *repairTestTree) GetACL(n string) ([]byte, error) { return s.v.acl[s.p(n)], nil }
+func (s *repairTestTree) SetACL(n string, b []byte) error { s.v.acl[s.p(n)] = b; return nil }
 func repairFixture(t *testing.T, missing bool) (*repairTestVolume, *os.Root, *RepairRecord) {
 	t.Helper()
 	_, local, acl, _ := setupDelegationTx(t)

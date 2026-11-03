@@ -7,7 +7,7 @@ on:
     inputs:
       version:
         description: Dry-run package version (does not create a release or tag)
-        default: '0.31.0'
+        default: '0.32.0'
         required: true
         type: string
 
@@ -42,10 +42,12 @@ jobs:
           make release
           cp deploy/sambaadm-package dist/sambaadm-package
           cp docs/alt-install.md dist/sambaadm-alt-install.md
-          tar --exclude='*.docx' -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs
+          cp docs/admin-guide/sambaadm-admin-guide.docx "dist/sambaadm-admin-guide-${VERSION#v}.docx"
+          cp docs/user-guide/sambaadm-user-guide.docx "dist/sambaadm-user-guide-${VERSION#v}.docx"
+          tar -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs configs deploy
       - name: Verify static Linux binaries
         run: |
-          for binary in dist/sambaadm-linux-*; do
+          for binary in dist/sambaadm-linux-* dist/sambaadm-helper-linux-*; do
             file "$binary"
             if readelf -lW "$binary" | grep -Eq 'INTERP|DYNAMIC'; then
               echo 'Linux release must not depend on a dynamic loader or glibc'
@@ -73,6 +75,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: release-binaries
@@ -89,6 +92,8 @@ jobs:
           version=${VERSION#v}
           test -s "dist/sambaadm-$version-alt1.x86_64.rpm"
           test -s "dist/sambaadm-$version-alt1.aarch64.rpm"
+          test -s "dist/sambaadm-helper-$version-alt1.x86_64.rpm"
+          test -s "dist/sambaadm-helper-$version-alt1.aarch64.rpm"
           cd dist
           sha256sum sambaadm-* > SHA256SUMS
           sha256sum -c SHA256SUMS
@@ -103,4 +108,4 @@ jobs:
         with:
           files: dist/*
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body_path: docs/releases/${{ github.ref_name }}.md

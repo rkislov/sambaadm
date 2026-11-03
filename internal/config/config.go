@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sambaadm/internal/agent"
 	"strings"
 	"time"
 
@@ -11,14 +12,29 @@ import (
 
 // Config holds all runtime settings. Priority: flags > ENV > file > defaults.
 type Config struct {
-	Source  string        `mapstructure:"-"`
-	Server  ServerConfig  `mapstructure:"server"`
-	LDAP    LDAPConfig    `mapstructure:"ldap"`
-	Auth    AuthConfig    `mapstructure:"auth"`
-	Audit   AuditConfig   `mapstructure:"audit"`
-	Logging LoggingConfig `mapstructure:"logging"`
-	GPO     GPOConfig     `mapstructure:"gpo"`
-	Samba   SambaConfig   `mapstructure:"samba"`
+	Source  string             `mapstructure:"-"`
+	Server  ServerConfig       `mapstructure:"server"`
+	LDAP    LDAPConfig         `mapstructure:"ldap"`
+	Auth    AuthConfig         `mapstructure:"auth"`
+	Audit   AuditConfig        `mapstructure:"audit"`
+	Logging LoggingConfig      `mapstructure:"logging"`
+	GPO     GPOConfig          `mapstructure:"gpo"`
+	Samba   SambaConfig        `mapstructure:"samba"`
+	Helpers agent.Config       `mapstructure:"helpers"`
+	Helper  HelperServerConfig `mapstructure:"helper"`
+}
+
+type HelperServerConfig struct {
+	Node         string    `mapstructure:"node"`
+	TrustedKeys  []string  `mapstructure:"trusted_keys"`
+	Listen       string    `mapstructure:"listen"`
+	TLS          TLSConfig `mapstructure:"tls"`
+	SYSVOLPrefix string    `mapstructure:"sysvol_prefix"`
+	AuthLog      string    `mapstructure:"auth_log"`
+	PasswordFile string    `mapstructure:"password_file"`
+	BackupRoot   string    `mapstructure:"backup_root"`
+	StateDir     string    `mapstructure:"state_dir"`
+	ADMXRoot     string    `mapstructure:"admx_root"`
 }
 
 // SambaConfig controls local smb.conf / file-share administration.
@@ -35,6 +51,8 @@ type GPOConfig struct {
 	DelegationStateDir string `mapstructure:"delegation_state_dir"`
 	ScriptBackupKeep   int    `mapstructure:"script_backup_keep"`
 	ScriptBackupMaxMiB int    `mapstructure:"script_backup_max_mib"`
+	RepairBackupKeep   int    `mapstructure:"repair_backup_keep"`
+	RepairBackupMaxMiB int    `mapstructure:"repair_backup_max_mib"`
 	SMBPort            int    `mapstructure:"smb_port"`
 	EditorEnabled      bool   `mapstructure:"editor_enabled"`
 	ADMXPath           string `mapstructure:"admx_path"`
@@ -118,10 +136,17 @@ func Load(cfgFile string) (*Config, error) {
 		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
 	}
 	cfg.Source = v.ConfigFileUsed()
+	if cfg.GPO.RepairBackupKeep < 1 || cfg.GPO.RepairBackupKeep > 100 || cfg.GPO.RepairBackupMaxMiB < 1 || cfg.GPO.RepairBackupMaxMiB > 10240 {
+		return nil, fmt.Errorf("gpo.repair_backup_keep must be 1..100 and repair_backup_max_mib 1..10240")
+	}
+	if e := cfg.Helpers.Validate(); e != nil {
+		return nil, e
+	}
 	return &cfg, nil
 }
 
 func setDefaults(v *viper.Viper) {
+	v.SetDefault("helper.state_dir", "/var/lib/sambaadm-helper")
 	for _, key := range []string{"ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file", "logging.file"} {
 		v.SetDefault(key, "")
 	}
@@ -129,6 +154,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gpo.delegation_state_dir", "/var/lib/sambaadm/delegation")
 	v.SetDefault("gpo.script_backup_keep", 10)
 	v.SetDefault("gpo.script_backup_max_mib", 64)
+	v.SetDefault("gpo.repair_backup_keep", 10)
+	v.SetDefault("gpo.repair_backup_max_mib", 512)
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)
 	v.SetDefault("ldap.uri", "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi")

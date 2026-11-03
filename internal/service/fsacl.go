@@ -72,12 +72,27 @@ func newFSACLService(auditLog *audit.Logger, shares *ShareService) *FSACLService
 
 // Get returns mode/owner, ACL entries and xattrs for a path.
 func (s *FSACLService) Get(ctx context.Context, path string) (*PathACL, error) {
+	if s.shares.helpers != nil {
+		var out PathACL
+		e := s.shares.hostCall(ctx, "acl.get", HostOperation{Path: path}, &out)
+		return &out, e
+	}
 	path = filepath.Clean(path)
 	if err := s.shares.validatePath(path); err != nil {
 		return nil, err
 	}
-	info, err := os.Lstat(path)
-	out := &PathACL{Path: path}
+	original := path
+	pin, err := s.shares.pinPath(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &PathACL{Path: original}, nil
+		}
+		return nil, err
+	}
+	defer pin.Close()
+	path = pin.Path
+	info, err := pin.File.Stat()
+	out := &PathACL{Path: original}
 	if err != nil {
 		if os.IsNotExist(err) {
 			return out, nil
@@ -109,15 +124,24 @@ func (s *FSACLService) Get(ctx context.Context, path string) (*PathACL, error) {
 
 // Set applies chown/chmod/setfacl/setfattr.
 func (s *FSACLService) Set(ctx context.Context, in SetACLInput, actor, ip string) (*PathACL, error) {
+	if s.shares.helpers != nil {
+		var out PathACL
+		e := s.shares.hostCall(ctx, "acl.set", HostOperation{Path: in.Path, Input: hostInput(in), Actor: actor, IP: ip}, &out)
+		return &out, e
+	}
 	path := filepath.Clean(strings.TrimSpace(in.Path))
 	if err := s.shares.validatePath(path); err != nil {
 		s.audit.Failure(actor, "acl.set", path, ip, err)
 		return nil, err
 	}
-	if _, err := os.Lstat(path); err != nil {
-		s.audit.Failure(actor, "acl.set", path, ip, err)
+	original := path
+	pin, err := s.shares.pinPath(path)
+	if err != nil {
+		s.audit.Failure(actor, "acl.set", original, ip, err)
 		return nil, err
 	}
+	defer pin.Close()
+	path = pin.Path
 	if in.Owner != "" {
 		if err := chownPath(path, in.Owner); err != nil {
 			s.audit.Failure(actor, "acl.set", path, ip, err)
@@ -198,7 +222,7 @@ func (s *FSACLService) Set(ctx context.Context, in SetACLInput, actor, ip string
 		}
 	}
 	s.audit.Success(actor, "acl.set", path, ip)
-	return s.Get(ctx, path)
+	return s.Get(ctx, original)
 }
 
 // BuildACLSpec builds setfacl -m spec from kind/name/perms (+ optional default).
@@ -247,7 +271,7 @@ func normalizePerms(p string) string {
 func applyACL(path, acl string, recursive bool) error {
 	args := []string{"-m", acl}
 	if recursive {
-		args = append(args, "-R")
+		args = append(args, "-R", "-H")
 	}
 	args = append(args, path)
 	cmd := exec.Command("setfacl", args...)
@@ -270,7 +294,7 @@ func applyDefaultACL(path, acl string) error {
 func clearACL(path string, recursive bool) error {
 	args := []string{"-b"}
 	if recursive {
-		args = append(args, "-R")
+		args = append(args, "-R", "-H")
 	}
 	args = append(args, path)
 	cmd := exec.Command("setfacl", args...)
@@ -293,7 +317,7 @@ func clearDefaultACL(path string) error {
 func removeACL(path, spec string, recursive bool) error {
 	args := []string{"-x", spec}
 	if recursive {
-		args = append(args, "-R")
+		args = append(args, "-R", "-H")
 	}
 	args = append(args, path)
 	cmd := exec.Command("setfacl", args...)

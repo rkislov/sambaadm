@@ -48,6 +48,11 @@ func newPrinterService(auditLog *audit.Logger, shares *ShareService) *PrinterSer
 
 // List merges smb.conf printable shares with CUPS queues from lpstat.
 func (s *PrinterService) List(ctx context.Context) ([]Printer, error) {
+	if s.shares.helpers != nil {
+		var out []Printer
+		e := s.shares.hostCall(ctx, "printers.list", HostOperation{}, &out)
+		return out, e
+	}
 	byName := map[string]*Printer{}
 
 	doc, err := smbconf.ParseFile(s.shares.cfg.SMBConf)
@@ -100,6 +105,11 @@ func (s *PrinterService) List(ctx context.Context) ([]Printer, error) {
 
 // Create adds a printable share; creates spool directory when requested.
 func (s *PrinterService) Create(ctx context.Context, in CreatePrinterInput, actor, ip string) (*Printer, error) {
+	if s.shares.helpers != nil {
+		var out Printer
+		e := s.shares.hostCall(ctx, "printers.create", HostOperation{Name: in.Name, Input: hostInput(in), Actor: actor, IP: ip}, &out)
+		return &out, e
+	}
 	name := strings.TrimSpace(in.Name)
 	if err := validateShareName(name); err != nil {
 		s.audit.Failure(actor, "printer.create", name, ip, err)
@@ -140,10 +150,12 @@ func (s *PrinterService) Create(ctx context.Context, in CreatePrinterInput, acto
 		if in.Mode != "" {
 			mode = in.Mode
 		}
-		if err := ensureDir(path, mode, in.Owner); err != nil {
+		pin, err := s.shares.prepareDir(path, mode, in.Owner)
+		if err != nil {
 			s.audit.Failure(actor, "printer.create", name, ip, err)
 			return nil, err
 		}
+		defer pin.Close()
 	}
 
 	browseable := true
@@ -186,6 +198,9 @@ func (s *PrinterService) Create(ctx context.Context, in CreatePrinterInput, acto
 
 // Delete removes a printable share from smb.conf.
 func (s *PrinterService) Delete(ctx context.Context, name, actor, ip string) error {
+	if s.shares.helpers != nil {
+		return s.shares.hostCall(ctx, "printers.delete", HostOperation{Name: name, Actor: actor, IP: ip}, nil)
+	}
 	if strings.EqualFold(name, "printers") || strings.EqualFold(name, "print$") {
 		err := fmt.Errorf("refusing to delete built-in %q", name)
 		s.audit.Failure(actor, "printer.delete", name, ip, err)

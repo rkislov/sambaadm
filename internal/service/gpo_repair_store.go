@@ -43,13 +43,18 @@ type RepairRecord struct {
 	Before, After                                         *repairSnapshot
 	Stage                                                 string
 	Attempts                                              int
+	Stages                                                []string            `json:",omitempty"`
+	Cleanup                                               []repairCleanupTree `json:",omitempty"`
 }
 type RepairSummary struct {
-	ID      string    `json:"id"`
-	Source  string    `json:"source"`
-	Target  string    `json:"target"`
-	State   string    `json:"state"`
-	Created time.Time `json:"created"`
+	ID        string    `json:"id"`
+	Source    string    `json:"source"`
+	Target    string    `json:"target"`
+	State     string    `json:"state"`
+	Created   time.Time `json:"created"`
+	Bytes     int64     `json:"bytes"`
+	Protected bool      `json:"protected"`
+	Prunable  bool      `json:"prunable"`
 }
 type RepairACLChange struct {
 	Path                                             string `json:"path"`
@@ -66,6 +71,7 @@ type RepairPlan struct {
 	Record     string                  `json:"record,omitempty"`
 	Changes    []ConsistencyDifference `json:"changes"`
 	Warnings   []string                `json:"warnings"`
+	Cleanup    []RepairCleanupInfo     `json:"cleanup,omitempty"`
 	record     *RepairRecord
 }
 type RepairResult struct {
@@ -218,8 +224,17 @@ func readRepair(root *os.Root, id string) (*RepairRecord, error) {
 	if e = json.Unmarshal(raw, r); e != nil {
 		return nil, e
 	}
-	if (r.State != "pending" && r.State != "complete" && r.State != "rolled-back") || (r.Direction != "complete" && r.Direction != "rollback") || (r.Stage != "" && (!strings.HasPrefix(r.Stage, ".sambaadm-repair-"+r.ID+"-") || strings.ContainsAny(r.Stage, `/\:`))) {
+	if (r.State != "pending" && r.State != "complete" && r.State != "rolled-back" && r.State != "pruning" && r.State != "pruned") || (r.Direction != "complete" && r.Direction != "rollback") || (r.Stage != "" && !validRepairStage(r.ID, r.Stage)) {
 		return nil, fmt.Errorf("invalid repair journal state")
+	}
+	if e := validateRepairCleanup(r); e != nil {
+		return nil, e
+	}
+	if r.State == "pruned" {
+		if r.Format != 1 || r.ID != id || r.Before != nil || r.After != nil {
+			return nil, fmt.Errorf("invalid pruned repair")
+		}
+		return r, nil
 	}
 	if r.Format != 1 || r.ID != id || r.After == nil || len(r.After.Signature) != 64 || repairSignature(r.After) != r.After.Signature || (r.Before != nil && (len(r.Before.Signature) != 64 || repairSignature(r.Before) != r.Before.Signature)) {
 		return nil, fmt.Errorf("invalid repair snapshot")
@@ -262,10 +277,19 @@ func repairRecords(root *os.Root, gpo string) ([]RepairSummary, error) {
 			return nil, e
 		}
 		if r.GPO == gpo {
-			out = append(out, RepairSummary{r.ID, r.Source, r.Target, r.State, r.Created})
+			st, e := root.Lstat(f.Name())
+			if e != nil {
+				return nil, e
+			}
+			out = append(out, RepairSummary{ID: r.ID, Source: r.Source, Target: r.Target, State: r.State, Created: r.Created, Bytes: st.Size()})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Created.After(out[j].Created) })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Created.Equal(out[j].Created) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].Created.After(out[j].Created)
+	})
 	return out, nil
 }
 

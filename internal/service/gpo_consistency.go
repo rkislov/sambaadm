@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 )
 
@@ -121,6 +120,10 @@ func scanConsistencyTree(ctx context.Context, root policyStore) (*consistencySna
 
 // Repair must also be able to preserve a target with a malformed/missing GPT.INI.
 func scanPolicyTree(ctx context.Context, root policyStore, allowBadGPT bool) (*consistencySnapshot, error) {
+	return scanPolicyTreeMetadata(ctx, root, allowBadGPT, false)
+}
+
+func scanPolicyTreeMetadata(ctx context.Context, root policyStore, allowBadGPT, includeMetadata bool) (*consistencySnapshot, error) {
 	secure, ok := root.(policySecurityStore)
 	if !ok {
 		return nil, fmt.Errorf("SYSVOL ACL read unavailable")
@@ -208,7 +211,7 @@ func scanPolicyTree(ctx context.Context, root policyStore, allowBadGPT bool) (*c
 			sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 			for _, e := range entries {
 				n := e.Name()
-				if name == "." && strings.HasPrefix(strings.ToLower(n), ".sambaadm-") {
+				if !includeMetadata && name == "." && strings.HasPrefix(strings.ToLower(n), ".sambaadm-") {
 					if strings.EqualFold(n, editorJournal) {
 						snap.Pending = true
 					}
@@ -297,7 +300,7 @@ func (s *GPOService) probeConsistency(ctx context.Context, guid, base string, dc
 	}
 	peer := s.ldap.ServicePeer(uri)
 	defer peer.Close()
-	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg}
+	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers:s.helpers}
 	var before *ldap.Entry
 	conn, e := peer.Conn(ctx)
 	if e == nil {
@@ -342,7 +345,7 @@ func (s *GPOService) probeConsistency(ctx context.Context, guid, base string, dc
 			out.Errors = append(out.Errors, "LDAP: "+er.Error())
 		}
 	}
-	e = remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.sysvol(ctx, &remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		out.SYSVOL = "error"
 		store := &smbPolicyStore{share: sh, base: strings.ReplaceAll(base, `\`, "/")}
 		first, err := scanConsistencyTree(ctx, store)

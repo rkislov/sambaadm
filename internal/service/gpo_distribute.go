@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"os"
-	"path/filepath"
 	"sambaadm/internal/adremote"
 	"strings"
 	"sync"
@@ -203,7 +201,7 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		UpdatedAt: time.Now().UTC(),
 	}
 
-	job.Steps = append(job.Steps, DistributeStep{ID: "resolve", Title: "Чтение GPO и SYSVOL по SMB", Status: StepPending})
+	job.Steps = append(job.Steps, DistributeStep{ID: "resolve", Title: "Чтение GPO и SYSVOL через helper", Status: StepPending})
 
 	for _, dc := range dcs {
 		host := dc.DNS
@@ -225,7 +223,7 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		if syncMode == "rsync" || syncMode == "smb" || syncMode == "both" {
 			job.Steps = append(job.Steps, DistributeStep{
 				ID:     "rsync-" + host,
-				Title:  "Копирование SYSVOL (SMB) → " + host,
+				Title:  "Копирование SYSVOL через helper → " + host,
 				Detail: "Policies/" + braceGUID(guid),
 				DC:     host,
 				Status: StepPending,
@@ -275,22 +273,9 @@ func (s *GPOService) runDistribute(jobID, local string) {
 	var snapshot policyBackup
 	var remotePath string
 	if err := s.runStep(jobID, "resolve", func() error {
-		tmp, e := os.MkdirTemp("", "sambaadm-distribute-")
-		if e != nil {
-			return e
-		}
-		defer os.RemoveAll(tmp)
-		if e = s.backupNative(ctx, job.GUID, tmp, job.Actor, ""); e != nil {
-			return e
-		}
-		data, e := os.ReadFile(filepath.Join(tmp, "policy", braceGUID(job.GUID), "sambaadm-backup.json"))
-		if e != nil {
-			return e
-		}
-		if e = json.Unmarshal(data, &snapshot); e != nil {
-			return e
-		}
-		entry, e := s.policyEntry(ctx, job.GUID)
+		var entry *ldap.Entry
+		var e error
+		snapshot, entry, e = s.captureNativeBackup(ctx, job.GUID)
 		if e != nil {
 			return e
 		}
@@ -313,7 +298,7 @@ func (s *GPOService) runDistribute(jobID, local string) {
 			}
 			remote := *s.remote
 			remote.Host = step.DC
-			return remote.SYSVOL(ctx, 445, func(share *smb2.Share) error { return installPolicySnapshot(share, remotePath, snapshot) })
+			return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error { return installPolicySnapshot(share, remotePath, snapshot) })
 		})
 		if err != nil {
 			fail(err.Error())
@@ -484,7 +469,7 @@ func randomJobID() string {
 }
 
 // Stage a complete policy before replacing the target; retain old files if swap fails.
-func installPolicySnapshot(share *smb2.Share, target string, snapshot policyBackup) error {
+func installPolicySnapshot(share *sysvolShare, target string, snapshot policyBackup) error {
 	if i := strings.LastIndex(target, "\\"); i > 0 {
 		if err := share.MkdirAll(target[:i], 0755); err != nil {
 			return err

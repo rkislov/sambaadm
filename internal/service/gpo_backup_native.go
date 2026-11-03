@@ -26,91 +26,109 @@ type policyBackup struct {
 
 var backupAttrs = []string{"displayName", "versionNumber", "flags", "gPCMachineExtensionNames", "gPCUserExtensionNames"}
 
+func (s *GPOService) captureNativeBackup(ctx context.Context, policy string) (backup policyBackup, entry *ldap.Entry, err error) {
+	err = func() error {
+		entry, err = s.policyEntry(ctx, policy)
+		if err != nil {
+			return err
+		}
+		remotePath, err := s.policyPath(ctx, entry)
+		if err != nil {
+			return err
+		}
+		meta, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: entry.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: backupAttrs})
+		if err != nil {
+			return err
+		}
+		realm, err := s.domainDNS(ctx)
+		if err != nil {
+			return err
+		}
+		backup = policyBackup{Format: 1, Domain: realm, Attributes: map[string][]string{}, Files: map[string][]byte{}, Permissions: map[string][]byte{}}
+		for _, a := range backupAttrs {
+			backup.Attributes[a] = meta.GetAttributeValues(a)
+		}
+		err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
+			var e error
+			backup.ACL, e = share.SecurityInfoRaw(remotePath, smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation)
+			if e != nil {
+				return e
+			}
+			total := int64(0)
+			var walk func(string) error
+			walk = func(rel string) error {
+				entries, e := share.ReadDir(remotePath + "\\" + strings.ReplaceAll(rel, "/", "\\"))
+				if e != nil {
+					return e
+				}
+				for _, f := range entries {
+					if strings.ContainsAny(f.Name(), "/\\") || f.Name() == "." || f.Name() == ".." || f.Mode()&os.ModeSymlink != 0 {
+						return fmt.Errorf("unsupported SYSVOL entry")
+					}
+					child := f.Name()
+					if rel != "" {
+						child = rel + "/" + child
+					}
+					if len(backup.Permissions) >= 10000 {
+						return fmt.Errorf("policy entry limit exceeded")
+					}
+					acl, e := share.SecurityInfoRaw(remotePath+"\\"+strings.ReplaceAll(child, "/", "\\"), smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation)
+					if e != nil {
+						return e
+					}
+					backup.Permissions[child] = acl
+					if f.IsDir() {
+						if strings.Count(child, "/") > 32 {
+							return fmt.Errorf("policy nesting too deep")
+						}
+						if e := walk(child); e != nil {
+							return e
+						}
+						continue
+					}
+					total += f.Size()
+					if total > 64<<20 || len(backup.Files) >= 10000 {
+						return fmt.Errorf("policy backup exceeds size limit")
+					}
+					data, e := share.ReadFile(remotePath + "\\" + strings.ReplaceAll(child, "/", "\\"))
+					if e != nil {
+						return e
+					}
+					backup.Files[child] = data
+				}
+				return nil
+			}
+			return walk("")
+		})
+		if err != nil {
+			return err
+		}
+		after, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: entry.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: backupAttrs})
+		if err != nil {
+			return err
+		}
+		if after.GetAttributeValue("versionNumber") != meta.GetAttributeValue("versionNumber") {
+			return fmt.Errorf("GPO changed during backup; retry")
+		}
+		return nil
+	}()
+	return
+}
+
 func (s *GPOService) backupNative(ctx context.Context, policy, path, actor, ip string) error {
 	if path == "" {
 		return fmt.Errorf("backup path required")
 	}
-	entry, err := s.policyEntry(ctx, policy)
+	backup, entry, err := s.captureNativeBackup(ctx, policy)
 	if err != nil {
 		return err
 	}
-	remotePath, err := s.policyPath(ctx, entry)
-	if err != nil {
-		return err
-	}
-	meta, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: entry.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: backupAttrs})
-	if err != nil {
-		return err
-	}
-	realm, err := s.domainDNS(ctx)
-	if err != nil {
-		return err
-	}
-	backup := policyBackup{Format: 1, Domain: realm, Attributes: map[string][]string{}, Files: map[string][]byte{}, Permissions: map[string][]byte{}}
-	for _, a := range backupAttrs {
-		backup.Attributes[a] = meta.GetAttributeValues(a)
-	}
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
-		var e error
-		backup.ACL, e = share.SecurityInfoRaw(remotePath, smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation)
-		if e != nil {
-			return e
+	if s.helpers != nil {
+		e := s.helpers.Call(ctx, s.helpers.Config.HostNode, "backup.store", HostOperation{Path: path, Name: entry.GetAttributeValue("name"), Input: hostInput(backup), Actor: actor, IP: ip}, nil)
+		if e == nil {
+			s.audit.Success(actor, "gpo.backup", entry.DN+" -> "+path, ip)
 		}
-		total := int64(0)
-		var walk func(string) error
-		walk = func(rel string) error {
-			entries, e := share.ReadDir(remotePath + "\\" + strings.ReplaceAll(rel, "/", "\\"))
-			if e != nil {
-				return e
-			}
-			for _, f := range entries {
-				if strings.ContainsAny(f.Name(), "/\\") || f.Name() == "." || f.Name() == ".." || f.Mode()&os.ModeSymlink != 0 {
-					return fmt.Errorf("unsupported SYSVOL entry")
-				}
-				child := f.Name()
-				if rel != "" {
-					child = rel + "/" + child
-				}
-				if len(backup.Permissions) >= 10000 {
-					return fmt.Errorf("policy entry limit exceeded")
-				}
-				acl, e := share.SecurityInfoRaw(remotePath+"\\"+strings.ReplaceAll(child, "/", "\\"), smb2.OwnerSecurityInformation|smb2.GroupSecurityInformation|smb2.DACLSecurityInformation)
-				if e != nil {
-					return e
-				}
-				backup.Permissions[child] = acl
-				if f.IsDir() {
-					if strings.Count(child, "/") > 32 {
-						return fmt.Errorf("policy nesting too deep")
-					}
-					if e := walk(child); e != nil {
-						return e
-					}
-					continue
-				}
-				total += f.Size()
-				if total > 64<<20 || len(backup.Files) >= 10000 {
-					return fmt.Errorf("policy backup exceeds size limit")
-				}
-				data, e := share.ReadFile(remotePath + "\\" + strings.ReplaceAll(child, "/", "\\"))
-				if e != nil {
-					return e
-				}
-				backup.Files[child] = data
-			}
-			return nil
-		}
-		return walk("")
-	})
-	if err != nil {
-		return err
-	}
-	after, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: entry.DN, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: backupAttrs})
-	if err != nil {
-		return err
-	}
-	if after.GetAttributeValue("versionNumber") != meta.GetAttributeValue("versionNumber") {
-		return fmt.Errorf("GPO changed during backup; retry")
+		return e
 	}
 	dest := filepath.Join(path, "policy", entry.GetAttributeValue("name"))
 	if err = os.MkdirAll(dest, 0700); err != nil {
@@ -136,21 +154,29 @@ func (s *GPOService) backupNative(ctx context.Context, policy, path, actor, ip s
 	return nil
 }
 func (s *GPOService) restoreNative(ctx context.Context, name, path, actor, ip string) error {
-	f, err := os.Open(filepath.Join(path, "sambaadm-backup.json"))
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return err
-	}
-	if info.Size() > 100<<20 {
-		return fmt.Errorf("backup too large")
-	}
 	var b policyBackup
-	if err = json.NewDecoder(f).Decode(&b); err != nil {
-		return err
+	var err error
+	if s.helpers != nil {
+		err = s.helpers.Call(ctx, s.helpers.Config.HostNode, "backup.load", HostOperation{Path: path}, &b)
+		if err != nil {
+			return err
+		}
+	} else {
+		f, err := os.Open(filepath.Join(path, "sambaadm-backup.json"))
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		info, err := f.Stat()
+		if err != nil {
+			return err
+		}
+		if info.Size() > 100<<20 {
+			return fmt.Errorf("backup too large")
+		}
+		if err = json.NewDecoder(f).Decode(&b); err != nil {
+			return err
+		}
 	}
 	if b.Format != 1 {
 		return fmt.Errorf("unsupported backup format")
@@ -193,7 +219,7 @@ func (s *GPOService) restoreNative(ctx context.Context, name, path, actor, ip st
 	if err != nil {
 		return err
 	}
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
 		for name, data := range b.Files {
 			full := remotePath + "\\" + strings.ReplaceAll(name, "/", "\\")
 			i := strings.LastIndex(full, "\\")
@@ -228,7 +254,7 @@ func (s *GPOService) restoreNative(ctx context.Context, name, path, actor, ip st
 	return nil
 }
 
-func applySnapshotPermissions(share *smb2.Share, root string, b policyBackup) error {
+func applySnapshotPermissions(share *sysvolShare, root string, b policyBackup) error {
 	paths := make([]string, 0, len(b.Permissions))
 	for p := range b.Permissions {
 		paths = append(paths, p)

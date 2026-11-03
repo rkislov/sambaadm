@@ -18,7 +18,7 @@
 apt-get update
 apt-get install bash coreutils tar util-linux shadow-utils systemd
 # Скачайте sambaadm-package вместе с RPM из того же релиза:
-sudo bash ./sambaadm-package install ./sambaadm-0.31.0-alt1.x86_64.rpm
+sudo bash ./sambaadm-package install ./sambaadm-0.32.0-alt1.x86_64.rpm
 sudoedit /etc/sambaadm/config.yaml
 sudoedit /etc/sambaadm/env
 sudo systemctl enable --now sambaadm.service
@@ -41,7 +41,7 @@ root:sambaadm. Пакетный пример слушает **127.0.0.1:8080**. 
 ## Обновление
 
 ```sh
-sudo sambaadm-package update ./sambaadm-0.31.0-alt1.x86_64.rpm
+sudo sambaadm-package update ./sambaadm-0.32.0-alt1.x86_64.rpm
 # Если предыдущая версия устанавливалась без helper:
 sudo sambaadm-package update ./new.rpm --previous-rpm ./installed-version.rpm
 ```
@@ -89,26 +89,13 @@ RPM (`--oldpackage`), заменяет `/etc/sambaadm` и overrides unit их с
 БД RPM, остановите сервис и используйте завершённый снимок вручную. Не применяйте
 `--nodeps`/`--noscripts`/`--force` для обхода ошибок.
 
-## Права сервиса и локальный файловый сервер
+## Права сервиса и управляемый файловый сервер
 
-Unit работает как `sambaadm`, с `ProtectSystem=strict`, `ProtectHome=true`,
-`NoNewPrivileges=true`. Запись разрешена в `/var/lib/sambaadm` и `/var/log/sambaadm`.
-Пользователь не получает root/sudo. Удалённые AD-операции используют служебную
-доменную учётную запись и не требуют локальных Samba/CUPS-утилит.
+Основной unit работает как `sambaadm`, с `ProtectSystem=strict`, `ProtectHome=true`, `NoNewPrivileges=true`. Запись разрешена в `/var/lib/sambaadm` и `/var/log/sambaadm`. Пользователь не получает root/sudo. LDAP, DNS и DRS используют служебную доменную запись приложения.
 
-Для локальных шаров создайте ограниченный systemd override:
+Начиная с v0.32.0 операции ОС, файлов и SYSVOL выполняет отдельный `sambaadm-helper`, в том числе на основном сервере. Установите соответствующий RPM на каждый управляемый Linux-узел, настройте доверенный открытый ключ и SSH либо HTTPS, затем зарегистрируйте узлы в `helpers.nodes`. Подробный порядок — [инструкция helper](helper.md) и [руководство администратора](admin.md).
 
-```ini
-# systemctl edit sambaadm.service
-[Service]
-ReadWritePaths=/etc/samba /srv/samba
-```
-
-Разрешение записи в sandbox само по себе не выдаёт POSIX-права. Настройте ACL на
-нужные каталоги отдельно; chown произвольных владельцев, reload Samba и администрирование
-CUPS могут требовать других привилегий. Не выдавайте приложению неограниченный sudo.
-Веб-диагностика показывает доступность локальных утилит/путей. Изменение overrides:
-`systemctl daemon-reload` и `systemctl restart sambaadm`.
+Для нестандартных каталогов шаров настройте права ОС и `ReadWritePaths` в override **sambaadm-helper.service**, не основного unit. Права закрытого ключа подписи на управляющем сервере — 0600, конфигурация и состояние helper приватны для root. Обновление основного RPM не устанавливает и не обновляет helper на удалённых серверах. `sambaadm-package` управляет пакетом sambaadm; helper обновляйте отдельно через RPM/apt с сохранением конфигурации и контролируемым перезапуском HTTPS-службы.
 
 ## Переход с deploy/install.sh
 
@@ -125,11 +112,11 @@ Helper откажется устанавливать RPM поверх неё, ч
 
 ```sh
 # На рабочей машине с Go и Docker, внутри будет ALT p10:
-make rpm-alt VERSION=0.31.0 RPM_ARCH=amd64
-make rpm-alt VERSION=0.31.0 RPM_ARCH=arm64
+make rpm-alt VERSION=0.32.0 RPM_ARCH=amd64
+make rpm-alt VERSION=0.32.0 RPM_ARCH=arm64
 # На ALT с готовым статическим ELF и rpm-build, file и systemd-analyze:
 mkdir -p dist
-bash packaging/alt/build-rpm.sh 0.31.0 ./sambaadm-linux-amd64 ./dist
+bash packaging/alt/build-rpm.sh 0.32.0 ./sambaadm-linux-amd64 ./dist
 ```
 
 Это пакет бинарной поставки, не исходный пакет Sisyphus: Go-бинарник собран вне
@@ -168,7 +155,7 @@ docker build --build-arg 'ALT_APT_MIRRORS=http://mirror.example/altlinux http://
 Проверка без создания нового релиза:
 
 ```sh
-gh workflow run release.yml --ref main -f version=0.31.0
+gh workflow run release.yml --ref main -f version=0.32.0
 ```
 
 Ручной запуск только сохраняет `release-verified` в Actions artifacts. Публикация
@@ -194,3 +181,12 @@ GitHub Release выполняется при push числового тега `v
 Служебной записи нужны права создания/переименования каталогов в SYSVOL/Policies и установки владельцев, групп и DACL. Журнал с исходными и желаемыми данными хранится в `gpo.delegation_state_dir/repair` (0700, файлы 0600); включите его в резервное копирование. Исходный каталог сохраняется на DC. Автоматической очистки архивов нет: контролируйте свободное место. Откат RPM не откатывает изменения SYSVOL — используйте журнал исправления.
 
 Подробный порядок восстановления и ограничения приведены в docs/admin.md из архива документации. Приёмка на целевом домене ALT СП 10.2.2 остаётся отдельным шагом.
+
+
+## Обновление до v0.32.0
+
+Файловые операции теперь требуют настроенных helpers, прямой SMB из управляющего приложения не используется. Сначала подготовьте агенты на всех нужных DC и файловом сервере, сохраните прежнюю конфигурацию и журналы незавершённых операций, затем обновляйте основной пакет и добавляйте `helpers`. Без зарегистрированных узлов LDAP/DNS/DRS продолжают работать при наличии прав, но операции ОС/SYSVOL недоступны.
+
+Добавлены управление Password Replication Policy по каждому RODC, принудительное заполнение кэша отдельных пользователей/компьютеров и просмотр локального JSON-аудита Authentication через helper. Источник preload — настроенный записываемый DC. Добавлена очистка старых архивов исправления SYSVOL по предпросмотру; по таймеру они не удаляются.
+
+Релиз включает два Word-руководства и архив Markdown-инструкций с конфигурациями. Проверки выполнены на тестовом домене и ALT p10; это не приёмка реального домена или ALT СП 10.2.2.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sambaadm/internal/agent"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -207,7 +208,7 @@ func openServices() (*service.Services, func(), error) {
 			return nil, nil, err
 		}
 	}
-	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{Username: rootCfg.LDAP.Bind.User, Password: rootCfg.BindPassword, GPO: rootCfg.GPO, Samba: rootCfg.Samba})
+	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{Username: rootCfg.LDAP.Bind.User, Password: rootCfg.BindPassword, GPO: rootCfg.GPO, Samba: rootCfg.Samba, Helpers: &agent.Client{Config: rootCfg.Helpers}})
 	cleanup := func() {
 		_ = client.Close()
 		_ = auditLog.Close()
@@ -222,7 +223,7 @@ func openLocalServices() (*service.Services, func(), error) {
 		return nil, nil, err
 	}
 	client := ldapproto.NewClient(rootCfg.LDAP)
-	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{Username: rootCfg.LDAP.Bind.User, Password: rootCfg.BindPassword, GPO: rootCfg.GPO, Samba: rootCfg.Samba})
+	svcs := service.NewWithOptions(client, auditLog, service.ServiceOptions{Username: rootCfg.LDAP.Bind.User, Password: rootCfg.BindPassword, GPO: rootCfg.GPO, Samba: rootCfg.Samba, Helpers: &agent.Client{Config: rootCfg.Helpers}})
 	cleanup := func() {
 		_ = client.Close()
 		_ = auditLog.Close()

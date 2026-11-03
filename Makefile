@@ -10,6 +10,7 @@ LDFLAGS  := -s -w -X sambaadm/internal/version.Version=$(VERSION) -X sambaadm/in
 build:
 	@mkdir -p bin
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/sambaadm
+	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/sambaadm-helper ./cmd/sambaadm-helper
 
 test:
 	go test ./...
@@ -31,11 +32,15 @@ release:
 	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-darwin-arm64  ./cmd/sambaadm
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
 
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-helper-linux-amd64 ./cmd/sambaadm-helper
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-helper-linux-arm64 ./cmd/sambaadm-helper
+
 # Linux amd64 + Windows amd64 for GitHub Releases
 release-github:
 	@mkdir -p dist
 	GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-linux-amd64 ./cmd/sambaadm
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$(APP)-windows-amd64.exe ./cmd/sambaadm
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-helper-linux-amd64 ./cmd/sambaadm-helper
 	$(MAKE) checksums
 
 checksums:
@@ -62,3 +67,12 @@ rpm-alt:
 	$(MAKE) checksums
 
 .PHONY: rpm-alt
+
+rpm-helper-alt:
+	@mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(RPM_ARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-helper-linux-$(RPM_ARCH) ./cmd/sambaadm-helper
+	docker build --platform linux/$(RPM_ARCH) -t $(RPM_IMAGE)-$(RPM_ARCH) -f packaging/alt/Dockerfile .
+	docker run --rm --platform linux/$(RPM_ARCH) -v "$(CURDIR):/src" $(RPM_IMAGE)-$(RPM_ARCH) bash packaging/alt/build-helper-rpm.sh $(VERSION) /src/dist/sambaadm-helper-linux-$(RPM_ARCH) /src/dist
+	$(MAKE) checksums
+
+.PHONY: rpm-helper-alt

@@ -9,13 +9,12 @@ import (
 	"strings"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/google/uuid"
 )
 
 type smbRepairVolume struct {
-	share  *smb2.Share
+	share  *sysvolShare
 	parent string
 }
 
@@ -91,7 +90,7 @@ func (s *GPOService) withRepairDC(ctx context.Context, gpo, host string, fn func
 	}
 	peer := s.ldap.ServicePeer(uri)
 	defer peer.Close()
-	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg}
+	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers:s.helpers}
 	pc, e := peer.Conn(ctx)
 	if e != nil {
 		return e
@@ -114,7 +113,7 @@ func (s *GPOService) withRepairDC(ctx context.Context, gpo, host string, fn func
 		return e
 	}
 	base = strings.ReplaceAll(base, `\`, "/")
-	return remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error { return fn(other, entry, &smbRepairVolume{sh, path.Dir(base)}, base) })
+	return s.sysvol(ctx, &remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error { return fn(other, entry, &smbRepairVolume{sh, path.Dir(base)}, base) })
 }
 func validateRepair(in RepairInput) error {
 	switch in.Operation {
@@ -122,7 +121,7 @@ func validateRepair(in RepairInput) error {
 		if in.Source == "" || in.Target == "" || strings.EqualFold(in.Source, in.Target) || in.Record != "" {
 			return topologyBad("choose distinct source and target DCs")
 		}
-	case "complete", "rollback":
+	case "complete", "rollback", "prune":
 		if _, e := delegationRecordName(in.Record); e != nil {
 			return e
 		}
@@ -153,9 +152,13 @@ func (s *GPOService) RepairHistory(ctx context.Context, gpo string) ([]RepairSum
 		return nil, e
 	}
 	defer local.Close()
-	return repairRecords(local, braceGUID(gpo))
+	records, e := repairRecords(local, braceGUID(gpo))
+	return repairRetention(records, s.gpoCfg), e
 }
 func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string, in RepairInput) (*RepairPlan, error) {
+	if in.Operation == "prune" {
+		return s.buildRepairPrune(ctx, local, gpo, in)
+	}
 	if s.remote == nil {
 		return nil, fmt.Errorf("SYSVOL service credentials required")
 	}
@@ -224,7 +227,7 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 			return nil, e
 		}
 		for _, old := range records {
-			if old.State == "pending" && (strings.EqualFold(old.Target, r.Target) || strings.EqualFold(old.Target, r.Source)) {
+			if old.State == "pruning" || (old.State == "pending" && (strings.EqualFold(old.Target, r.Target) || strings.EqualFold(old.Target, r.Source))) {
 				return nil, fmt.Errorf("recover pending repair %s first", old.ID)
 			}
 		}
@@ -272,6 +275,9 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 		if r.GPO != braceGUID(gpo) {
 			return nil, topologyBad("record belongs to another GPO")
 		}
+		if r.State == "pruning" || r.State == "pruned" {
+			return nil, topologyBad("repair archive is being pruned or already pruned")
+		}
 		if r.State == "rolled-back" {
 			return nil, topologyBad("repair already rolled back")
 		}
@@ -283,6 +289,9 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 			return nil, e
 		}
 		for _, newer := range records {
+			if newer.State == "pruning" {
+				return nil, topologyBad("finish archive cleanup first")
+			}
 			if newer.ID != r.ID && strings.EqualFold(newer.Target, r.Target) && newer.Created.After(r.Created) && newer.State != "rolled-back" {
 				return nil, fmt.Errorf("recover or roll back newer repair %s first", newer.ID)
 			}
@@ -387,6 +396,8 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 		} else if in.Operation == "rollback" {
 			r.Direction = "rollback"
 			r.State = "pending"
+		} else if in.Operation == "prune" {
+			r.State = "pruning"
 		}
 		auditTarget = fmt.Sprintf("%s source=%s target=%s record=%s", gpo, r.Source, r.Target, r.ID)
 		// Both original and desired contents are flushed locally before any SMB write.
@@ -396,6 +407,9 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 		e = s.withRepairDC(ctx, gpo, r.Target, func(other *GPOService, entry *ldap.Entry, v repairVolume, base string) error {
 			if base != r.Base {
 				return ErrTopologyConflict
+			}
+			if in.Operation == "prune" {
+				return runRepairPrune(ctx, v, local, r)
 			}
 			check := func() error {
 				entry, e := readConsistencyLDAP(ctx, other, gpo)
@@ -421,6 +435,9 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 	}()
 	if err != nil {
 		return nil, err
+	}
+	if in.Operation == "prune" {
+		return out, nil
 	}
 	out.Report, err = s.CheckConsistency(ctx, gpo, ConsistencyInput{})
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	"time"
 	"unicode/utf16"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 )
 
@@ -39,7 +38,7 @@ func TestIntegrationGPUIStyleScriptEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	original := encodePolicyText("[Startup]\r\n0CmdLine=old.sh\r\n0Parameters=--old\r\n[Shutdown]\r\n0CmdLine=stop.sh\r\n0Parameters=--keep\r\n", true)
-	err = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		if err := sh.MkdirAll(base+`\Machine\Scripts`, 0755); err != nil {
 			return err
 		}
@@ -84,7 +83,7 @@ func TestIntegrationGPUIStyleScriptEdits(t *testing.T) {
 	if !strings.Contains(ext, registryCSE) || !strings.Contains(ext, "42B5FAAE-") {
 		t.Fatalf("other CSE lost: %s", ext)
 	}
-	err = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		registry, err := sh.ReadFile(base + `\Machine\Registry.pol`)
 		if err != nil || string(registry) != "registry sentinel" {
 			return fmt.Errorf("registry changed: %v", err)
@@ -142,7 +141,7 @@ func TestIntegrationGPOScriptsWithoutADMXEditor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		if err := sh.MkdirAll(base+`\Machine\Scripts`, 0755); err != nil {
 			return err
 		}

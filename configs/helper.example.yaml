@@ -1,0 +1,38 @@
+# Installed as /etc/sambaadm-helper/config.yaml (root:root 0600).
+# Configure separately on EACH managed host, including the main file server.
+helper:
+  node: dc1.example.com
+  trusted_keys: [] # e.g. /etc/sambaadm-helper/management.pub
+  listen: "127.0.0.1:8444"
+  tls:
+    cert: ""
+    key: ""
+  sysvol_prefix: "example.com/Policies"
+  backup_root: /var/lib/sambaadm-helper/backups
+  state_dir: /var/lib/sambaadm-helper
+  admx_root: "" # Optional allowed root for local ADMX paths supplied by sambaadm.
+  auth_log: /var/log/samba/auth.json
+  # Optional root-only, one-line domain password for loopback SMB on this host.
+  password_file: ""
+
+ldap:
+  uri: ldaps://127.0.0.1:636
+  base_dn: DC=example,DC=com
+  bind:
+    type: simple
+    user: sambaadm-sysvol@example.com
+    password_env: SAMBAADM_PASSWORD
+
+samba:
+  smb_conf: /etc/samba/smb.conf
+  shares_root: /srv/samba
+  create_mode: "0755"
+  allow_any_path: false
+  reload_cmd: smbcontrol all reload-config
+
+gpo:
+  admx_path: "" # Optional local ADMX catalog used by the helper.
+  smb_port: 445
+
+audit:
+  file: /var/log/sambaadm-helper/audit.log

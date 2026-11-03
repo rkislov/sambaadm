@@ -294,10 +294,12 @@ type Controller struct {
 	DN       string `json:"dn"`
 	NTDS     string `json:"ntds"`
 	Revision string `json:"revision"`
+	RODC     bool   `json:"rodc"`
+	Computer string `json:"computer,omitempty"`
 }
 
 func (s *SiteService) Controllers(ctx context.Context) ([]Controller, error) {
-	es, e := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: SitesContainerDN(s.ldap.BaseDN()), Filter: "(objectClass=nTDSDSA)", Attributes: []string{"cn"}})
+	es, e := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: SitesContainerDN(s.ldap.BaseDN()), Filter: "(objectClass=nTDSDSA)", Attributes: []string{"cn", "msDS-isRODC"}})
 	if e != nil {
 		return nil, e
 	}
@@ -307,7 +309,7 @@ func (s *SiteService) Controllers(ctx context.Context) ([]Controller, error) {
 		if e != nil {
 			return nil, e
 		}
-		server, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=server)", Attributes: []string{"cn", "dNSHostName", "uSNChanged"}})
+		server, e := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=server)", Attributes: []string{"cn", "dNSHostName", "uSNChanged", "serverReference"}})
 		if e != nil {
 			return nil, e
 		}
@@ -319,7 +321,7 @@ func (s *SiteService) Controllers(ctx context.Context) ([]Controller, error) {
 		if e != nil {
 			return nil, e
 		}
-		out = append(out, Controller{server.GetAttributeValue("cn"), server.GetAttributeValue("dNSHostName"), cnFromDN(site), dn, entry.DN, server.GetAttributeValue("uSNChanged")})
+		out = append(out, Controller{Name: server.GetAttributeValue("cn"), DNS: server.GetAttributeValue("dNSHostName"), Site: cnFromDN(site), DN: dn, NTDS: entry.DN, Revision: server.GetAttributeValue("uSNChanged"), RODC: strings.EqualFold(entry.GetAttributeValue("msDS-isRODC"), "TRUE"), Computer: server.GetAttributeValue("serverReference")})
 	}
 	return out, nil
 }

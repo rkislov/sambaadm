@@ -7,9 +7,9 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
     if [ -n "${SAMBAADM_JOIN_DC:-}" ]; then
         upstream=$(getent ahostsv4 "$SAMBAADM_JOIN_DC" | awk 'NR==1 {print $1}')
         printf 'nameserver %s\nsearch sambaadm.test\n' "$upstream" > /etc/resolv.conf
-        samba-tool domain join SAMBAADM.TEST DC --server="$SAMBAADM_JOIN_DC" \
+        samba-tool domain join SAMBAADM.TEST "${SAMBAADM_JOIN_ROLE:-DC}" --server="$SAMBAADM_JOIN_DC" \
           --username=Administrator --password="$SAMBAADM_LAB_PASSWORD" \
-          --dns-backend=SAMBA_INTERNAL --option='netbios name = DC2' \
+          --dns-backend=SAMBA_INTERNAL --option="netbios name = $(hostname -s)" \
           --option='vfs objects = dfs_samba4 acl_xattr xattr_tdb' \
           --option='xattr_tdb:file = /var/lib/samba/private/xattr.tdb' \
           --option='acl_xattr:ignore system acls = yes'
@@ -39,5 +39,8 @@ update-ca-certificates >/dev/null
 
 if [ -n "${SAMBAADM_RPC_PORT_RANGE:-}" ]; then
     exec samba --foreground --no-process-group --debug-stdout --option="rpc server dynamic port range = $SAMBAADM_RPC_PORT_RANGE"
+fi
+if [ "${SAMBAADM_JOIN_ROLE:-DC}" = RODC ]; then
+    exec samba --foreground --no-process-group --option='logging = file' --option='log level = 1 auth_json_audit:3@/var/log/samba/auth.json'
 fi
 exec samba --foreground --no-process-group --debug-stdout
