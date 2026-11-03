@@ -6,7 +6,6 @@ import (
 	"os"
 	"strings"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"sambaadm/internal/adremote"
 	ldapproto "sambaadm/internal/ldap"
@@ -90,7 +89,11 @@ func (s *DiagnosticService) checkSYSVOLPolicyPermissions(ctx context.Context, gp
 		return "skipped", "No GPO selected for SYSVOL write-open check", "Select a GPO. The existing GPT.INI is opened without truncation; no data is written."
 	}
 	err := s.withDiagnosticPolicy(ctx, gpo, func(_ *ldapproto.Client, _ *ldap.Entry, base string) error {
-		return s.diagnosticRemote().SYSVOL(ctx, s.cfg.GPO.SMBPort, func(sh *smb2.Share) error {
+		remote := s.diagnosticRemote()
+		client := ldapproto.NewServiceClient(s.cfg.LDAP, s.cfg.BindPassword)
+		defer client.Close()
+		svc := &GPOService{ldap: client, remote: remote, helpers: s.helpers}
+		return svc.sysvol(ctx, remote, s.cfg.GPO.SMBPort, func(sh *sysvolShare) error {
 			root := &smbPolicyStore{share: sh, base: strings.ReplaceAll(base, `\`, "/")}
 			gpt, err := policyChild(root, ".", "GPT.INI", false)
 			if err != nil {

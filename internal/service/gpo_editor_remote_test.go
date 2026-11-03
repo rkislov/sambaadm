@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"sambaadm/internal/policy"
 )
 
@@ -41,7 +40,7 @@ func TestIntegrationRemoteALTEditor(t *testing.T) {
 	template := `sambaadm.test\Policies\PolicyDefinitions\BaseALTSystemdUnits.admx`
 	var prior []byte
 	var existed bool
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		if e := sh.MkdirAll(`sambaadm.test\Policies\PolicyDefinitions`, 0755); e != nil {
 			return e
 		}
@@ -56,7 +55,7 @@ func TestIntegrationRemoteALTEditor(t *testing.T) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() {
-		e := s.GPO.remote.SYSVOL(context.Background(), s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+		e := s.GPO.sysvol(context.Background(), s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 			if existed {
 				return sh.WriteFile(template, prior, 0644)
 			}
@@ -93,7 +92,7 @@ func TestIntegrationRemoteALTEditor(t *testing.T) {
 		}
 		before = saved
 	}
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		store := &smbPolicyStore{share: sh, base: base}
 		data, e := readPolicyFile(store, "Machine/Registry.pol")
 		if e != nil {
@@ -118,7 +117,7 @@ func TestIntegrationRemoteALTEditor(t *testing.T) {
 	if _, e = s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: "chronyd.service", State: "enabled", Revision: before.Revision}, "integration", ""); e == nil {
 		t.Fatal("overwrote pending save")
 	}
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root := strings.ReplaceAll(base, "/", `\`)
 		data, e := sh.ReadFile(root + `\` + editorJournal)
 		if e != nil {

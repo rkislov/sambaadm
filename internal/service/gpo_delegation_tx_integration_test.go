@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"os"
 	"path/filepath"
@@ -56,7 +55,7 @@ func TestIntegrationFullDelegationGrantRevoke(t *testing.T) {
 		t.Fatal(e)
 	}
 	canWrite := func() error {
-		return principalRemote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+		return (&GPOService{}).sysvol(ctx, principalRemote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 			f, e := sh.OpenFile(base+"\\GPT.INI", os.O_RDWR, 0)
 			if e != nil {
 				return e

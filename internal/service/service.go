@@ -2,6 +2,7 @@ package service
 
 import (
 	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
@@ -24,6 +25,8 @@ type Services struct {
 	Printers  *PrinterService
 	FSACL     *FSACLService
 	Audit     *audit.Logger
+	RODC      *RODCService
+	Helpers   *agent.Client
 }
 
 // ServiceOptions configures optional dependencies.
@@ -32,6 +35,7 @@ type ServiceOptions struct {
 	Password func() string
 	GPO      config.GPOConfig
 	Samba    config.SambaConfig
+	Helpers  *agent.Client
 }
 
 // New builds the service layer on top of an LDAP client.
@@ -46,6 +50,7 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Service
 		remoteHost = "localhost"
 	}
 	shares := newShareService(auditLog, opts.Samba)
+	shares.helpers = opts.Helpers
 	return &Services{
 		Users:     &UserService{ldap: ldap, audit: auditLog},
 		Groups:    &GroupService{ldap: ldap, audit: auditLog},
@@ -59,12 +64,15 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Service
 		DNS:       &DNSService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		GPO: &GPOService{
 			ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password},
-			gpoCfg: opts.GPO,
-			jobs:   newJobStore(),
+			gpoCfg:  opts.GPO,
+			jobs:    newJobStore(),
+			helpers: opts.Helpers,
 		},
 		Shares:   shares,
 		Printers: newPrinterService(auditLog, shares),
 		FSACL:    newFSACLService(auditLog, shares),
 		Audit:    auditLog,
+		RODC:     &RODCService{ldap: ldap, audit: auditLog, helpers: opts.Helpers},
+		Helpers:  opts.Helpers,
 	}
 }

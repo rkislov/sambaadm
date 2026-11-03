@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"sambaadm/internal/config"
 )
 
@@ -63,7 +62,7 @@ func TestIntegrationScriptBackupRestoreAndRecovery(t *testing.T) {
 		t.Fatal(state, e)
 	}
 	// Simulate a lost LDAP response: SMB after-images exist, LDAP is unchanged.
-	e = s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	e = s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root, entry, e := s.GPO.scriptRoot(ctx, name, sh)
 		if e != nil {
 			return e
@@ -123,7 +122,7 @@ func TestIntegrationServicePermissionDiagnostics(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e := s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error { var e error; before, e = sh.ReadFile(base + `\GPT.INI`); return e }); e != nil {
+	if e := s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error { var e error; before, e = sh.ReadFile(base + `\GPT.INI`); return e }); e != nil {
 		t.Fatal(e)
 	}
 	cfg := &config.Config{LDAP: ldapCfg, GPO: s.GPO.gpoCfg}
@@ -142,7 +141,7 @@ func TestIntegrationServicePermissionDiagnostics(t *testing.T) {
 	if e != nil || after.GetAttributeValue("uSNChanged") != entry.GetAttributeValue("uSNChanged") {
 		t.Fatal("diagnostics modified LDAP", e)
 	}
-	if e := s.GPO.remote.SYSVOL(ctx, s.GPO.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	if e := s.GPO.sysvol(ctx, s.GPO.remote, s.GPO.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		b, e := sh.ReadFile(base + `\GPT.INI`)
 		if !bytes.Equal(before, b) {
 			return fmt.Errorf("diagnostics modified GPT.INI")

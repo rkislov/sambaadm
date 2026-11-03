@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/policy"
@@ -38,12 +38,17 @@ type DiagnosticReport struct {
 	Checks      []DiagnosticCheck `json:"checks"`
 }
 type DiagnosticService struct {
-	cfg  *config.Config
-	gate chan struct{}
+	cfg     *config.Config
+	gate    chan struct{}
+	helpers *agent.Client
 }
 
-func NewDiagnosticService(cfg *config.Config) *DiagnosticService {
-	return &DiagnosticService{cfg: cfg, gate: make(chan struct{}, 1)}
+func NewDiagnosticService(cfg *config.Config, helpers ...*agent.Client) *DiagnosticService {
+	s := &DiagnosticService{cfg: cfg, gate: make(chan struct{}, 1)}
+	if len(helpers) > 0 {
+		s.helpers = helpers[0]
+	}
+	return s
 }
 
 // Run uses an isolated connection so checks never change the application's LDAP identity.
@@ -126,7 +131,9 @@ func (s *DiagnosticService) RunFor(ctx context.Context, gpo string) (*Diagnostic
 				target = "localhost"
 			}
 			remote := &adremote.Client{Host: target, User: cfg.LDAP.Bind.User, Password: cfg.BindPassword}
-			err := remote.SYSVOL(ctx, cfg.GPO.SMBPort, func(share *smb2.Share) error { _, err := share.ReadDir(domain + "/Policies"); return err })
+			gpoService := &GPOService{ldap: ldapproto.NewServiceClient(cfg.LDAP, cfg.BindPassword), remote: remote, helpers: s.helpers}
+			defer gpoService.ldap.Close()
+			err := gpoService.sysvol(ctx, remote, cfg.GPO.SMBPort, func(share *sysvolShare) error { _, err := share.ReadDir(domain + "/Policies"); return err })
 			if err != nil {
 				return "error", s.clean(err.Error()), "Check SMB port, service credentials and read access to SYSVOL/<domain>/Policies."
 			}
@@ -208,6 +215,30 @@ func (s *DiagnosticService) RunFor(ctx context.Context, gpo string) (*Diagnostic
 		}},
 	}
 	report.Checks = make([]DiagnosticCheck, len(probes))
+	if s.helpers != nil {
+		var hostReport DiagnosticReport
+		e := s.helpers.Call(ctx, s.helpers.Config.HostNode, "host.diagnostics", HostOperation{}, &hostReport)
+		hostChecks := map[string]DiagnosticCheck{}
+		for _, check := range hostReport.Checks {
+			hostChecks[check.ID] = check
+		}
+		for i := range probes {
+			switch probes[i].id {
+			case "smb_conf", "shares_root", "local_tools", "local_write_access", "service_identity":
+				id := probes[i].id
+				probes[i].run = func(context.Context) (string, string, string) {
+					if e != nil {
+						return "error", e.Error(), "Configure the required host helper; direct host access is disabled."
+					}
+					check, ok := hostChecks[id]
+					if !ok {
+						return "error", "Helper did not return this host check", ""
+					}
+					return check.Status, check.Detail, check.Hint
+				}
+			}
+		}
+	}
 	var wg sync.WaitGroup
 	for i, p := range probes {
 		wg.Add(1)

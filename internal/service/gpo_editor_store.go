@@ -52,7 +52,7 @@ type policyStore interface {
 	Rename(string, string) error
 }
 type smbPolicyStore struct {
-	share *smb2.Share
+	share *sysvolShare
 	base  string
 }
 
@@ -69,6 +69,9 @@ func (s *smbPolicyStore) checked(name string, missing bool) (string, error) {
 			return "", fmt.Errorf("invalid SYSVOL component")
 		}
 	}
+	if s.share.helpers != nil {
+		return strings.Join(parts, `\`), nil
+	} // Helper checks every ancestor on the owning host.
 	for i := range parts {
 		p := strings.Join(parts[:i+1], `\`)
 		info, err := s.share.Lstat(p)
@@ -164,7 +167,12 @@ func (s *smbPolicyStore) SetACL(name string, data []byte) error {
 
 // Empty admx_path selects the domain Central Store; a local directory or
 // a single ADMX file is also supported. SYSVOL editing always stays remote.
-func (s *GPOService) editorDefinitions(share *smb2.Share, domain string) ([]policy.Definition, string, error) {
+func (s *GPOService) editorDefinitions(share *sysvolShare, domain string) ([]policy.Definition, string, error) {
+	if s.helpers != nil && s.gpoCfg.ADMXPath != "" {
+		var out helperADMXCatalog
+		e := s.helpers.Call(share.ctx, s.helpers.Config.HostNode, "admx.catalog", HostOperation{Path: s.gpoCfg.ADMXPath}, &out)
+		return out.Definitions, out.Source, e
+	}
 	var names []string
 	var read func(string) ([]byte, error)
 	source := ""

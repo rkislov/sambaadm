@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/google/uuid"
 	"sambaadm/internal/config"
@@ -500,7 +499,7 @@ func (s *GPOService) scriptMaintenanceContext(ctx context.Context, gpo string, f
 	if s.remote == nil {
 		return fmt.Errorf("SYSVOL service credentials are required")
 	}
-	return s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	return s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root, entry, err := s.scriptRoot(ctx, gpo, sh)
 		if err != nil {
 			return err

@@ -12,7 +12,6 @@ import (
 	"time"
 	"unicode/utf16"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/policy"
@@ -254,7 +253,7 @@ func (s *GPOService) Model(ctx context.Context, in GPModelInput) (*GPModelReport
 	}
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
 		dns, e := s.domainDNS(ctx)
 		if e != nil {
 			return e

@@ -97,6 +97,9 @@ func stageRepair(ctx context.Context, v repairVolume, local *os.Root, r *RepairR
 		return fmt.Errorf("staging attempt limit reached; retain journal and contact administrator")
 	}
 	r.Attempts++
+	if r.Stage != "" {
+		r.Stages = append(r.Stages, r.Stage)
+	}
 	r.Stage = ".sambaadm-repair-" + r.ID + "-" + uuid.NewString()
 	if e := saveRepair(local, r); e != nil {
 		return e

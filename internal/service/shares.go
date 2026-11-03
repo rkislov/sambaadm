@@ -12,6 +12,7 @@ import (
 	"sync"
 	"unicode"
 
+	"sambaadm/internal/agent"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	"sambaadm/internal/smbconf"
@@ -87,9 +88,10 @@ type UpdateShareAccessInput struct {
 
 // ShareService manages local smb.conf shares and directories.
 type ShareService struct {
-	mu    sync.Mutex
-	audit *audit.Logger
-	cfg   config.SambaConfig
+	mu      sync.Mutex
+	audit   *audit.Logger
+	cfg     config.SambaConfig
+	helpers *agent.Client
 }
 
 func newShareService(auditLog *audit.Logger, cfg config.SambaConfig) *ShareService {
@@ -110,6 +112,11 @@ func newShareService(auditLog *audit.Logger, cfg config.SambaConfig) *ShareServi
 
 // List returns non-global share sections (file shares and printers).
 func (s *ShareService) List(ctx context.Context) ([]Share, error) {
+	if s.helpers != nil {
+		var out []Share
+		e := s.hostCall(ctx, "shares.list", HostOperation{}, &out)
+		return out, e
+	}
 	_ = ctx
 	doc, err := smbconf.ParseFile(s.cfg.SMBConf)
 	if err != nil {
@@ -147,6 +154,11 @@ func (s *ShareService) ListFileShares(ctx context.Context) ([]Share, error) {
 
 // Show returns one share by name.
 func (s *ShareService) Show(ctx context.Context, name string) (*Share, error) {
+	if s.helpers != nil {
+		var out Share
+		e := s.hostCall(ctx, "shares.show", HostOperation{Name: name}, &out)
+		return &out, e
+	}
 	_ = ctx
 	doc, err := smbconf.ParseFile(s.cfg.SMBConf)
 	if err != nil {
@@ -162,6 +174,11 @@ func (s *ShareService) Show(ctx context.Context, name string) (*Share, error) {
 
 // Create adds a share, creates the directory, applies ownership/ACL, reloads smbd.
 func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, ip string) (*Share, error) {
+	if s.helpers != nil {
+		var out Share
+		e := s.hostCall(ctx, "shares.create", HostOperation{Name: in.Name, Input: hostInput(in), Actor: actor, IP: ip}, &out)
+		return &out, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ApplyPreset(&in)
@@ -205,18 +222,20 @@ func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, i
 		if in.Mode != "" {
 			mode = in.Mode
 		}
-		if err := ensureDir(path, mode, in.Owner); err != nil {
+		pin, err := s.prepareDir(path, mode, in.Owner)
+		if err != nil {
 			s.audit.Failure(actor, "share.create", name, ip, err)
 			return nil, fmt.Errorf("create directory: %w", err)
 		}
+		defer pin.Close()
 		if in.ACL != "" {
-			if err := applyACL(path, normalizeACLSpec(in.ACL), false); err != nil {
+			if err := applyACL(pin.Path, normalizeACLSpec(in.ACL), false); err != nil {
 				s.audit.Failure(actor, "share.create", name, ip, err)
 				return nil, fmt.Errorf("set acl: %w", err)
 			}
 		}
 		if in.DefaultACL != "" {
-			if err := applyDefaultACL(path, normalizeACLSpec(in.DefaultACL)); err != nil {
+			if err := applyDefaultACL(pin.Path, normalizeACLSpec(in.DefaultACL)); err != nil {
 				s.audit.Failure(actor, "share.create", name, ip, err)
 				return nil, fmt.Errorf("set default acl: %w", err)
 			}
@@ -297,6 +316,9 @@ func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, i
 
 // Delete removes a share from smb.conf. Optionally remove the directory.
 func (s *ShareService) Delete(ctx context.Context, name string, removeDir bool, actor, ip string) error {
+	if s.helpers != nil {
+		return s.hostCall(ctx, "shares.delete", HostOperation{Name: name, RemoveDir: removeDir, Actor: actor, IP: ip}, nil)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if isReservedSection(name) || strings.EqualFold(name, "global") {
@@ -328,7 +350,7 @@ func (s *ShareService) Delete(ctx context.Context, name string, removeDir bool, 
 	}
 	if removeDir && path != "" {
 		if err := s.validatePath(path); err == nil {
-			_ = os.RemoveAll(path)
+			_ = s.removeSharePath(path)
 		}
 	}
 	if err := s.Reload(ctx); err != nil {
@@ -341,6 +363,11 @@ func (s *ShareService) Delete(ctx context.Context, name string, removeDir bool, 
 
 // UpdateAccess updates Samba share access parameters.
 func (s *ShareService) UpdateAccess(ctx context.Context, name string, in UpdateShareAccessInput, actor, ip string) (*Share, error) {
+	if s.helpers != nil {
+		var out Share
+		e := s.hostCall(ctx, "shares.access", HostOperation{Name: name, Input: hostInput(in), Actor: actor, IP: ip}, &out)
+		return &out, e
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	doc, err := smbconf.ParseFile(s.cfg.SMBConf)
@@ -408,6 +435,9 @@ func (s *ShareService) UpdateAccess(ctx context.Context, name string, in UpdateS
 
 // SetParam updates a single smb.conf parameter for a share.
 func (s *ShareService) SetParam(ctx context.Context, name, key, value, actor, ip string) error {
+	if s.helpers != nil {
+		return s.hostCall(ctx, "shares.param", HostOperation{Name: name, Key: key, Value: value, Actor: actor, IP: ip}, nil)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if strings.EqualFold(name, "global") {
@@ -443,6 +473,9 @@ func (s *ShareService) SetParam(ctx context.Context, name, key, value, actor, ip
 
 // Reload asks smbd to reload configuration.
 func (s *ShareService) Reload(ctx context.Context) error {
+	if s.helpers != nil {
+		return s.hostCall(ctx, "shares.reload", HostOperation{}, nil)
+	}
 	cmdLine := strings.TrimSpace(s.cfg.ReloadCmd)
 	if cmdLine == "" {
 		return nil
@@ -463,6 +496,9 @@ func (s *ShareService) ConfigPath() string { return s.cfg.SMBConf }
 func (s *ShareService) SharesRoot() string { return s.cfg.SharesRoot }
 
 func (s *ShareService) validatePath(path string) error {
+	if s.helpers != nil {
+		return s.helpers.Call(context.Background(), s.helpers.Config.HostNode, "shares.validate-path", HostOperation{Path: path}, nil)
+	}
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("path must be absolute: %s", path)
 	}

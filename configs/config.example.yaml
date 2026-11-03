@@ -26,12 +26,27 @@ auth:
     helpdesk:
       - "CN=Helpdesk,OU=Groups,DC=example,DC=com"
 
+# Host-side operations require a registered helper, including the main server.
+# See docs/helper.md for key generation, SSH and HTTPS configuration.
+helpers:
+  private_key: ""
+  host_node: ""
+  nodes: []
+  # - name: dc1.example.com
+  #   transport: https
+  #   endpoint: https://dc1.example.com:8444
+  #   ca_cert: /etc/sambaadm/keys/helper-ca.pem
+
 gpo:
   # Хранение копий сценариев: минимум одна последняя копия сохраняется всегда.
   # Доверенный локальный журнал согласованных ACL; каталог 0700.
   delegation_state_dir: /var/lib/sambaadm/delegation
   script_backup_keep: 10
   script_backup_max_mib: 64
+  # SYSVOL repair archives per GPO: explicit preview/apply cleanup only.
+  # The newest archive on each target DC is always protected.
+  repair_backup_keep: 10
+  repair_backup_max_mib: 512
   # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
   editor_enabled: false
   # Пусто: каталог BaseALT*.admx + ru-RU/*.adml в SYSVOL/<domain>/Policies/PolicyDefinitions

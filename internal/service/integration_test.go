@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 	"sambaadm/internal/audit"
+	"sambaadm/internal/agent"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 )
@@ -49,7 +50,9 @@ func integrationServices(t *testing.T, mutate bool) (*Services, config.LDAPConfi
 	}
 	t.Cleanup(func() { logger.Close() })
 	port, _ := strconv.Atoi(os.Getenv("SAMBAADM_IT_SMB_PORT"))
-	return NewWithOptions(client, logger, ServiceOptions{GPO: config.GPOConfig{SMBPort: port}, Username: cfg.Bind.User, Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
+	var helpers *agent.Client
+	if os.Getenv("SAMBAADM_IT_HELPERS")=="1" {helpers=&agent.Client{Config:agent.Config{PrivateKey:"/tmp/helper-signing.key",HostNode:"dc1.sambaadm.test",Nodes:[]agent.Node{{Name:"dc1.sambaadm.test",Transport:"https",Endpoint:"https://dc1.sambaadm.test:8444"},{Name:"dc2.sambaadm.test",Transport:"https",Endpoint:"https://dc2.sambaadm.test:8444"}}}}}
+	return NewWithOptions(client, logger, ServiceOptions{Helpers:helpers,GPO: config.GPOConfig{SMBPort: port}, Username: cfg.Bind.User, Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
 }
 func TestIntegrationDomainInfo(t *testing.T) {
 	s, _ := integrationServices(t, false)

@@ -2,7 +2,7 @@
 "info":
     "title": "sambaadm API"
     "version": "1.1"
-    "description": "Session cookie authentication. Mutations require X-CSRF-Token. System operations require installed Samba utilities and OS permissions."
+    "description": "Session cookie authentication. Mutations require X-CSRF-Token. Host and SYSVOL operations require registered key-authenticated sambaadm-helper nodes. LDAP/DNS/DRS remain on the management server."
 "servers":
     - "url": "/api/v1"
 "paths":
@@ -2837,12 +2837,12 @@
         "get":
             "summary": "Admin-only durable SYSVOL repair history"
             "responses":
-                "200": {"description": "Array of id, source, target, state (pending/complete/rolled-back), created"}
+                "200": {"description": "Array of id, source, target, state (pending/complete/rolled-back/pruning/pruned), created, bytes, protected and prunable"}
                 "401": {"description": "Session required"}
                 "403": {"description": "Admin required"}
         "post":
             "summary": "Preview SYSVOL tree repair, completion or rollback; admin and CSRF required"
-            "description": "Read-only domain operation. Requires matching LDAP identity/version/metadata/security. Explicit source and target DCs for repair; record ID for recovery. Maintenance window required for apply."
+            "description": "Read-only domain operation. Requires matching LDAP identity/version/metadata/security. Explicit source and target DCs for repair; record ID for recovery. Maintenance window required for apply. prune previews retention-eligible archive deletion; newest archive per target DC is protected and pending operations suspend cleanup. Limits use local journal bytes per GPO."
             "requestBody":
                 "required": true
                 "content":
@@ -2852,10 +2852,10 @@
                             "required": ["operation"]
                             "additionalProperties": false
                             "properties":
-                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback"]}
+                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback", "prune"]}
                                 "source": {"type": "string", "description": "Discovered source DC DNS; repair only"}
                                 "target": {"type": "string", "description": "Discovered target DC DNS; repair only"}
-                                "record": {"type": "string", "format": "uuid", "description": "Completion/rollback record"}
+                                "record": {"type": "string", "format": "uuid", "description": "Completion/rollback/cleanup record"}
             "responses":
                 "200": {"description": "preview token, operation, source, target, record, changes, aclChanges and warnings; no file contents"}
                 "400": {"description": "Invalid request"}
@@ -2864,7 +2864,7 @@
                 "502": {"description": "LDAP/SYSVOL or journal unavailable, or safety precondition failed"}
         "put":
             "summary": "Apply previewed SYSVOL repair or recovery; admin and CSRF required"
-            "description": "Same request as POST plus required preview token. Saves private local snapshots before SMB writes. Preserves original directory; cutover is recoverable, not atomic. Does not change LDAP."
+            "description": "Same request as POST plus required preview token. Saves private local snapshots before SMB writes. Preserves original directory; cutover is recoverable, not atomic. Does not change LDAP. prune durably journals deletion, removes only listed remote archive objects (including service backups), discards local snapshots and retains compact history. Retry prune after partial cleanup. No automatic cleanup."
             "requestBody":
                 "required": true
                 "content":
@@ -2874,7 +2874,7 @@
                             "required": ["operation", "preview"]
                             "additionalProperties": false
                             "properties":
-                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback"]}
+                                "operation": {"type": "string", "enum": ["repair", "complete", "rollback", "prune"]}
                                 "source": {"type": "string"}
                                 "target": {"type": "string"}
                                 "record": {"type": "string", "format": "uuid"}
@@ -3192,6 +3192,83 @@
                 "401": {"description": "Session required"}
                 "403": {"description": "Administrator and CSRF token required"}
                 "409": {"description": "Another diagnostic run is already active"}
+    "/sites/controllers/{name}/rodc":
+        "parameters":
+            - "name": "name"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+        "get":
+            "summary": "Admin-only PRP and cache state for a discovered RODC"
+            "description": "Reads allowed/denied principals, msDS-RevealedUsers/msDS-RevealedList and msDS-AuthenticatedToAccountlist from the configured writable DC. Lists may lag replication. No password values are returned."
+            "responses":
+                "200": {"description": "controller, source, revision, allowed, denied, cached, authenticated, preloadAvailable and warnings"}
+                "400": {"description": "Not an RODC or LDAP is not configured on a writable DC"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Directory unavailable or incomplete/ranged result"}
+        "post":
+            "summary": "Preview a per-RODC PRP assignment or cache preload"
+            "parameters":
+                - "name": "X-CSRF-Token"
+                  "in": "header"
+                  "required": true
+                  "schema": {"type": "string"}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["operation"]
+                            "additionalProperties": false
+                            "properties":
+                                "operation": {"type": "string", "enum": ["allow", "deny", "remove-allow", "remove-deny", "preload"]}
+                                "principal": {"type": "string", "description": "One user, computer or security group DN for a PRP assignment"}
+                                "accounts": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"type": "string"}, "description": "Individual user/computer DNs for preload; no automatic group expansion"}
+            "responses":
+                "200": {"description": "Preview token, target/source and per-account effective PRP decisions; deny wins and incomplete tokens block preload"}
+                "400": {"description": "Invalid input or target helper not registered"}
+                "403": {"description": "Admin and CSRF required"}
+        "put":
+            "summary": "Apply the exact previewed per-RODC operation"
+            "description": "POST fields plus required preview token. PRP uses LDAP assertion; preload is performed by the selected RODC helper using its machine credentials. Removing an allow entry does not erase an already cached password. A preload response can contain blocked/failed/unconfirmed account results."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["operation", "preview"]
+                            "properties":
+                                "operation": {"type": "string", "enum": ["allow", "deny", "remove-allow", "remove-deny", "preload"]}
+                                "preview": {"type": "string"}
+                                "principal": {"type": "string"}
+                                "accounts": {"type": "array", "items": {"type": "string"}}
+            "responses":
+                "200": {"description": "controller, operation and per-account preload results"}
+                "400": {"description": "Invalid request or missing preview"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "State or membership changed; preview again"}
+                "502": {"description": "LDAP operation failed"}
+    "/sites/controllers/{name}/rodc/authentications":
+        "get":
+            "summary": "Read the selected RODC's local Samba JSON authentication audit through its helper"
+            "parameters":
+                - "name": "name"
+                  "in": "path"
+                  "required": true
+                  "schema": {"type": "string"}
+                - "name": "after"
+                  "in": "query"
+                  "schema": {"type": "string", "format": "date-time"}
+                - "name": "account"
+                  "in": "query"
+                  "schema": {"type": "string", "maxLength": 256}
+            "responses":
+                "200": {"description": "controller, source, status (available/partial/unavailable), events, truncated, malformed and warning. Up to 500 matching events from the last 8 MiB. An empty result is not proof of no logins."}
+                "400": {"description": "Invalid filter or controller"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Helper unavailable"}
 "components":
     "securitySchemes":
         "cookieAuth":

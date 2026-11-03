@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sambaadm/internal/agent"
 	"strings"
 	"syscall"
 	"time"
@@ -103,7 +104,7 @@ var serveCmd = &cobra.Command{
 		}
 		defer auditLog.Close()
 
-		svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword, GPO: cfg.GPO, Samba: cfg.Samba})
+		svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword, GPO: cfg.GPO, Samba: cfg.Samba, Helpers: &agent.Client{Config: cfg.Helpers}})
 		sessions := auth.NewStore(cfg.Auth.SessionTTL)
 		rbac := auth.NewRBAC(cfg.Auth.Roles)
 

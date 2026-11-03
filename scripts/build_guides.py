@@ -10,18 +10,21 @@ from docx.oxml.ns import qn
 ROOT = Path(__file__).resolve().parents[1]
 
 def plain(s):
-    return re.sub(r'\[([^]]+)\]\([^)]+\)', r'\1', s).replace('`', '')
+    return re.sub(r'\[([^]]+)\]\([^)]+\)', r'\1', s).replace('`', '').replace('**', '')
 
 def build(source, target):
     doc = Document()
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Cm(21), Cm(29.7)
-    sec.top_margin = sec.bottom_margin = Cm(1.65)
+    sec.top_margin = Cm(1.65)
+    sec.bottom_margin = Cm(2.1)
     sec.left_margin = sec.right_margin = Cm(1.905)
-    for name, size in [('Normal',10.5),('Title',26),('Heading 1',19),('Heading 2',12),('Caption',9)]:
+    for name, size in [('Normal',10.5),('Title',26),('Heading 1',16),('Heading 2',12),('Caption',9)]:
         st=doc.styles[name];st.font.name='Arial';st.font.size=Pt(size);st.font.color.rgb=RGBColor(0,0,0)
         st.paragraph_format.space_after=Pt(7)
     doc.styles['Normal'].paragraph_format.line_spacing=1.08
+    doc.styles['Heading 1'].paragraph_format.space_before=Pt(15)
+    doc.styles['Heading 2'].paragraph_format.space_before=Pt(10)
     footer=sec.footer.paragraphs[0];footer.alignment=2
     r=footer.add_run('sambaadm  |  ');r.font.size=Pt(8)
     fld=OxmlElement('w:fldSimple');fld.set(qn('w:instr'),'PAGE');footer._p.append(fld)
@@ -31,16 +34,34 @@ def build(source, target):
     headings=[line[3:] for line in source.read_text().splitlines() if line.startswith('## ')]
     code=False
     contents=False
+    code_lines=[]
     for line in source.read_text().splitlines():
         if not line: continue
-        if line.startswith('```'): code=not code;continue
+        if line.startswith('```'):
+            if code:
+                p=doc.add_paragraph('\n'.join(code_lines))
+                p.paragraph_format.space_after=Pt(7)
+                p.paragraph_format.line_spacing=1
+                p.paragraph_format.keep_together=True
+                for r in p.runs:r.font.name='Courier New';r.font.size=Pt(8)
+                code_lines=[]
+            code=not code
+            continue
+        if code:
+            code_lines.append(line)
+            continue
         if line.startswith('# '): doc.add_paragraph(line[2:],'Title');continue
         if line.startswith('## '):
             if not contents:
                 doc.add_paragraph('Содержание', 'Heading 2')
-                for i, title in enumerate(headings, 2): doc.add_paragraph(f'{i}  {title}')
+                for title in headings:
+                    entry=doc.add_paragraph(title)
+                    entry.paragraph_format.space_after=Pt(2)
+                    for run in entry.runs: run.font.size=Pt(9)
                 contents=True
-            p=doc.add_paragraph(line[3:],'Heading 1');p.paragraph_format.page_break_before=True;continue
+            p=doc.add_paragraph(line[3:],'Heading 1')
+            if line[3:] == headings[0]: p.paragraph_format.page_break_before=True
+            continue
         if line.startswith('### '): doc.add_paragraph(line[4:],'Heading 2');continue
         m=re.match(r'!\[(.*?)\]\((.*?)\)',line)
         if m:
@@ -52,15 +73,20 @@ def build(source, target):
         p=doc.add_paragraph(plain(line))
         if code is False and '](' in line:
             for label, href in re.findall(r'\[([^]]+)\]\(([^)]+)\)',line):
-                url=href if href.startswith('http') else 'https://github.com/rkislov/sambaadm/blob/main/'+str((source.parent/href).resolve().relative_to(ROOT))
+                url=href if href.startswith('http') else 'https://github.com/rkislov/sambaadm/blob/v0.32.0/'+str((source.parent/href).resolve().relative_to(ROOT))
                 r=p.add_run(' '+url);r.font.size=Pt(8)
         if code:
             p.paragraph_format.space_after=Pt(0)
             p.paragraph_format.line_spacing=1
             for r in p.runs:r.font.name='Courier New';r.font.size=Pt(8)
+    paragraphs=doc.paragraphs
+    for i,p in enumerate(paragraphs[:-1]):
+        if p.text.rstrip().endswith(':'): p.paragraph_format.keep_with_next=True
+        if re.match(r'^\d+\. ',p.text) and re.match(r'^\d+\. ',paragraphs[i+1].text):
+            p.paragraph_format.keep_with_next=True
     doc.core_properties.title=doc.paragraphs[0].text
     doc.core_properties.author='sambaadm'
-    doc.core_properties.subject='Руководство для main и v0.23.0-dev от 27 октября 2026 года'
+    doc.core_properties.subject='Руководство для sambaadm 0.32.0 от 3 ноября 2026 года'
     target.parent.mkdir(parents=True,exist_ok=True);doc.save(target)
 
 build(ROOT/'docs/admin.md',ROOT/'docs/admin-guide/sambaadm-admin-guide.docx')

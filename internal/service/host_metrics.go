@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"runtime"
+	"sambaadm/internal/agent"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ type HostMetrics struct {
 	Samples  []HostSample `json:"samples"`
 }
 type HostMonitor struct {
+	Helpers  *agent.Client
 	mu       sync.Mutex
 	samples  []HostSample
 	previous *cpu.TimesStat
@@ -49,6 +51,26 @@ func cpuUsage(before, after cpu.TimesStat) *float64 {
 	return &v
 }
 func (m *HostMonitor) Snapshot(ctx context.Context) HostMetrics {
+	if m.Helpers != nil {
+		var out HostMetrics
+		e := m.Helpers.Call(ctx, m.Helpers.Config.HostNode, "host.metrics", HostOperation{}, &out)
+		if e != nil {
+			return HostMetrics{Host: m.Helpers.Config.HostNode, Samples: []HostSample{{Time: time.Now().UnixMilli(), Errors: []string{e.Error()}}}}
+		}
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if len(out.Samples) > 0 {
+			sample := out.Samples[len(out.Samples)-1]
+			if len(m.samples) == 0 || sample.Time > m.samples[len(m.samples)-1].Time {
+				m.samples = append(m.samples, sample)
+			}
+			if len(m.samples) > 120 {
+				m.samples = m.samples[len(m.samples)-120:]
+			}
+		}
+		out.Samples = append([]HostSample(nil), m.samples...)
+		return out
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	now := time.Now()

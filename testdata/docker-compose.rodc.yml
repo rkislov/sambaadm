@@ -1,0 +1,25 @@
+# Optional disposable RODC. Uses the same domain as the integration DC.
+services:
+  rodc:
+    build: ./samba
+    image: sambaadm-test-rodc:latest
+    hostname: rodc
+    domainname: sambaadm.test
+    networks:
+      default:
+        aliases: [rodc.sambaadm.test]
+    environment:
+      SAMBAADM_LAB_PASSWORD: "Lab-Only-Adm1n-Pass!"
+      SAMBAADM_JOIN_DC: dc1.sambaadm.test
+      SAMBAADM_JOIN_ROLE: RODC
+    depends_on:
+      dc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://127.0.0.1", "-b", "", "-s", "base", "defaultNamingContext"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+      start_period: 15s
+    mem_limit: 1g
+    cpus: 2

@@ -1,0 +1,23 @@
+[Unit]
+Description=sambaadm host helper (signed HTTPS API)
+After=network.target samba-ad-dc.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/sambaadm-helper serve --config /etc/sambaadm-helper/config.yaml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectHome=true
+PrivateTmp=true
+ProtectSystem=strict
+StateDirectory=sambaadm-helper
+StateDirectoryMode=0700
+LogsDirectory=sambaadm-helper
+LogsDirectoryMode=0700
+ReadWritePaths=-/etc/samba -/var/lib/samba -/var/cache/samba -/var/log/samba -/srv/samba
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

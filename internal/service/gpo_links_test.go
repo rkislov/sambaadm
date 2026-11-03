@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"fmt"
-	smb2 "github.com/cloudsoda/go-smb2"
 	"os"
 	"path/filepath"
 	ldapproto "sambaadm/internal/ldap"
@@ -145,7 +144,7 @@ func TestIntegrationNativeDistribution(t *testing.T) {
 		if current.Status == JobOK {
 			remote := *s.GPO.remote
 			remote.Host = os.Getenv("SAMBAADM_IT_SECOND_DC")
-			err := remote.SYSVOL(ctx, 445, func(share *smb2.Share) error {
+			err := s.GPO.sysvol(ctx, &remote, 445, func(share *sysvolShare) error {
 				data, e := share.ReadFile("sambaadm.test\\Policies\\" + braceGUID(job.GUID) + "\\GPT.INI")
 				if e != nil {
 					return e

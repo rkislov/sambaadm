@@ -75,6 +75,7 @@ func TestIntegrationRepairAcrossTwoDCs(t *testing.T) {
 		return result
 	}
 	result := apply(in)
+	oldRecord := result.Record
 	if result.State != "complete" || result.Report == nil || result.Report.Status != "consistent" {
 		t.Fatalf("missing target repair: %+v", result)
 	}
@@ -150,5 +151,36 @@ func TestIntegrationRepairAcrossTwoDCs(t *testing.T) {
 	if result.State != "rolled-back" || result.Report == nil || result.Report.Status != "incomplete" {
 		t.Fatalf("malformed target restored: %+v", result)
 	}
-
+	// Retention removes the old rolled-back archive over real SMB, preserves
+	// the current live tree and keeps only a compact local history record.
+	s.GPO.gpoCfg.RepairBackupKeep = 1
+	result = apply(RepairInput{Operation: "prune", Record: oldRecord})
+	if result.State != "pruned" {
+		t.Fatalf("archive cleanup: %+v", result)
+	}
+	local, e := s.GPO.repairLocal()
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer local.Close()
+	old, e := readRepair(local, oldRecord)
+	if e != nil || old.After != nil || old.Before != nil {
+		t.Fatalf("local snapshots not discarded: %v", e)
+	}
+	e = s.GPO.withRepairDC(ctx, id, dc2.DNS, func(_ *GPOService, _ *ldap.Entry, v repairVolume, base string) error {
+		if _, e := v.Tree(repairArchive(old)).Lstat("."); !os.IsNotExist(e) {
+			return fmt.Errorf("remote archive remains: %v", e)
+		}
+		data, e := readPolicyFile(v.Tree(path.Base(base)), "GPT.INI")
+		if e != nil {
+			return e
+		}
+		if string(data) != "corrupt target GPT" {
+			return fmt.Errorf("cleanup changed live SYSVOL")
+		}
+		return nil
+	})
+	if e != nil {
+		t.Fatal(e)
+	}
 }

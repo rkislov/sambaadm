@@ -28,7 +28,15 @@ type ShareWizardPlan struct {
 }
 
 func (s *Services) PlanShare(ctx context.Context, in ShareWizardInput) (*ShareWizardPlan, error) {
-	return s.planShare(ctx, in, lookupHostGroup)
+	resolve := lookupHostGroup
+	if s.Helpers != nil {
+		resolve = func(ctx context.Context, name string) (string, error) {
+			var out string
+			e := s.Helpers.Call(ctx, s.Helpers.Config.HostNode, "nss.group", HostOperation{Name: name}, &out)
+			return out, e
+		}
+	}
+	return s.planShare(ctx, in, resolve)
 }
 func (s *Services) planShare(ctx context.Context, in ShareWizardInput, resolve func(context.Context, string) (string, error)) (*ShareWizardPlan, error) {
 	if strings.ContainsAny(in.Path+in.Comment, "\r\n") {

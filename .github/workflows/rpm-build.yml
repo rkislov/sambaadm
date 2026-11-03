@@ -41,13 +41,14 @@ jobs:
           make build
           mkdir -p dist
           cp bin/sambaadm dist/sambaadm-linux-${{ matrix.arch }}
+          cp bin/sambaadm-helper dist/sambaadm-helper-linux-${{ matrix.arch }}
       - uses: actions/download-artifact@v4
         if: inputs.binary_artifact != ''
         with:
           name: ${{ inputs.binary_artifact }}
           path: dist
       - name: Restore executable mode after artifact download
-        run: chmod 755 dist/sambaadm-linux-${{ matrix.arch }}
+        run: chmod 755 dist/sambaadm-linux-${{ matrix.arch }} dist/sambaadm-helper-linux-${{ matrix.arch }}
       - uses: docker/setup-buildx-action@v3
       - name: Build cached ALT p10 environment
         uses: docker/build-push-action@v6
@@ -68,6 +69,12 @@ jobs:
         run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist
       - name: ALT RPM lifecycle (systemd simulated)
         run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
+      - name: Build separate host helper RPM
+        env:
+          RPM_VERSION: ${{ inputs.version }}
+        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-helper-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-helper-linux-${{ matrix.arch }} /src/dist
+      - name: Host helper RPM lifecycle
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-helper-alt.sh /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
       - name: ALT p10 real systemd update and rollback
         run: |
           trap 'docker logs --tail 50 sambaadm-alt-systemd || true; docker rm -f sambaadm-alt-systemd || true' EXIT

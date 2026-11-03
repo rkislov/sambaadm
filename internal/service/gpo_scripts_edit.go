@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"github.com/google/uuid"
 	"sambaadm/internal/policy"
@@ -183,7 +182,7 @@ func loadScriptSnapshot(root policyStore, entry *ldap.Entry, controller string, 
 	return snap, nil
 }
 
-func (s *GPOService) scriptRoot(ctx context.Context, gpo string, sh *smb2.Share) (*smbPolicyStore, *ldap.Entry, error) {
+func (s *GPOService) scriptRoot(ctx context.Context, gpo string, sh *sysvolShare) (*smbPolicyStore, *ldap.Entry, error) {
 	entry, err := s.policyEntry(ctx, gpo)
 	if err != nil {
 		return nil, nil, err
@@ -202,7 +201,7 @@ func (s *GPOService) Scripts(ctx context.Context, gpo string) (*GPOScripts, erro
 		return nil, fmt.Errorf("SYSVOL service credentials are required")
 	}
 	var out *GPOScripts
-	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err := s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root, entry, err := s.scriptRoot(ctx, gpo, sh)
 		if err != nil {
 			return err
@@ -226,7 +225,7 @@ func (s *GPOService) ScriptFile(ctx context.Context, gpo, revision, scope, event
 		return nil, fmt.Errorf("SYSVOL service credentials are required")
 	}
 	var out []byte
-	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err := s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root, entry, err := s.scriptRoot(ctx, gpo, sh)
 		if err != nil {
 			return err
@@ -495,7 +494,7 @@ func (s *GPOService) SetScripts(ctx context.Context, gpo string, in ScriptChange
 	if s.remote == nil {
 		return nil, fmt.Errorf("SYSVOL service credentials are required")
 	}
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(sh *smb2.Share) error {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error {
 		root, entry, e := s.scriptRoot(ctx, gpo, sh)
 		if e != nil {
 			return e

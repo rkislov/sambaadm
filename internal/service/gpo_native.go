@@ -56,7 +56,7 @@ func (s *GPOService) createNative(ctx context.Context, name, actor, ip string) (
 			s.audit.Failure(actor, "gpo.create", name, ip, err)
 		}
 	}()
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) (failure error) {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) (failure error) {
 		add := ldap.NewAddRequest(dn, nil)
 		add.Attribute("objectClass", []string{"groupPolicyContainer"})
 		if e := s.ldap.Add(ctx, add.DN, add.Attributes); e != nil {
@@ -154,7 +154,7 @@ func (s *GPOService) deleteNative(ctx context.Context, policy, actor, ip string)
 		return err
 	}
 	sort.Slice(children, func(i, j int) bool { return len(children[i].DN) > len(children[j].DN) })
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
 		// Keep files until directory deletion succeeds. An interrupted deletion is
 		// reported; remaining SYSVOL files retain their original ACL for recovery.
 		for _, child := range children {

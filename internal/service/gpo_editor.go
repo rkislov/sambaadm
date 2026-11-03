@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	smb2 "github.com/cloudsoda/go-smb2"
 	"github.com/go-ldap/ldap/v3"
 	"io"
 	"os"
@@ -149,7 +148,7 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	}
 	return uint32(v), encodePolicyText(strings.Join(lines, "\n"), wide), nil
 }
-func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *smb2.Share, locked bool, scope string) (*editorSnapshot, error) {
+func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *sysvolShare, locked bool, scope string) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {
 		return nil, fmt.Errorf("%w: enable gpo.editor_enabled to edit administrative templates", ErrEditorUnavailable)
 	}
@@ -289,7 +288,7 @@ func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPo
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
 	}
-	err := s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+	err := s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
 		snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
 		if e != nil {
 			return e
@@ -345,14 +344,14 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
 	}
-	err = s.remote.SYSVOL(ctx, s.gpoCfg.SMBPort, func(share *smb2.Share) error {
+	err = s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
 		out, err = s.setALTSetting(ctx, gpo, change, actor, ip, share)
 		return err
 	})
 	return out, err
 }
 
-func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string, share *smb2.Share) (*ALTPolicy, error) {
+func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string, share *sysvolShare) (*ALTPolicy, error) {
 	scope := change.Scope
 	if scope == "" {
 		scope = "Machine"
