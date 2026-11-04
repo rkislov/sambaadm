@@ -32,8 +32,22 @@ func TestIntegrationCleanupExtendedDCMetadata(t *testing.T) {
 	ntds := "CN=NTDS Settings," + server
 	created := []string{}
 	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		// KCC may create inbound connections to this realistic DSA fixture.
+		// Remove them even when a pre-apply assertion aborts the test.
+		connections, _ := s.Sites.ldap.Search(cleanupCtx, ldapproto.SearchOptions{BaseDN: ConfigDN(base), Filter: "(&(objectClass=nTDSConnection)(fromServer=" + ldap.EscapeFilter(ntds) + "))", Attributes: []string{"objectGUID"}})
+		for _, connection := range connections {
+			_ = s.Sites.ldap.Delete(cleanupCtx, connection.DN)
+		}
 		for i := len(created) - 1; i >= 0; i-- {
-			_ = s.Sites.ldap.Delete(context.Background(), created[i])
+			_ = s.Sites.ldap.Delete(cleanupCtx, created[i])
+		}
+		for _, nc := range []string{ConfigDN(base), base, "DC=DomainDnsZones," + base, "DC=ForestDnsZones," + base} {
+			_ = s.Repl.Sync(cleanupCtx, "dc2.sambaadm.test", "dc1.sambaadm.test", nc, "test", "")
+		}
+		for _, dc := range []string{"dc1.sambaadm.test", "dc2.sambaadm.test"} {
+			_ = s.Repl.KCC(cleanupCtx, dc, "test", "")
 		}
 	}()
 	add := func(dn, class string, attrs ...ldap.Attribute) {
@@ -112,6 +126,13 @@ sam.add(record,controls=['relax:0'])`
 		must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", nc, "test", ""))
 		must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", nc, "test", ""))
 	}
+	// Settle KCC's startup pass before capturing an immutable cleanup plan.
+	// Otherwise a newly generated inbound connection correctly invalidates it.
+	for _, dc := range []string{"dc1.sambaadm.test", "dc2.sambaadm.test"} {
+		must(s.Repl.KCC(ctx, dc, "test", ""))
+	}
+	must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", ConfigDN(base), "test", ""))
+	must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", ConfigDN(base), "test", ""))
 	p, e := s.Sites.PreviewCleanup(ctx, []string{server})
 	must(e)
 	peerURI, e := consistencyPeerURI(s.Sites.ldap.URI(), "dc2.sambaadm.test")
