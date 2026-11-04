@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +58,7 @@ func (s *SiteService) AuditTopology(ctx context.Context) *TopologyAudit {
 	}
 	out.Objects = len(entries)
 	refs := map[string]string{}
+	disabledServers := []TopologyFinding{}
 	for _, e := range entries {
 		if !hasClass(e, "server") {
 			continue
@@ -73,7 +75,7 @@ func (s *SiteService) AuditTopology(ctx context.Context) *TopologyAudit {
 			refs[key] = "unknown"
 			continue
 		}
-		found, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=computer)", Attributes: []string{"1.1"}, MaxEntries: 1})
+		found, err := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=computer)", Attributes: []string{"userAccountControl"}, MaxEntries: 1})
 		switch {
 		case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 			refs[key] = "unknown"
@@ -85,9 +87,13 @@ func (s *SiteService) AuditTopology(ctx context.Context) *TopologyAudit {
 			refs[key] = "unknown"
 		default:
 			refs[key] = "present"
+			flags, err := strconv.ParseUint(found[0].GetAttributeValue("userAccountControl"), 10, 32)
+			if err == nil && flags&2 != 0 && flags&(8192|67108864) != 0 {
+				disabledServers = append(disabledServers, TopologyFinding{DN: e.DN, Code: "disabled_dc_metadata", Severity: "review", Reference: dn, Detail: "DC account is disabled; permanent retirement must be confirmed, an offline or disabled DC is not automatically retired"})
+			}
 		}
 	}
-	out.Findings = analyzeTopology(entries, refs)
+	out.Findings = append(analyzeTopology(entries, refs), disabledServers...)
 	for _, f := range out.Findings {
 		if f.Severity == "unknown" {
 			out.Status = "partial"

@@ -180,6 +180,12 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		local.gpoCfg.ADMXPath = requested
 		defs, source, e := local.editorDefinitions(nil, "")
 		return helperADMXCatalog{defs, source}, e
+	case "topology.cleanup.reserve", "topology.cleanup.event":
+		return helperCleanupApply(ctx, cfg, method, in)
+	case "domain.backup.start", "domain.backup.status":
+		return helperDomainBackup(ctx, cfg, method, in)
+	case "topology.snapshot.store", "topology.snapshot.load":
+		return helperTopologySnapshot(cfg, method, in)
 	case "backup.store", "backup.load":
 		return helperBackup(cfg, method, in)
 	default:

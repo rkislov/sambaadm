@@ -104,3 +104,54 @@ func TestIntegrationTopologySurvey(t *testing.T) {
 		t.Fatalf("RWDC audit: %+v %v", auth, e)
 	}
 }
+
+func TestIntegrationCleanupPreparation(t *testing.T) {
+	if os.Getenv("SAMBAADM_IT_HELPERS") != "1" {
+		t.Skip("requires disposable two-DC helper domain")
+	}
+	s, cfg := integrationServices(t, true)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Second)
+	defer cancel()
+	site, e := s.Sites.Create(ctx, "Cleanup-Preview-Test", "test", "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { s.Sites.Delete(context.Background(), "Cleanup-Preview-Test", "test", "") })
+	if e = s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", ConfigDN(cfg.BaseDN), "test", ""); e != nil {
+		t.Fatal(e)
+	}
+	p, e := s.Sites.PreviewCleanup(ctx, []string{site.DN})
+	if e != nil {
+		t.Fatal(e)
+	}
+	report, e := s.Sites.CheckCleanup(ctx, CleanupChecksRequest{CleanupRequest: CleanupRequest{DNs: []string{site.DN}, Revision: p.Revision}, Peer: "dc2.sambaadm.test"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	matched := false
+	for _, check := range report.Checks {
+		if check.ID == "peer" {
+			matched = check.Status == "ok"
+		}
+	}
+	if !matched || report.CanApply {
+		t.Fatalf("peer mismatch or unsafe apply: %+v", report)
+	}
+	receipt, e := s.Sites.ArchiveCleanup(ctx, CleanupRequest{DNs: []string{site.DN}, Revision: p.Revision}, "test", "")
+	if e != nil || !receipt.Verified {
+		t.Fatal(receipt, e)
+	}
+	same, e := s.Sites.CheckCleanup(ctx, CleanupChecksRequest{CleanupRequest: CleanupRequest{DNs: []string{site.DN}, Revision: p.Revision}, Peer: "dc1.sambaadm.test"})
+	if e != nil {
+		t.Fatal(e)
+	}
+	blocked := false
+	for _, check := range same.Checks {
+		if check.ID == "peer" {
+			blocked = check.Status == "blocked"
+		}
+	}
+	if !blocked {
+		t.Fatal("same DC counted as independent peer")
+	}
+}

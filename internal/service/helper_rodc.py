@@ -5,7 +5,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import uuid
 
@@ -43,16 +42,28 @@ def main():
     found = local.search(base=account, scope=ldb.SCOPE_BASE, expression="(objectClass=user)", attrs=[])
     if len(found) != 1:
         raise ValueError("user or computer must already be replicated to the RODC")
-    # fallback_machine=True in Samba rodc preload uses this RODC's machine
-    # credentials. RWDC enforces this RODC's PRP; no administrator password.
-    completed = subprocess.run(
-        ["/usr/bin/samba-tool", "rodc", "preload", "--server=" + request["Source"], "--", str(account)],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        timeout=35, check=False,
-        env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LANG": "C.UTF-8"},
-    )
-    if completed.returncode != 0:
-        raise ValueError("Samba preload failed")
+    from samba.credentials import Credentials
+    from samba.dcerpc import misc, drsuapi
+    from samba.drs_utils import drs_Replicate
+    creds = Credentials()
+    creds.guess(lp)
+    creds.set_machine_account(lp)
+    remote = SamDB(url="ldap://" + request["Source"], credentials=creds,
+                   session_info=system_session(), lp=lp)
+    source = remote.search(base=remote.get_dsServiceName(), scope=ldb.SCOPE_BASE,
+                           attrs=["invocationId"])[0]
+    invocation = misc.GUID(local.schema_format_value("objectGUID", source["invocationId"][0]))
+    destination = misc.GUID(local.get_ntds_GUID())
+    replication = drs_Replicate("ncacn_ip_tcp:" + request["Source"] + "[seal]",
+                                lp, creds, local, destination)
+    local.transaction_start()
+    try:
+        replication.replicate(str(account), invocation, destination,
+                              exop=drsuapi.DRSUAPI_EXOP_REPL_SECRET, rodc=True)
+        local.transaction_commit()
+    except Exception:
+        local.transaction_cancel()
+        raise
     return {"status": "preloaded", "controller": request["Controller"], "account": request["Account"]}
 
 

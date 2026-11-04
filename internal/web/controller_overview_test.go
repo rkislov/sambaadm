@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sambaadm/internal/auth"
+	"sambaadm/internal/service"
 	"strings"
 	"testing"
 )
@@ -32,9 +33,9 @@ func TestControllerOverviewAccessAndTimeValidation(t *testing.T) {
 		if role == auth.RoleAdmin {
 			continue
 		}
-		for _, path := range []string{"/sites/controllers/dc/inventory", "/sites/topology/audit"} {
+		for _, path := range []string{"/sites/controllers/dc/inventory", "/sites/topology/audit", "/sites/topology/cleanup/apply", "/sites/topology/cleanup/preview", "/sites/topology/cleanup/snapshot", "/sites/topology/cleanup/checks", "/sites/topology/cleanup/backup", "/sites/controllers/dc/backups/invalid"} {
 			method := "GET"
-			if strings.HasSuffix(path, "audit") {
+			if strings.Contains(path, "/topology/") {
 				method = "POST"
 			}
 			req := httptest.NewRequest(method, "/api/v1"+path, strings.NewReader(`{}`))
@@ -60,5 +61,29 @@ func TestControllerOverviewAccessAndTimeValidation(t *testing.T) {
 	s.Router().ServeHTTP(w, req)
 	if w.Code != 403 {
 		t.Fatal(w.Code)
+	}
+}
+
+func TestCleanupPreparationValidationAndCSRF(t *testing.T) {
+	s := testWorkspaceServer(t)
+	s.svcs = &service.Services{Sites: &service.SiteService{}}
+	sess, _ := s.sessions.Create("test", "CN=test", auth.RoleAdmin)
+	for _, endpoint := range []string{"preview", "snapshot", "checks", "backup", "apply"} {
+		for _, csrf := range []bool{false, true} {
+			req := httptest.NewRequest("POST", "/api/v1/sites/topology/cleanup/"+endpoint, strings.NewReader(`{"dns":[]}`))
+			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
+			if csrf {
+				req.Header.Set(csrfHeader, sess.CSRFToken)
+			}
+			w := httptest.NewRecorder()
+			s.Router().ServeHTTP(w, req)
+			want := 403
+			if csrf {
+				want = 400
+			}
+			if w.Code != want {
+				t.Fatalf("%s csrf=%v: %d %s", endpoint, csrf, w.Code, w.Body.String())
+			}
+		}
 	}
 }

@@ -42,6 +42,15 @@ func (c *Client) Connect(ctx context.Context) (context.Context, dcerpc.Conn, err
 	if port == 0 {
 		port = 445
 	}
-	cc, err := dcerpc.Dial(ctx, c.Host, dcerpc.WithTimeout(15*time.Second), epm.EndpointMapper(ctx, c.Host, dcerpc.WithTimeout(15*time.Second)), dcerpc.WithSMBPort(port), dcerpc.WithSMBDialer(smbDialer))
-	return ctx, cc, err
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	dialer := &rpcDialer{ctx: ctx}
+	stop := context.AfterFunc(ctx, dialer.close)
+	cc, err := dcerpc.Dial(ctx, c.Host, dcerpc.WithTimeout(15*time.Second), epm.EndpointMapper(ctx, c.Host, dcerpc.WithTimeout(15*time.Second)), dcerpc.WithDialer(dialer), dcerpc.WithSMBPort(port), dcerpc.WithSMBDialer(smbDialer))
+	if err != nil {
+		dialer.close()
+		stop()
+		cancel()
+		return ctx, nil, err
+	}
+	return ctx, &boundedRPC{Conn: cc, dialer: dialer, cancel: cancel, stop: stop}, nil
 }

@@ -8,6 +8,8 @@ helper:
     cert: ""
     key: ""
   sysvol_prefix: "example.com/Policies"
+  # Opt in on a RWDC with systemd; archives contain domain secrets.
+  domain_backup_enabled: false
   backup_root: /var/lib/sambaadm-helper/backups
   state_dir: /var/lib/sambaadm-helper
   admx_root: "" # Optional allowed root for local ADMX paths supplied by sambaadm.

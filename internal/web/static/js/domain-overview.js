@@ -24,7 +24,7 @@
     const content = el('div'); section.append(el('h3', title), content); root.append(section); sections[id] = content;
   }
   async function request(path, body) {
-    const response = await fetch('/api/v1' + path, {method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(35000), headers: {Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''}, body: body === undefined ? undefined : JSON.stringify(body)});
+    const response = await fetch('/api/v1' + path, {method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(path.endsWith("/cleanup/apply") ? 300000 : path.endsWith("/cleanup/checks") ? 90000 : 35000), headers: {Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''}, body: body === undefined ? undefined : JSON.stringify(body)});
     const data = await response.json(); if (!response.ok) throw Error(data.error || 'HTTP ' + response.status); return data;
   }
   let pending = 0;
@@ -83,6 +83,87 @@
     }
     select.addEventListener('change', selected); selected();
   }
+  function domainBackupTools(parent, dns, plan) {
+    const controllers = (report.sections.controllers?.data || []).filter(dc => !dc.rodc && !plan.objects.some(o => o.dn.toLowerCase() === (dc.dn || '').toLowerCase()));
+    if (!controllers.length) return;
+    const label = el('label', t('RWDC для резервной копии домена', 'RWDC for domain backup')), select = el('select');
+    for (const dc of controllers) { const option = el('option', dc.dns); option.value = dc.dns; select.append(option); }
+    label.append(select); parent.append(label);
+    parent.append(el('p', t('Холодная копия: выбранный DC должен быть остановлен администратором, LDAP приложения — доступен через другой RWDC. Helper не останавливает службы. Архив содержит секреты домена. После копирования helper проверяет восстановление и пробную очистку в изоляции. Перед применением снова запустите DC.', 'Cold backup: stop the selected DC first; the application needs another reachable RWDC for LDAP. Helper never stops services. Archive contains domain secrets. Helper then verifies isolated restore and rehearses cleanup. Restart the DC before applying.')));
+    const checksOutput = el('div');
+    action(parent, t('Проверить зависимости и сверить с этим RWDC', 'Check dependencies and compare with this RWDC'), async () => {
+      checksOutput.replaceChildren(el('p',t('Проверка…','Checking…')));
+      try { const result = await request('/sites/topology/cleanup/checks',{dns,revision:plan.revision,peer:select.value});
+        checksOutput.replaceChildren(el('p',formatTime(result.observed)));
+        table(checksOutput,[t('Проверка','Check'),t('Статус','Status'),t('Подробности','Details')],result.checks.map(c=>[c.id,c.status,c.detail]));
+        table(checksOutput,['DC',t('Источник','Source'),t('Атрибут','Attribute'),t('Ссылка','Reference')],result.dependencies.map(d=>[d.controller,d.source,d.attribute,d.target]));
+      } catch(e) { checksOutput.replaceChildren(el('p',e.message)); }
+    }); parent.append(checksOutput);
+    const confirm = control(parent, t('Подтверждаю создание полной копии на выбранном RWDC', 'Confirm full backup on selected RWDC'), 'checkbox');
+    const id = control(parent, t('Идентификатор задания копирования', 'Backup job ID')); id.maxLength = 36;
+    const output = el('div');
+    const render = job => {
+      const states = {queued:t('В очереди','Queued'),running:t('Выполняется','Running'),backed_up:t('Архив создан и проверен','Archive created and verified'),failed:t('Ошибка','Failed'),interrupted:t('Прервано — копия не подтверждена','Interrupted — backup unconfirmed'),unknown:t('Состояние неизвестно','Status unknown')};
+      output.replaceChildren(el('p', states[job.status] || job.status), el('p', 'ID: '+job.id), el('p', formatTime(job.finished || job.started)));
+      if (job.sha256) output.append(el('p','SHA-256: '+job.sha256),el('p',t('Размер, байт: ','Size, bytes: ')+job.bytes));
+      if (job.error) output.append(el('p',job.error));
+      output.append(el('p',job.restoreVerified ? t('Изолированная очистка и повторное восстановление базы/SYSVOL из архива проверены.','Isolated cleanup and a second database/SYSVOL restore from the archive verified.') : t('Восстановление этой копии ещё не проверено.','Restore of this backup has not been verified.')));
+      if (job.applyReserved) output.append(el('p',t('Применение уже запускалось: повтор заблокирован. Проверьте журнал.','Apply was already reserved: retry blocked. Inspect the journal.')));
+      if (job.applyEvents?.length) table(output,[t('Время','Time'),'DN',t('Статус','Status'),t('Подробности','Details')],job.applyEvents.map(e=>[formatTime(e.time),e.dn || '',e.status,e.detail || '']));
+    };
+    action(parent, t('Создать резервную копию домена', 'Create domain backup'), async () => {
+      if (!confirm.checked) { output.replaceChildren(el('p',t('Подтвердите создание копии.','Confirm backup creation.'))); return; }
+      if (!id.value) id.value = crypto.randomUUID();
+      try { render(await request('/sites/topology/cleanup/backup', {dns,revision:plan.revision,controller:select.value,id:id.value})); }
+      catch(e) { output.replaceChildren(el('p',e.message),el('p',t('Сохраните ID и проверьте статус перед повтором: ','Keep the ID and check status before retrying: ')+id.value)); }
+    });
+    action(parent, t('Проверить статус копии', 'Check backup status'), async () => {
+      if (!id.value) return;
+      try { render(await request('/sites/controllers/'+encodeURIComponent(select.value)+'/backups/'+encodeURIComponent(id.value))); }
+      catch(e) { output.replaceChildren(el('p',e.message)); }
+    });
+    const retireConfirm = control(parent,t('Подтверждаю окончательный вывод выбранных DC из эксплуатации; повторный запуск исключён','Confirm selected DCs are permanently decommissioned and will not be restarted'),'checkbox');
+    const applyConfirm = control(parent,t('Подтверждаю удаление объектов плана; изменения топологии другими администраторами приостановлены','Confirm deletion of planned objects; other administrators have paused topology changes'),'checkbox');
+    action(parent,t('Применить план очистки','Apply cleanup plan'),async()=>{
+      if (!applyConfirm.checked || !id.value) {output.replaceChildren(el('p',t('Подтвердите удаление и укажите ID проверенной копии.','Confirm deletion and enter a verified backup ID.')));return;}
+      applyConfirm.checked=false;
+      output.replaceChildren(el('p',t('Повторная проверка и применение… Не запускайте повторно; журнал доступен по ID копии.','Rechecking and applying… Do not retry; the journal is available under the backup ID.')));
+      try {const result=await request('/sites/topology/cleanup/apply',{dns,revision:plan.revision,controller:select.value,id:id.value,confirm:true,confirmDecommissioned:retireConfirm.checked});
+        output.replaceChildren(el('p',result.status==='completed' ? t('Очистка подтверждена на всех оставшихся контроллерах.','Cleanup confirmed on all surviving controllers.') : t('Выполнение остановлено. Проверьте журнал; автоматического отката нет.','Execution stopped. Inspect the journal; there is no automatic rollback.')));
+        table(output,[t('Время','Time'),'DN',t('Статус','Status'),t('Подробности','Details')],result.events.map(e=>[formatTime(e.time),e.dn || '',e.status,e.detail || '']));
+      } catch(e) {output.replaceChildren(el('p',e.message),el('p',t('Проверьте статус копии и журнал до любых повторных действий.','Check backup status and journal before any retry.')));}
+    });
+    select.addEventListener('change',()=>{confirm.checked=false;applyConfirm.checked=false;retireConfirm.checked=false;output.replaceChildren();}); parent.append(output);
+  }
+  function cleanupTools(box, findings) {
+    const choices = el('div'), output = el('div'), selected = new Set();
+    box.append(el('h4', t('Подготовка очистки LDAP', 'LDAP cleanup preparation')));
+    box.append(el('p', t('Поддерживаются пустые сайты и устаревшие связи; NTDS, разрешённые RID/DFSR-объекты и DNS-записи выведенных DC. Снимок выбранных атрибутов не заменяет резервную копию домена и проверку восстановления.', 'Empty sites and stale links are supported; retired DC NTDS, supported RID/DFSR objects and DNS records. A selective attribute snapshot does not replace a domain backup and restore rehearsal.')));
+    for (const dn of [...new Set(findings.map(f => f.dn))]) {
+      const label = el('label'), check = el('input'); check.type = 'checkbox';
+      label.append(check, document.createTextNode(dn)); choices.append(label);
+      check.addEventListener('change', () => { if (check.checked) selected.add(dn); else selected.delete(dn); output.replaceChildren(); });
+    }
+    box.append(choices);
+    action(box, t('Предпросмотр без изменений', 'Preview without changes'), async () => {
+      output.replaceChildren(); const dns = [...selected];
+      if (!dns.length || dns.length > 50) { output.append(el('p', t('Выберите от 1 до 50 объектов.', 'Select 1 to 50 objects.'))); return; }
+      try {
+        const plan = await request('/sites/topology/cleanup/preview', {dns});
+        output.append(el('p', t('План получен: ', 'Plan observed: ') + formatTime(plan.observed)));
+        table(output, ['DN', t('Действие','Action'), t('Ревизия объекта', 'Object revision'),t('Изменения','Changes')], plan.objects.map(o => [o.dn, o.remove ? t('Удалить выбранные значения','Remove selected values') : t('Удалить объект','Delete object'), o.usn, o.remove ? Object.entries(o.remove).map(([key,values])=>key+': '+values.length).join(', ') : '']));
+        output.append(el('p', t('Применение заблокировано: нужны сверка на другом RWDC, проверки зависимостей/FSMO/репликации, полноценная копия домена и репетиция восстановления.', 'Apply is blocked: another RWDC, dependency/FSMO/replication checks, domain backup and restore rehearsal are required.')));
+        jsonDetail(output, t('План и ограничения', 'Plan and limitations'), plan);
+        const receipt = el('div');
+        action(output, t('Сохранить и проверить снимок через helper', 'Save and verify snapshot through helper'), async () => {
+          receipt.replaceChildren();
+          try { const saved = await request('/sites/topology/cleanup/snapshot', {dns, revision:plan.revision}); receipt.append(el('p', t('Снимок сохранён и прочитан обратно: ', 'Snapshot saved and read back: ') + saved.id), el('p', 'SHA-256: ' + saved.sha256), el('p', formatTime(saved.created))); }
+          catch (e) { receipt.append(el('p', e.message)); }
+        }); output.append(receipt);
+        domainBackupTools(output, dns, plan);
+      } catch (e) { output.append(el('p', e.message)); }
+    }); box.append(output);
+  }
   async function load() {
     refresh.disabled = true;
     for (const section of Object.values(sections)) section.replaceChildren(el('p', t('Загрузка…', 'Loading…')));
@@ -107,6 +188,7 @@
       resultPanel(diag, 'topologyAudit', t('Проверить остатки DC и связей LDAP', 'Check stale DC and LDAP links'), '/sites/topology/audit', {}, (box, d) => {
         box.append(el('p', statusText(d.status) + ' · ' + t('Объектов: ', 'Objects: ') + d.objects)); if (d.ldapServer) box.append(el('p', 'LDAP: ' + d.ldapServer + ' · ' + d.baseDN)); if (ru) { box.append(el('p', 'Сверьте находки на другом DC и с историей вывода серверов. Права чтения и задержка репликации могут скрыть объекты. Пустые сайты могут быть запланированы, возраст объекта не доказывает неактивность. Объекты не удаляются.')); if (d.status === 'partial') box.append(el('p', 'Некоторые проверки не завершены из-за прав, ошибок или лимитов. Подробности доступны в JSON-отчёте.')); } else d.warnings.forEach(w => box.append(el('p', w)));
         table(box, [t('Проверка', 'Check'), t('Статус', 'Status'), 'DN', t('Ссылка', 'Reference'), t('Причина', 'Reason'), t('Изменён', 'Changed')], d.findings.map(f => [findingText(f.code), statusText(f.severity), f.dn, f.reference, f.detail, formatTime(f.changed)]));
+        if (d.status === 'complete' && d.findings.length) cleanupTools(box, d.findings);
       });
     }
     const policies = report.sections.gpo;
