@@ -138,6 +138,8 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return s.Shares.PlanProfile(ctx, in.Name)
 	case "samba.profile.apply":
 		return s.Shares.ApplyProfile(ctx, in.Name, in.Revision, in.Actor, in.IP)
+	case "host.inventory":
+		return localControllerInventory(ctx, cfg.Helper.Node), nil
 	case "host.metrics":
 		var m HostMonitor
 		metrics := m.Snapshot(ctx)

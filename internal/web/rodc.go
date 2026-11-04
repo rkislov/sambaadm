@@ -34,6 +34,14 @@ func (s *Server) handleAPIRODC(w http.ResponseWriter, r *http.Request) {
 	topologyResult(w, out, e)
 }
 func (s *Server) handleAPIRODCAuth(w http.ResponseWriter, r *http.Request) {
+	s.handleControllerAuth(w, r, true)
+}
+
+func (s *Server) handleAPIControllerAuth(w http.ResponseWriter, r *http.Request) {
+	s.handleControllerAuth(w, r, false)
+}
+
+func (s *Server) handleControllerAuth(w http.ResponseWriter, r *http.Request, rodcOnly bool) {
 	if !requireRole(w, r, auth.CanAdmin) {
 		return
 	}
@@ -52,6 +60,37 @@ func (s *Server) handleAPIRODCAuth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"error": "account filter too long"})
 		return
 	}
-	out, e := s.svcs.RODC.Authentications(r.Context(), chi.URLParam(r, "name"), after, account)
+	var before time.Time
+	if raw := r.URL.Query().Get("before"); raw != "" {
+		var e error
+		before, e = time.Parse(time.RFC3339, raw)
+		if e != nil || (!after.IsZero() && before.Before(after)) {
+			writeJSON(w, 400, map[string]string{"error": "invalid before time or interval"})
+			return
+		}
+	}
+	fetch := s.svcs.RODC.ControllerAuthentications
+	if rodcOnly {
+		fetch = s.svcs.RODC.Authentications
+	}
+	out, e := fetch(r.Context(), chi.URLParam(r, "name"), after, account)
+	if e == nil && out != nil && !before.IsZero() {
+		events := []service.RODCAuthEvent{}
+		for _, event := range out.Events {
+			if !event.Time.After(before) {
+				events = append(events, event)
+			}
+		}
+		out.Events = events
+	}
+	topologyResult(w, out, e)
+}
+
+func (s *Server) handleAPIControllerInventory(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	out, e := s.svcs.RODC.Inventory(r.Context(), chi.URLParam(r, "name"))
 	topologyResult(w, out, e)
 }

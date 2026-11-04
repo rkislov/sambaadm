@@ -225,3 +225,11 @@ func (s *Server) handleAPIKCC(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
 	topologyResult(w, nil, s.svcs.Repl.KCC(r.Context(), in.DC, sess.Username, r.RemoteAddr))
 }
+
+func (s *Server) handleAPITopologyAudit(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, s.svcs.Sites.AuditTopology(r.Context()))
+}

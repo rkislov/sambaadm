@@ -189,3 +189,19 @@ func TestEncodedLDAPISocketAndTLSHandshakeCancellation(t *testing.T) {
 		t.Fatal("no accepted TLS connection")
 	}
 }
+
+func TestSearchLimitNeverReturnsPartialEntries(t *testing.T) {
+	server := testldap.New(t, map[string]string{"service": "password"}, func(testldap.Search) ([]testldap.Entry, int64) {
+		return []testldap.Entry{{DN: "CN=one"}, {DN: "CN=two"}}, 0
+	})
+	client := NewServiceClient(config.LDAPConfig{URI: server.URI(), BaseDN: "DC=example", Bind: config.BindConfig{User: "service", Type: "simple"}}, func() string { return "password" })
+	defer client.Close()
+	entries, err := client.Search(context.Background(), SearchOptions{MaxEntries: 1})
+	if err == nil || entries != nil {
+		t.Fatalf("partial result escaped: %v %v", entries, err)
+	}
+	entries, err = client.Search(context.Background(), SearchOptions{MaxEntries: 2})
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("bounded full result: %v %v", entries, err)
+	}
+}

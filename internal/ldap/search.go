@@ -15,6 +15,7 @@ type SearchOptions struct {
 	Filter     string
 	Attributes []string
 	Scope      *int // nil = wholeSubtree
+	MaxEntries int  // optional hard limit; incomplete results are never returned
 	PageSize   uint32
 }
 
@@ -75,6 +76,9 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) ([]*ldap.Entry,
 		res, err := conn.Search(req)
 		if err != nil {
 			return nil, fmt.Errorf("ldap search: %w", err)
+		}
+		if opts.MaxEntries > 0 && len(all)+len(res.Entries) > opts.MaxEntries {
+			return nil, fmt.Errorf("ldap search exceeded entry limit")
 		}
 		all = append(all, res.Entries...)
 

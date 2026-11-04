@@ -3261,6 +3261,9 @@
                 - "name": "after"
                   "in": "query"
                   "schema": {"type": "string", "format": "date-time"}
+                - "name": "before"
+                  "in": "query"
+                  "schema": {"type": "string", "format": "date-time"}
                 - "name": "account"
                   "in": "query"
                   "schema": {"type": "string", "maxLength": 256}
@@ -3269,6 +3272,48 @@
                 "400": {"description": "Invalid filter or controller"}
                 "403": {"description": "Admin required"}
                 "502": {"description": "Helper unavailable"}
+    "/sites/controllers/{name}/authentications":
+        "get":
+            "summary": "Read the selected RWDC or RODC's local Samba JSON authentication audit through its helper"
+            "parameters":
+                - "name": "name"
+                  "in": "path"
+                  "required": true
+                  "schema": {"type": "string"}
+                - "name": "after"
+                  "in": "query"
+                  "schema": {"type": "string", "format": "date-time"}
+                - "name": "before"
+                  "in": "query"
+                  "schema": {"type": "string", "format": "date-time"}
+                - "name": "account"
+                  "in": "query"
+                  "schema": {"type": "string", "maxLength": 256}
+            "responses":
+                "200": {"description": "controller, source, status (available/partial/unavailable), events, truncated, malformed and warning. Up to 500 matching events from the last 8 MiB. An empty result is not proof of no logins."}
+                "400": {"description": "Invalid filter or controller"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Helper unavailable"}
+    "/sites/controllers/{name}/inventory":
+        "get":
+            "summary": "Read selected DC's Samba version and known systemd units through helper"
+            "parameters":
+                - "name": "name"
+                  "in": "path"
+                  "required": true
+                  "schema": {"type": "string"}
+            "responses":
+                "200": {"description": "controller, observed and checks (id, status, detail); unknown is not healthy"}
+                "400": {"description": "Unknown controller or helper not configured"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "LDAP or helper unavailable"}
+    "/sites/topology/audit":
+        "post":
+            "summary": "Inspect possible stale DC, site and connection metadata without changing LDAP"
+            "description": "Admin and X-CSRF-Token required. Reads Configuration and DC trust accounts in current domain. Findings are candidates for investigation, not permission to delete. Limits: 10000 entries per search, 256 computer reference probes, 25 second context. No tombstone access."
+            "responses":
+                "200": {"description": "started, finished, status (complete/partial collection), objects, warnings, findings (code, severity review/unknown, dn, reference, detail, changed)"}
+                "403": {"description": "Admin and CSRF required"}
 "components":
     "securitySchemes":
         "cookieAuth":

@@ -236,7 +236,10 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/repl/sync", s.handleAPIReplSync)
 
 		r.Get("/sites/topology", s.handleAPITopology)
+		r.Post("/sites/topology/audit", s.handleAPITopologyAudit)
 		r.Get("/sites/controllers", s.handleAPIControllers)
+		r.Get("/sites/controllers/{name}/inventory", s.handleAPIControllerInventory)
+		r.Get("/sites/controllers/{name}/authentications", s.handleAPIControllerAuth)
 		r.Get("/sites/controllers/{name}/rodc", s.handleAPIRODC)
 		r.Post("/sites/controllers/{name}/rodc", s.handleAPIRODC)
 		r.Put("/sites/controllers/{name}/rodc", s.handleAPIRODC)
