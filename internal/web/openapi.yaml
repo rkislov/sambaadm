@@ -3314,6 +3314,81 @@
             "responses":
                 "200": {"description": "started, finished, status (complete/partial collection), objects, warnings, findings (code, severity review/unknown, dn, reference, detail, changed)"}
                 "403": {"description": "Admin and CSRF required"}
+    "/sites/topology/cleanup/preview":
+        "post":
+            "summary": "Preview selected current LDAP findings without deleting objects"
+            "description": "Admin and X-CSRF-Token required. JSON body: dns (1-50 unique DNs); snapshot also requires revision from preview. canApply is always false. Snapshot excludes secrets and ACLs and is not a domain backup."
+            "responses":
+                "200": {"description": "Preview plan or verified snapshot receipt"}
+                "400": {"description": "Invalid selection or incomplete audit"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Plan changed; preview again"}
+                "502": {"description": "LDAP or helper operation failed"}
+    "/sites/topology/cleanup/snapshot":
+        "post":
+            "summary": "Revalidate preview and save a selective snapshot through helper"
+            "description": "Admin and X-CSRF-Token required. JSON body: dns (1-50 unique DNs); snapshot also requires revision from preview. canApply is always false. Snapshot excludes secrets and ACLs and is not a domain backup."
+            "responses":
+                "200": {"description": "Preview plan or verified snapshot receipt"}
+                "400": {"description": "Invalid selection or incomplete audit"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Plan changed; preview again"}
+                "502": {"description": "LDAP or helper operation failed"}
+    "/sites/topology/cleanup/checks":
+        "post":
+            "summary": "Read dependencies, FSMO and peer RWDC metadata without applying cleanup"
+            "description": "Admin and X-CSRF-Token required. Body: dns and revision; checks requires peer, backup requires controller and UUID id. Apply requires a separate confirmed request with a verified matching backup."
+            "responses":
+                "200": {"description": "Read-only checks or durable backup job"}
+                "400": {"description": "Invalid input"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Stale plan or reused job ID"}
+                "502": {"description": "LDAP or helper failure"}
+    "/sites/topology/cleanup/backup":
+        "post":
+            "summary": "Start native cold DC backup through helper; selected DC must be stopped"
+            "description": "Admin and X-CSRF-Token required. Body: dns and revision; checks requires peer, backup requires controller and UUID id. Apply requires a separate confirmed request with a verified matching backup."
+            "responses":
+                "200": {"description": "Read-only checks or durable backup job"}
+                "400": {"description": "Invalid input"}
+                "403": {"description": "Admin or CSRF required"}
+                "409": {"description": "Stale plan or reused job ID"}
+                "502": {"description": "LDAP or helper failure"}
+    "/sites/controllers/{name}/backups/{id}":
+        "get":
+            "summary": "Read durable helper backup job status"
+            "parameters":
+                - {"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}
+                - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            "responses":
+                "200": {"description": "Job status, restoreVerified receipt result, applyReserved and persisted applyEvents (including updating/updated)"}
+                "403": {"description": "Admin required"}
+                "502": {"description": "Helper status unavailable"}
+    "/sites/topology/cleanup/apply":
+        "post":
+            "summary": "Apply a supported cleanup plan with a verified backup and replica checks"
+            "description": "Admin and CSRF required. Body: dns, revision, controller, id (backup UUID), confirm:true. Empty sites, stale links and explicitly retired DC metadata, including enumerated NTDS/RID/DFSR objects and selective AD DNS record removal. Disabled or confirmed missing DC account required. Existing FSMO ownership, live LDAP response, unknown dependencies, last NS, SOA primary and shared IPs block cleanup. Retired DC remnants require confirmDecommissioned:true. Single-domain forest, at least two surviving RWDCs, maximum 16 registered controllers, no RODC replicas or retired RODC NTDS. Backup must have a matching isolated restore receipt and be less than 24 hours old. The backup application slot is one-use. Reads every replica, deletes children before parents with LDAP revision assertions, then replicates Configuration, domain, DomainDnsZones and ForestDnsZones and verifies absence and preserved values. Inspect status and journal after interruption; never blindly retry. No automatic live rollback."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["dns", "revision", "controller", "id", "confirm"]
+                            "properties":
+                                "dns": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"type": "string"}}
+                                "revision": {"type": "string", "minLength": 64, "maxLength": 64}
+                                "controller": {"type": "string"}
+                                "id": {"type": "string", "format": "uuid"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "confirmDecommissioned": {"type": "boolean", "default": false, "description": "Required true for DC remnants: permanent retirement and no future restart confirmed"}
+            "responses":
+                "200": {"description": "id, status (completed or stopped), events. stopped can mean partial or uncertain deletion and is not success."}
+                "400": {"description": "Unsupported scope, failed checks, missing confirmation, unverified backup or used application slot"}
+                "403": {"description": "Admin and CSRF required"}
+                "409": {"description": "Stale plan"}
+                "502": {"description": "Preflight LDAP, DRS or helper failure"}
 "components":
     "securitySchemes":
         "cookieAuth":

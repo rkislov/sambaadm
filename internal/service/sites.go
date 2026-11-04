@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-ldap/ldap/v3"
 
+	"sambaadm/internal/agent"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
 )
@@ -27,8 +28,9 @@ type Subnet struct {
 
 // SiteService manages sites.
 type SiteService struct {
-	ldap  *ldapproto.Client
-	audit *audit.Logger
+	helpers *agent.Client
+	ldap    *ldapproto.Client
+	audit   *audit.Logger
 }
 
 // SubnetService manages subnets.

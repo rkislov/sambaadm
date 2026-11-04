@@ -56,14 +56,16 @@ for package in service web; do
     CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go test -c -o "$work/$package.test" "./internal/$package"
     compose cp "$work/$package.test" "dc:/tmp/$package.test"
     if [ "${SAMBAADM_RODC:-0}" != 1 ]; then
-    compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST \
+    compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST -e SAMBAADM_IT_TEST_PATTERN="${SAMBAADM_IT_TEST_PATTERN:-Integration}" \
         -e SAMBAADM_IT_URI=ldaps://127.0.0.1:636 \
         -e SAMBAADM_IT_USER=Administrator@sambaadm.test -e SAMBAADM_IT_SECOND_DC="${SAMBAADM_IT_SECOND_DC:-}" -e SAMBAADM_IT_HELPERS="${SAMBAADM_HELPERS:-0}" dc \
-        sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run Integration -test.v -test.timeout 4m' sh "$package"
+        sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run "$SAMBAADM_IT_TEST_PATTERN" -test.v -test.timeout 4m' sh "$package"
     fi
 done
 if [ "${SAMBAADM_RODC:-0}" = 1 ]; then
  compose cp "$work/service.test" rodc:/tmp/service.test
+ # Prove runtime preload uses native bindings, not the provisioning CLI.
+ compose exec -T rodc mv /usr/bin/samba-tool /usr/bin/samba-tool.disabled
  compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST \
    -e SAMBAADM_IT_URI=ldaps://dc1.sambaadm.test:636 \
    -e SAMBAADM_IT_USER=Administrator@sambaadm.test -e SAMBAADM_IT_RODC=rodc.sambaadm.test rodc \

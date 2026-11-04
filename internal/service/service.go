@@ -59,7 +59,7 @@ func NewWithOptions(ldap *ldapproto.Client, auditLog *audit.Logger, opts Service
 		Trusts:    &TrustService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		Domain:    &DomainService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		Repl:      &ReplService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
-		Sites:     &SiteService{ldap: ldap, audit: auditLog},
+		Sites:     &SiteService{ldap: ldap, audit: auditLog, helpers: opts.Helpers},
 		Subnets:   &SubnetService{ldap: ldap, audit: auditLog},
 		DNS:       &DNSService{ldap: ldap, audit: auditLog, remote: &adremote.Client{SMBPort: opts.GPO.SMBPort, Host: remoteHost, User: opts.Username, Password: opts.Password}},
 		GPO: &GPOService{

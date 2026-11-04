@@ -233,3 +233,98 @@ func (s *Server) handleAPITopologyAudit(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, s.svcs.Sites.AuditTopology(r.Context()))
 }
+
+func (s *Server) handleAPICleanupPreview(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var in service.CleanupRequest
+	if !topologyJSON(w, r, &in) {
+		return
+	}
+	out, err := s.svcs.Sites.PreviewCleanup(r.Context(), in.DNs)
+	topologyResult(w, out, err)
+}
+func (s *Server) handleAPICleanupSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var in service.CleanupRequest
+	if !topologyJSON(w, r, &in) {
+		return
+	}
+	sess := sessionFrom(r)
+	out, err := s.svcs.Sites.ArchiveCleanup(r.Context(), in, sess.Username, r.RemoteAddr)
+	topologyResult(w, out, err)
+}
+
+func (s *Server) handleAPIDomainBackupStart(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var in service.CleanupBackupRequest
+	if !topologyJSON(w, r, &in) {
+		return
+	}
+	out, err := s.svcs.Sites.StartDomainBackup(r.Context(), in)
+	if s.svcs.Audit != nil {
+		sess := sessionFrom(r)
+		if err != nil {
+			s.svcs.Audit.Failure(sess.Username, "domain.backup.start", in.Controller+" "+in.ID, r.RemoteAddr, err)
+		} else {
+			s.svcs.Audit.Success(sess.Username, "domain.backup.start", in.Controller+" "+in.ID, r.RemoteAddr)
+		}
+	}
+	topologyResult(w, out, err)
+}
+func (s *Server) handleAPIDomainBackupStatus(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	out, err := s.svcs.Sites.DomainBackupStatus(r.Context(), chi.URLParam(r, "name"), chi.URLParam(r, "id"))
+	topologyResult(w, out, err)
+}
+
+func (s *Server) handleAPICleanupChecks(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var in service.CleanupChecksRequest
+	if !topologyJSON(w, r, &in) {
+		return
+	}
+	out, err := s.svcs.Sites.CheckCleanup(r.Context(), in)
+	if err != nil {
+		topologyResult(w, nil, err)
+		return
+	}
+	repl, err := s.svcs.Repl.StatusFor(r.Context(), out.Peer)
+	check := service.DiagnosticCheck{ID: "peer_replication", Status: "unknown", Detail: "Replication could not be confirmed"}
+	if err != nil {
+		check.Detail = err.Error()
+	} else {
+		check.Status = repl.Health
+		check.Detail = "DRS state on " + out.Peer + "; this does not prove forest-wide convergence"
+	}
+	out.Checks = append(out.Checks, check)
+	topologyResult(w, out, nil)
+}
+
+func (s *Server) handleAPICleanupApply(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	var in service.CleanupApplyRequest
+	if !topologyJSON(w, r, &in) {
+		return
+	}
+	sess := sessionFrom(r)
+	out, err := s.svcs.Sites.ApplyCleanup(r.Context(), in, sess.Username, r.RemoteAddr, s.svcs.Repl)
+	topologyResult(w, out, err)
+}

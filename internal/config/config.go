@@ -25,16 +25,17 @@ type Config struct {
 }
 
 type HelperServerConfig struct {
-	Node         string    `mapstructure:"node"`
-	TrustedKeys  []string  `mapstructure:"trusted_keys"`
-	Listen       string    `mapstructure:"listen"`
-	TLS          TLSConfig `mapstructure:"tls"`
-	SYSVOLPrefix string    `mapstructure:"sysvol_prefix"`
-	AuthLog      string    `mapstructure:"auth_log"`
-	PasswordFile string    `mapstructure:"password_file"`
-	BackupRoot   string    `mapstructure:"backup_root"`
-	StateDir     string    `mapstructure:"state_dir"`
-	ADMXRoot     string    `mapstructure:"admx_root"`
+	DomainBackupEnabled bool      `mapstructure:"domain_backup_enabled"`
+	Node                string    `mapstructure:"node"`
+	TrustedKeys         []string  `mapstructure:"trusted_keys"`
+	Listen              string    `mapstructure:"listen"`
+	TLS                 TLSConfig `mapstructure:"tls"`
+	SYSVOLPrefix        string    `mapstructure:"sysvol_prefix"`
+	AuthLog             string    `mapstructure:"auth_log"`
+	PasswordFile        string    `mapstructure:"password_file"`
+	BackupRoot          string    `mapstructure:"backup_root"`
+	StateDir            string    `mapstructure:"state_dir"`
+	ADMXRoot            string    `mapstructure:"admx_root"`
 }
 
 // SambaConfig controls local smb.conf / file-share administration.

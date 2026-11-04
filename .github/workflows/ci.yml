@@ -59,6 +59,8 @@ jobs:
         run: SAMBAADM_TWO_DC=1 SAMBAADM_HELPERS=1 make integration
       - name: RODC policy, preload and local authentication audit through helper
         run: SAMBAADM_RODC=1 make integration
+      - name: Native cold DC backup and isolated restore without Samba CLI
+        run: testdata/samba/test-domain-backup.sh
 
   browser:
     runs-on: ubuntu-latest

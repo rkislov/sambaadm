@@ -18,7 +18,7 @@
 apt-get update
 apt-get install bash coreutils tar util-linux shadow-utils systemd
 # Скачайте sambaadm-package вместе с RPM из того же релиза:
-sudo bash ./sambaadm-package install ./sambaadm-0.33.0-alt1.x86_64.rpm
+sudo bash ./sambaadm-package install ./sambaadm-0.34.0-alt1.x86_64.rpm
 sudoedit /etc/sambaadm/config.yaml
 sudoedit /etc/sambaadm/env
 sudo systemctl enable --now sambaadm.service
@@ -41,7 +41,7 @@ root:sambaadm. Пакетный пример слушает **127.0.0.1:8080**. 
 ## Обновление
 
 ```sh
-sudo sambaadm-package update ./sambaadm-0.33.0-alt1.x86_64.rpm
+sudo sambaadm-package update ./sambaadm-0.34.0-alt1.x86_64.rpm
 # Если предыдущая версия устанавливалась без helper:
 sudo sambaadm-package update ./new.rpm --previous-rpm ./installed-version.rpm
 ```
@@ -93,7 +93,7 @@ RPM (`--oldpackage`), заменяет `/etc/sambaadm` и overrides unit их с
 
 Основной unit работает как `sambaadm`, с `ProtectSystem=strict`, `ProtectHome=true`, `NoNewPrivileges=true`. Запись разрешена в `/var/lib/sambaadm` и `/var/log/sambaadm`. Пользователь не получает root/sudo. LDAP, DNS и DRS используют служебную доменную запись приложения.
 
-Начиная с v0.33.0 операции ОС, файлов и SYSVOL выполняет отдельный `sambaadm-helper`, в том числе на основном сервере. Установите соответствующий RPM на каждый управляемый Linux-узел, настройте доверенный открытый ключ и SSH либо HTTPS, затем зарегистрируйте узлы в `helpers.nodes`. Подробный порядок — [инструкция helper](helper.md) и [руководство администратора](admin.md).
+Начиная с v0.32.0 операции ОС, файлов и SYSVOL выполняет отдельный `sambaadm-helper`, в том числе на основном сервере. Установите соответствующий RPM на каждый управляемый Linux-узел, настройте доверенный открытый ключ и SSH либо HTTPS, затем зарегистрируйте узлы в `helpers.nodes`. Подробный порядок — [инструкция helper](helper.md) и [руководство администратора](admin.md).
 
 Для нестандартных каталогов шаров настройте права ОС и `ReadWritePaths` в override **sambaadm-helper.service**, не основного unit. Права закрытого ключа подписи на управляющем сервере — 0600, конфигурация и состояние helper приватны для root. Обновление основного RPM не устанавливает и не обновляет helper на удалённых серверах. `sambaadm-package` управляет пакетом sambaadm; helper обновляйте отдельно через RPM/apt с сохранением конфигурации и контролируемым перезапуском HTTPS-службы.
 
@@ -112,11 +112,11 @@ Helper откажется устанавливать RPM поверх неё, ч
 
 ```sh
 # На рабочей машине с Go и Docker, внутри будет ALT p10:
-make rpm-alt VERSION=0.33.0 RPM_ARCH=amd64
-make rpm-alt VERSION=0.33.0 RPM_ARCH=arm64
+make rpm-alt VERSION=0.34.0 RPM_ARCH=amd64
+make rpm-alt VERSION=0.34.0 RPM_ARCH=arm64
 # На ALT с готовым статическим ELF и rpm-build, file и systemd-analyze:
 mkdir -p dist
-bash packaging/alt/build-rpm.sh 0.33.0 ./sambaadm-linux-amd64 ./dist
+bash packaging/alt/build-rpm.sh 0.34.0 ./sambaadm-linux-amd64 ./dist
 ```
 
 Это пакет бинарной поставки, не исходный пакет Sisyphus: Go-бинарник собран вне
@@ -155,7 +155,7 @@ docker build --build-arg 'ALT_APT_MIRRORS=http://mirror.example/altlinux http://
 Проверка без создания нового релиза:
 
 ```sh
-gh workflow run release.yml --ref main -f version=0.33.0
+gh workflow run release.yml --ref main -f version=0.34.0
 ```
 
 Ручной запуск только сохраняет `release-verified` в Actions artifacts. Публикация
@@ -190,3 +190,12 @@ GitHub Release выполняется при push числового тега `v
 Добавлены управление Password Replication Policy по каждому RODC, принудительное заполнение кэша отдельных пользователей/компьютеров и просмотр локального JSON-аудита Authentication через helper. Источник preload — настроенный записываемый DC. Добавлена очистка старых архивов исправления SYSVOL по предпросмотру; по таймеру они не удаляются.
 
 Релиз включает два Word-руководства и архив Markdown-инструкций с конфигурациями. Проверки выполнены на тестовом домене и ALT p10; это не приёмка реального домена или ALT СП 10.2.2.
+
+
+## Обновление до v0.34.0
+
+Установите основной пакет и отдельный `sambaadm-helper` версии 0.34.0 на все используемые узлы. `sambaadm-package` обновляет только основной пакет. Для SSH новый helper используется следующим запросом, для HTTPS перезапустите `sambaadm-helper.service`. Сохраните конфигурацию, ключи и `backup_root`; `%config(noreplace)` не включает новые возможности автоматически.
+
+Для холодных копий на выбранном оставшемся RWDC явно включите `helper.domain_backup_enabled: true`. Нужны systemd, Python 3 и библиотеки Samba, отдельный `backup_root` и место для архива и двух восстановленных копий. Samba останавливает и запускает администратор. Рабочий LDAP приложения должен оставаться доступен через другой RWDC. Новый план очистки требует новой копии с изолированной пробной очисткой и повторным восстановлением; старые квитанции не принимаются.
+
+Очистка поддержана для одного домена с минимум двумя остающимися RWDC, без RODC-реплик. Проверки холодного копирования выполнены на Samba 4.17/TDB; сборка и установка RPM на ALT p10 не заменяют приёмку этой функции на целевой ALT СП 10.2.2. Откат пакета не восстанавливает удалённые объекты AD. Полный порядок и ограничения приведены в [руководстве администратора](admin.md).

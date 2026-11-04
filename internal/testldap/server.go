@@ -15,6 +15,8 @@ type Entry struct {
 	Attributes map[string][]string
 }
 type Search struct {
+	BaseDN string
+	Scope  int64
 	User   string
 	Filter *ber.Packet
 }
@@ -152,7 +154,7 @@ func (s *Server) serve(conn net.Conn, id int) {
 			if len(op.Children) < 7 {
 				return
 			}
-			query := Search{User: bound, Filter: op.Children[6]}
+			query := Search{User: bound, Filter: op.Children[6], BaseDN: op.Children[0].Data.String(), Scope: op.Children[1].Value.(int64)}
 			s.mu.Lock()
 			s.searches = append(s.searches, query)
 			s.mu.Unlock()

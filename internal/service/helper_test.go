@@ -17,7 +17,7 @@ import (
 	ldapproto "sambaadm/internal/ldap"
 )
 
-func testHelperClient(t *testing.T, backend *Services, cfg *config.Config) *agent.Client {
+func testHelperClient(t *testing.T, backend *Services, cfg *config.Config, intercept ...func(context.Context, string, json.RawMessage) error) *agent.Client {
 	t.Helper()
 	if cfg.Helper.StateDir == "" {
 		cfg.Helper.StateDir = t.TempDir()
@@ -38,6 +38,11 @@ func testHelperClient(t *testing.T, backend *Services, cfg *config.Config) *agen
 		t.Fatal(e)
 	}
 	srv := httptest.NewUnstartedServer(agent.API(v, func(ctx context.Context, method string, raw json.RawMessage) (any, error) {
+		for _, hook := range intercept {
+			if err := hook(ctx, method, raw); err != nil {
+				return nil, err
+			}
+		}
 		return backend.HelperDispatch(ctx, cfg, method, raw)
 	}))
 	srv.StartTLS()

@@ -237,6 +237,12 @@ func (s *Server) buildRouter() chi.Router {
 
 		r.Get("/sites/topology", s.handleAPITopology)
 		r.Post("/sites/topology/audit", s.handleAPITopologyAudit)
+		r.Post("/sites/topology/cleanup/apply", s.handleAPICleanupApply)
+		r.Post("/sites/topology/cleanup/preview", s.handleAPICleanupPreview)
+		r.Post("/sites/topology/cleanup/snapshot", s.handleAPICleanupSnapshot)
+		r.Post("/sites/topology/cleanup/backup", s.handleAPIDomainBackupStart)
+		r.Post("/sites/topology/cleanup/checks", s.handleAPICleanupChecks)
+		r.Get("/sites/controllers/{name}/backups/{id}", s.handleAPIDomainBackupStatus)
 		r.Get("/sites/controllers", s.handleAPIControllers)
 		r.Get("/sites/controllers/{name}/inventory", s.handleAPIControllerInventory)
 		r.Get("/sites/controllers/{name}/authentications", s.handleAPIControllerAuth)
