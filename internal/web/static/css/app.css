@@ -520,3 +520,14 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .policy-model-conflict>td:first-child{border-left:4px solid #b96900;font-weight:600}
 .policy-model-conflicts{border:1px solid #d99a2b;border-left:4px solid #b96900;border-radius:6px;padding:.8rem;margin:1rem 0;background:#fffbf2}
 .policy-model-conflicts>summary{font-weight:600;color:#653b00;cursor:pointer}
+
+.overview-section{margin:1.5rem 0;padding:1rem;border:1px solid var(--border);border-radius:8px;min-width:0}
+.overview-section h4{margin-top:1.2rem}.overview-section p,.overview-section td{overflow-wrap:anywhere}
+.overview-table{max-width:100%;overflow-x:auto}.overview-table table{width:100%;font-size:.9rem}
+.overview-table th,.overview-table td{padding:.5rem;text-align:left;vertical-align:top;max-width:28rem}
+.overview-section pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:32rem;overflow:auto}
+.overview-actions{display:flex;flex-wrap:wrap;gap:.75rem;margin:1rem 0}
+.overview-actions label{display:flex;flex-direction:column}.overview-section select,.overview-section input{max-width:100%;min-width:0}
+.overview-section button{margin:.4rem .4rem .4rem 0;white-space:normal}
+.overview-section input[type=datetime-local]{padding:.5rem;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--ink);font:inherit}
+.overview-section label{display:block;margin-top:.6rem}.overview-table td{min-width:6rem}

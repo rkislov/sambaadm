@@ -13,14 +13,15 @@
     health.append(node('h2',t('Состояние репликации','Replication status')));const summary=node('p',t('Проверка контроллеров…','Checking controllers…'));summary.dataset.replicationSummary='';health.append(summary);const list=node('ul','', 'replication-health');health.append(list);
     const controllers=results[3];if(!controllers||!controllers.length){summary.textContent=controllers?t('Нет контроллеров — состояние не подтверждено','No controllers — health unverified'):t('Список контроллеров недоступен — состояние неизвестно','Controller list unavailable — health unknown');}
     else {
-      const counts={healthy:0,degraded:0,unknown:0};let next=0;
+      const counts={healthy:0,degraded:0,unknown:0}, observations=[];let next=0;
       const entries=controllers.map(dc=>{const li=node('li',dc.dns+' — '+t('Проверка…','Checking…'));list.append(li);return li;});
-      async function worker(){while(next<controllers.length){const i=next++,dc=controllers[i];try{const status=await get('/repl/status?dc='+encodeURIComponent(dc.dns));const label=status.health==='healthy'?t('Успешно','Healthy'):status.health==='degraded'?t('Есть ошибки','Degraded'):status.health==='no-partners'?t('Нет партнёров — состояние не подтверждено','No partners — health unverified'):t('Неизвестно','Unknown');counts[status.health==='healthy'?'healthy':status.health==='degraded'?'degraded':'unknown']++;entries[i].textContent=dc.dns+' — '+label;}catch(e){counts.unknown++;entries[i].textContent=dc.dns+' — '+t('Недоступно: ','Unavailable: ')+e.message;}}}
+      async function worker(){while(next<controllers.length){const i=next++,dc=controllers[i];try{const status=await get('/repl/status?dc='+encodeURIComponent(dc.dns));observations.push({controller:dc.dns,source:'/repl/status?dc='+encodeURIComponent(dc.dns),observed:new Date().toISOString(),status:'available',data:status});const label=status.health==='healthy'?t('Успешно','Healthy'):status.health==='degraded'?t('Есть ошибки','Degraded'):status.health==='no-partners'?t('Нет партнёров — состояние не подтверждено','No partners — health unverified'):t('Неизвестно','Unknown');counts[status.health==='healthy'?'healthy':status.health==='degraded'?'degraded':'unknown']++;entries[i].textContent=dc.dns+' — '+label;}catch(e){observations.push({controller:dc.dns,observed:new Date().toISOString(),status:'unavailable',error:e.message});counts.unknown++;entries[i].textContent=dc.dns+' — '+t('Недоступно: ','Unavailable: ')+e.message;}}}
       await Promise.all(Array.from({length:Math.min(3,controllers.length)},worker));
       summary.textContent=t('Успешно: ','Healthy: ')+counts.healthy+t(' · С ошибками: ',' · Degraded: ')+counts.degraded+t(' · Не подтверждено: ',' · Unverified: ')+counts.unknown;
       summary.className=counts.degraded||counts.unknown?'alert error':'';
+      document.dispatchEvent(new CustomEvent('sambaadm:replication',{detail:observations}));
     }
-    const link=node('a',t('Открыть репликацию и топологию','Open replication and topology'));link.href='/repl';health.append(link);notice.textContent=t('Проверено: ','Checked: ')+new Date().toLocaleString(ru?'ru-RU':'en-US')+t('. Сводка по текущему домену.','. Current domain summary.');refresh.disabled=false;
+    const link=node('a',t('Открыть репликацию и топологию','Open replication and topology'));link.href='/repl';health.append(link);notice.textContent=t('Проверено: ','Checked: ')+window.sambaadmFormatTime(new Date())+t('. Сводка по текущему домену.','. Current domain summary.');refresh.disabled=false;
   }
   refresh.addEventListener('click',load);load();
 })();

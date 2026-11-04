@@ -283,3 +283,21 @@ LDAP identity, metadata, security и versionNumber должны совпадат
 Файловые операции остальных API выполняются через [SSH/HTTPS helpers](helper.md).
 LDAP/DNS/DRS остаются в управляющем приложении. Путь backup/restore относится
 к файловой системе helper `helpers.host_node` и ограничен `helper.backup_root`.
+
+## Обследование контроллеров и остатков топологии
+
+- `GET /api/v1/sites/controllers/{name}/inventory` — admin, сведения ОС выбранного
+  обнаруженного DC через helper: `controller`, `observed`, `checks` версии Samba
+  и фиксированного набора systemd units. Ошибка helper не заменяется локальной проверкой.
+- `GET /api/v1/sites/controllers/{name}/authentications?after=...&before=...&account=...`
+  — admin, Authentication JSON audit RWDC/RODC. Даты RFC3339, начало не позже конца,
+  account до 256 символов. Ответ и ограничения совпадают с RODC audit; `before`
+  фильтрует уже ограниченный хвост. Старый RODC endpoint также принимает `before`.
+- `POST /api/v1/sites/topology/audit` — admin + CSRF, только чтение. Ответ:
+  `started`, `finished`, `status` (`complete`/`partial` — полнота сбора, не исправность),
+  `ldapServer` (имя хоста без реквизитов), `baseDN`, `objects`, `warnings`, `findings` (`code`, `severity`: `review`/`unknown`, `dn`,
+  `reference`, `detail`, `changed`). Проверяются структурные остатки DC/сайтов/связей;
+  автоматического удаления, проверки возраста пользователей и компьютеров нет.
+
+Все три endpoint возвращают `Cache-Control: no-store`. JSON-экспорт обзора собирает
+результаты этих и существующих API в браузере, с источником и временем каждого.

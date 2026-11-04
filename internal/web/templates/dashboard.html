@@ -5,6 +5,7 @@
   {{template "head" .}}
   <script src="/static/js/dashboard.js" defer></script>
   <script src="/static/js/host-metrics.js" defer></script>
+  <script src="/static/js/domain-overview.js" defer></script>
 </head>
 <body>
   {{template "nav" .}}
@@ -13,6 +14,7 @@
     <h1>{{t .Lang "dashboard.title"}}</h1>
     <p class="muted">{{t .Lang "dashboard.hint"}}</p>
     <section id="domain-dashboard" aria-label="Domain summary"></section>
+    <section id="domain-overview" data-admin="{{if canAdmin .Role}}true{{else}}false{{end}}"></section>
     <dl class="kv">
       <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
       <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>

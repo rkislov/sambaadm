@@ -35,11 +35,19 @@ type RODCAuthReport struct {
 // Reads only the operator-configured file for this discovered RODC. No request
 // can supply a filename, SSH command, or logging configuration to a controller.
 func (s *RODCService) Authentications(ctx context.Context, name string, after time.Time, account string) (*RODCAuthReport, error) {
+	return s.controllerAuthentications(ctx, name, after, account, true)
+}
+
+func (s *RODCService) ControllerAuthentications(ctx context.Context, name string, after time.Time, account string) (*RODCAuthReport, error) {
+	return s.controllerAuthentications(ctx, name, after, account, false)
+}
+
+func (s *RODCService) controllerAuthentications(ctx context.Context, name string, after time.Time, account string, rodcOnly bool) (*RODCAuthReport, error) {
 	dc, e := (&SiteService{ldap: s.ldap}).controller(ctx, name)
 	if e != nil {
 		return nil, e
 	}
-	if !dc.RODC {
+	if rodcOnly && !dc.RODC {
 		return nil, topologyBad("select an RODC")
 	}
 	if s.helpers != nil {

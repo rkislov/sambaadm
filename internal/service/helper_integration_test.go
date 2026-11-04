@@ -7,6 +7,7 @@ import (
 	"os"
 	"sambaadm/internal/agent"
 	"testing"
+	"time"
 )
 
 func TestIntegrationHelperSSHAndHTTPS(t *testing.T) {
@@ -29,6 +30,14 @@ func TestIntegrationHelperSSHAndHTTPS(t *testing.T) {
 			}
 			if health["node"] != "dc2.sambaadm.test" {
 				t.Fatal(health)
+			}
+			var inventory ControllerInventory
+			if e := client.Call(ctx, "dc2.sambaadm.test", "host.inventory", HostOperation{}, &inventory); e != nil || len(inventory.Checks) != 4 || inventory.Checks[0].Status != "ok" {
+				t.Fatalf("inventory: %+v %v", inventory, e)
+			}
+			var auth RODCAuthReport
+			if e := client.Call(ctx, "dc2.sambaadm.test", "rodc.auth", struct{ After, Account string }{}, &auth); e != nil {
+				t.Fatal(e)
 			}
 			var files []helperFileInfo
 			if e := client.Call(ctx, "dc2.sambaadm.test", "sysvol.list", helperFSRequest{Path: `sambaadm.test\Policies`}, &files); e != nil {
@@ -69,5 +78,29 @@ func TestIntegrationHelperSSHAndHTTPS(t *testing.T) {
 			}
 			filename += "-moved"
 		})
+	}
+}
+
+func TestIntegrationTopologySurvey(t *testing.T) {
+	if os.Getenv("SAMBAADM_IT_HELPERS") != "1" {
+		t.Skip("requires disposable helper domain")
+	}
+	s, _ := integrationServices(t, false)
+	report := s.Sites.AuditTopology(context.Background())
+	if report.Status != "complete" || report.Objects == 0 {
+		t.Fatalf("audit incomplete: %+v", report)
+	}
+	for _, f := range report.Findings {
+		if f.Code != "site_without_servers" {
+			t.Fatalf("unexpected remnant in test domain: %+v", f)
+		}
+	}
+	inventory, e := s.RODC.Inventory(context.Background(), "dc2.sambaadm.test")
+	if e != nil || inventory.Controller != "dc2.sambaadm.test" {
+		t.Fatalf("inventory: %+v %v", inventory, e)
+	}
+	auth, e := s.RODC.ControllerAuthentications(context.Background(), "dc2.sambaadm.test", time.Time{}, "")
+	if e != nil || auth.Controller != "dc2.sambaadm.test" {
+		t.Fatalf("RWDC audit: %+v %v", auth, e)
 	}
 }
