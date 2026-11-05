@@ -1,5 +1,8 @@
 # sambaadm
 
+[Единый комплект установки sambaadm и helper для ALT Linux](docs/alt-install.md#единый-комплект-для-новой-установки)
+
+
 <!-- owner-maintenance:start -->
 **Автор проекта, изменений и публикаций — Кислов Роман Сергеевич ([@rkislov](https://github.com/rkislov)).**
 
@@ -17,7 +20,7 @@ go build → один файл sambaadm
 
 Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
 
-> **Статус:** v0.35.0 проверяет вход в LDAP и чтение SYSVOL по NTLM и Kerberos для каждой холодной копии после восстановления. [Релиз и порядок обновления](docs/releases/v0.35.0.md). [Дорожная карта](docs/ROADMAP.md).
+> **v0.36.0** добавляет автонастройку на ALT Linux, регистрацию HTTPS-helper и автономное обследование домена. [Релиз и порядок обновления](docs/releases/v0.36.0.md). [Дорожная карта](docs/ROADMAP.md).
 
 ---
 

@@ -1,0 +1,21 @@
+{{define "surveys.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script defer src="/static/js/surveys.js"></script></head>
+<body>{{template "nav" .}}<main class="container">
+<h1>Материалы автономного обследования</h1>
+<p>Загрузите материалы, полученные от администратора площадки. Узел и площадка в импортированных файлах указаны отправителем. Проверьте содержимое перед передачей.</p>
+<form id="survey-import">
+<label>Формат <select name="format"><option value="helper">Снимок helper</option><option value="overview">JSON из обзора домена</option><option value="audit">Журнал Samba Authentication (JSON по строкам)</option></select></label>
+<label>Узел-источник <input name="node" maxlength="256"></label>
+<label>Площадка <input name="site" maxlength="256"></label>
+<label>Файл до 16 МиБ <input name="material" type="file" required></label><button>Импортировать</button>
+</form>
+<p id="survey-status" role="status"></p>
+<label>Сохранённые материалы <select id="survey-list"></select></label>
+<details><summary>Сводный отчёт по ТЗ</summary>
+<p>Выберите материалы одного домена и периода обследования.</p>
+<label>Материалы для сравнения <select multiple size="5" id="survey-sources"></select></label>
+<button type="button" id="survey-build">Сформировать отчёт</button>
+<section id="survey-report" aria-live="polite"></section></details>
+<section id="survey-view"></section>
+</main></body></html>
+{{end}}

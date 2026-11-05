@@ -91,7 +91,7 @@ def build(source, target):
         p=doc.add_paragraph(plain(line))
         if code is False and '](' in line:
             for label, href in re.findall(r'\[([^]]+)\]\(([^)]+)\)',line):
-                url=href if href.startswith('http') else 'https://github.com/rkislov/sambaadm/blob/v0.35.0/'+str((source.parent/href).resolve().relative_to(ROOT))
+                url=href if href.startswith('http') else 'https://github.com/rkislov/sambaadm/blob/v0.36.0/'+str((source.parent/href).resolve().relative_to(ROOT))
                 r=p.add_run(' '+url);r.font.size=Pt(8)
         if code:
             p.paragraph_format.space_after=Pt(0)
@@ -104,7 +104,7 @@ def build(source, target):
             p.paragraph_format.keep_with_next=True
     doc.core_properties.title=doc.paragraphs[0].text
     doc.core_properties.author='sambaadm'
-    doc.core_properties.subject='Руководство для sambaadm 0.35.0 от 5 ноября 2026 года'
+    doc.core_properties.subject='Руководство для sambaadm 0.36.0 от 5 ноября 2026 года'
     target.parent.mkdir(parents=True,exist_ok=True);doc.save(target)
 
 build(ROOT/'docs/admin.md',ROOT/'docs/admin-guide/sambaadm-admin-guide.docx')

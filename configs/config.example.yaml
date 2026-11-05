@@ -4,6 +4,7 @@ server:
   #   cert: /etc/sambaadm/server.crt
   #   key:  /etc/sambaadm/server.key
   metrics: true
+  survey_dir: /var/lib/sambaadm/surveys
 
 ldap:
   uri: "ldaps://dc1.example.com:636"
