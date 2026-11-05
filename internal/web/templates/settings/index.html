@@ -9,6 +9,7 @@
   {{template "nav" .}}
   <main class="container">
     <h1>{{t .Lang "settings.title"}}</h1>
+    <p><a href="/settings/helpers">Настроить подключение helper по HTTPS</a></p>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}
     <form method="post" action="/settings" class="form-card">

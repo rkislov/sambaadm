@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -31,7 +32,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: sambaadm-helper stdio|serve|keygen [options]")
+		return fmt.Errorf("usage: sambaadm-helper stdio|serve|keygen|collect [options]")
 	}
 	mode := os.Args[1]
 	if mode == "version" {
@@ -42,6 +43,8 @@ func run() error {
 	filename := flags.String("config", "/etc/sambaadm-helper/config.yaml", "root-owned helper configuration")
 	private := flags.String("private", "", "new signing private key path")
 	public := flags.String("public", "", "new trusted public key path")
+	out := flags.String("out", "", "new survey JSON file")
+	site := flags.String("site", "", "operator-supplied site label")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
 	}
@@ -54,7 +57,7 @@ func run() error {
 		}
 		return agent.GenerateKey(*private, *public)
 	}
-	if mode != "stdio" && mode != "serve" {
+	if mode != "stdio" && mode != "serve" && mode != "collect" {
 		return fmt.Errorf("unsupported helper command")
 	}
 	if runtime.GOOS != "linux" {
@@ -69,6 +72,38 @@ func run() error {
 	}
 	if e = checkHelperConfig(cfg.Source); e != nil {
 		return e
+	}
+	if mode == "collect" {
+		if *out == "" {
+			return fmt.Errorf("collect requires --out FILE")
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		survey, err := service.CollectNodeSurvey(ctx, cfg, *site)
+		if err != nil {
+			return err
+		}
+		blob, err := json.MarshalIndent(survey, "", "  ")
+		if err != nil {
+			return err
+		}
+		if len(blob) > service.SurveyLimit {
+			return fmt.Errorf("survey exceeds import limit")
+		}
+		f, err := os.CreateTemp(filepath.Dir(*out), ".survey-*")
+		if err != nil {
+			return err
+		}
+		defer os.Remove(f.Name())
+		_, err = f.Write(blob)
+		closeErr := f.Close()
+		if err != nil {
+			return err
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		return os.Link(f.Name(), *out)
 	}
 	v, e := agent.NewVerifier(cfg.Helper.Node, cfg.Helper.TrustedKeys)
 	if e != nil {

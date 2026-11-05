@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -38,6 +39,8 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
+	enrollMu    sync.Mutex
+	surveyMu    sync.Mutex
 	cfg         *config.Config
 	svcs        *service.Services
 	sessions    *auth.Store
@@ -144,8 +147,11 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/printers/new", s.handlePrinterCreateForm)
 		r.Post("/printers", s.handlePrinterCreatePost)
 		r.Get("/audit", s.handleAudit)
+		r.Get("/surveys", s.surveyPage)
 		r.Get("/diagnostics", s.handleDiagnostics)
 		r.Post("/diagnostics/run", s.handleDiagnosticsRun)
+		r.Get("/settings/helpers", s.enrollHelper)
+		r.Post("/settings/helpers", s.enrollHelper)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsPost)
 	})
@@ -156,6 +162,9 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/shares/wizard", s.handleAPIShareWizard)
 		r.Get("/samba/profile", s.handleAPISambaProfile)
 		r.Put("/samba/profile", s.handleAPISambaProfile)
+		r.Get("/surveys", s.surveysAPI)
+		r.Get("/surveys/{id}", s.surveysAPI)
+		r.Post("/surveys", s.surveysAPI)
 		r.Post("/system/diagnostics", s.handleAPIDiagnostics)
 		r.Get("/system/metrics", s.handleAPIHostMetrics)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)

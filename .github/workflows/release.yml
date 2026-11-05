@@ -94,6 +94,9 @@ jobs:
           test -s "dist/sambaadm-$version-alt1.aarch64.rpm"
           test -s "dist/sambaadm-helper-$version-alt1.x86_64.rpm"
           test -s "dist/sambaadm-helper-$version-alt1.aarch64.rpm"
+          for arch in x86_64 aarch64; do
+            sh packaging/alt/build-install-kit.sh "$version" "$arch" dist
+          done
           cd dist
           sha256sum sambaadm-* > SHA256SUMS
           sha256sum -c SHA256SUMS

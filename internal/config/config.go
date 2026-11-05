@@ -62,9 +62,11 @@ type GPOConfig struct {
 }
 
 type ServerConfig struct {
-	Listen  string    `mapstructure:"listen"`
-	TLS     TLSConfig `mapstructure:"tls"`
-	Metrics bool      `mapstructure:"metrics"`
+	EnrollmentDir string    `mapstructure:"enrollment_dir"`
+	SurveyDir     string    `mapstructure:"survey_dir"`
+	Listen        string    `mapstructure:"listen"`
+	TLS           TLSConfig `mapstructure:"tls"`
+	Metrics       bool      `mapstructure:"metrics"`
 }
 
 type TLSConfig struct {
@@ -140,6 +142,16 @@ func Load(cfgFile string) (*Config, error) {
 	if cfg.GPO.RepairBackupKeep < 1 || cfg.GPO.RepairBackupKeep > 100 || cfg.GPO.RepairBackupMaxMiB < 1 || cfg.GPO.RepairBackupMaxMiB > 10240 {
 		return nil, fmt.Errorf("gpo.repair_backup_keep must be 1..100 and repair_backup_max_mib 1..10240")
 	}
+	if cfg.Server.EnrollmentDir != "" {
+		if len(cfg.Helpers.Nodes) > 0 || cfg.Helpers.PrivateKey != "" || cfg.Helpers.HostNode != "" {
+			return nil, fmt.Errorf("configure helpers or server.enrollment_dir separately")
+		}
+		var err error
+		cfg.Helpers, err = ManagedHelpers(cfg.Server.EnrollmentDir)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if e := cfg.Helpers.Validate(); e != nil {
 		return nil, e
 	}
@@ -157,6 +169,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gpo.script_backup_max_mib", 64)
 	v.SetDefault("gpo.repair_backup_keep", 10)
 	v.SetDefault("gpo.repair_backup_max_mib", 512)
+	v.SetDefault("server.survey_dir", "/var/lib/sambaadm/surveys")
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)
 	v.SetDefault("ldap.uri", "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi")
