@@ -79,10 +79,47 @@ func TestCleanupPeerComparisonIgnoresLocalUSN(t *testing.T) {
 
 func TestNativeHelpersDoNotDelegateToCommandHandlers(t *testing.T) {
 	for name, script := range map[string]string{"domain backup": domainBackupWorker, "RODC preload": localRODCPreloadScript} {
-		for _, forbidden := range []string{"samba-tool", "samba.netcmd", "subprocess", "os.system("} {
+		for _, forbidden := range []string{"samba-tool", "samba.netcmd", "os.system("} {
 			if strings.Contains(script, forbidden) {
 				t.Fatalf("%s delegates through %s", name, forbidden)
 			}
+		}
+	}
+}
+
+func TestBackupLiveVerificationRequiresAllEvidence(t *testing.T) {
+	valid := BackupLiveVerification{DCStarted: true, UserLogin: true, InvalidPasswordRejected: true, SYSVOLRead: true, KerberosTGT: true, KerberosLDAP: true, KerberosSYSVOL: true, Authentication: "temporary-user-ntlm-and-kerberos", SYSVOLPath: "example.com/Policies/default/GPT.INI"}
+	if !valid.verified() || (*BackupLiveVerification)(nil).verified() {
+		t.Fatal("invalid live verification decision")
+	}
+	for _, change := range []func(*BackupLiveVerification){
+		func(v *BackupLiveVerification) { v.DCStarted = false },
+		func(v *BackupLiveVerification) { v.UserLogin = false },
+		func(v *BackupLiveVerification) { v.InvalidPasswordRejected = false },
+		func(v *BackupLiveVerification) { v.SYSVOLRead = false },
+		func(v *BackupLiveVerification) { v.KerberosTGT = false },
+		func(v *BackupLiveVerification) { v.KerberosLDAP = false },
+		func(v *BackupLiveVerification) { v.KerberosSYSVOL = false },
+		func(v *BackupLiveVerification) { v.Authentication = "temporary-user-ntlm" },
+		func(v *BackupLiveVerification) { v.Authentication = "" },
+		func(v *BackupLiveVerification) { v.SYSVOLPath = "" },
+	} {
+		v := valid
+		change(&v)
+		if v.verified() {
+			t.Fatal("accepted incomplete live evidence")
+		}
+	}
+}
+
+func TestBackupHostFilePinsOnlyController(t *testing.T) {
+	data, err := backupHostFile("DC1.Example.COM")
+	if err != nil || string(data) != "127.0.0.1 localhost\n127.0.0.1 dc1.example.com dc1\n::1 localhost\n" {
+		t.Fatalf("unexpected isolated hosts file: %q, %v", data, err)
+	}
+	for _, name := range []string{"", "dc1", "127.0.0.1", "::1", "dc1.example.com\n192.0.2.1 other", "dc1.example.com alias", "dc1..com", "-dc1.example.com", "dc1.example-", "dc1@example.com", "dc1.example.com#x", "dc1.example.com/extra"} {
+		if _, err := backupHostFile(name); err == nil {
+			t.Fatalf("accepted invalid hostname %q", name)
 		}
 	}
 }

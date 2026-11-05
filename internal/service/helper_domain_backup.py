@@ -11,6 +11,7 @@ import stat
 import sys
 import tarfile
 import traceback
+import tempfile
 
 LIMIT = 10 * 1024**3
 PATH_PARAMETERS = ['private dir','state directory','cache directory','lock directory','pid directory','ncalrpc dir','binddns dir','xattr_tdb:file','posix:eadb']
@@ -228,12 +229,7 @@ def verify_archive(path):
 
 def restore_isolated(archive,target,expected):
     # This is a rehearsal-only recovery path, never a production restore endpoint.
-    import fcntl, struct
-    with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as probe:
-        for _,name in socket.if_nameindex():
-            flags=struct.unpack('H',fcntl.ioctl(probe.fileno(),0x8913,struct.pack('256s',name.encode()))[16:18])[0]
-            if name!='lo' and flags & 1:
-                raise ValueError('Restore rehearsal requires all non-loopback interfaces down')
+    require_isolated_network()
     require_stopped()
     if digest_file(archive)!=expected:
         raise ValueError('Archive checksum mismatch')
@@ -303,6 +299,270 @@ def restore_isolated(archive,target,expected):
             raise ValueError('Restored SYSVOL ACL mismatch')
     check_database(sam)
     return dict(status='restored_isolated',domainGUID=manifest['request']['domainGUID'],config=str(conf))
+
+
+def require_isolated_network():
+    import fcntl, struct
+    # systemd creates PrivateNetwork=yes; kernels may also expose dormant
+    # tunnel templates in an otherwise empty namespace. Reject any active NIC.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        for _, name in socket.if_nameindex():
+            flags = struct.unpack('H', fcntl.ioctl(probe.fileno(), 0x8913, struct.pack('256s', name.encode()))[16:18])[0]
+            if name != 'lo' and flags & 1:
+                raise ValueError('Restore rehearsal requires all non-loopback interfaces down')
+            if name == 'lo' and not flags & 1:
+                raise ValueError('Isolated loopback must be up')
+
+
+def live_restore_probe(config, job, result):
+    """Runs only in a disposable child process group; no production credentials."""
+    import secrets, subprocess, time
+    import ldb
+    from samba import gensec, param
+    from samba.credentials import Credentials, DONT_USE_KERBEROS, MUST_USE_KERBEROS, SPECIFIED
+    from samba.samdb import SamDB
+    from samba.samba3 import param as s3param
+    from samba.samba3 import libsmb_samba_internal as libsmb
+    os.setsid()
+    result.send('started')
+    stage = 'preparation'
+    try:
+        require_isolated_network()
+        require_stopped()
+        lp, sam, paths = identity(config, job)
+        username = 'restore-' + secrets.token_hex(6)
+        password = secrets.token_urlsafe(48) + '!aA1'
+        sam.newuser(username, password)
+        user = sam.search(expression='(sAMAccountName='+username+')', attrs=['objectGUID'])[0]
+        user_guid = bytes(user['objectGUID'][0])
+        domain_guid = base64.b64decode(job['domainGUID'])
+        # Only the disposable private-tmp image becomes traversable to the
+        # ordinary SMB user. The archive/job directory remains mode 0700.
+        image_root = pathlib.Path(config).parent
+        sysvol = pathlib.Path(paths.sysvol)
+        sysvol.relative_to(image_root)
+        for ancestor in sysvol.parents:
+            if ancestor == image_root.parent:
+                break
+            os.chmod(ancestor, ancestor.stat().st_mode | 0o111)
+        # Only known-safe settings are copied. Never start arbitrary source
+        # shares, VFS modules, hooks, DNS scripts or external configuration.
+        values = {'server role': 'active directory domain controller',
+                  'realm': lp.get('realm'), 'workgroup': lp.get('workgroup'),
+                  'netbios name': lp.get('netbios name'),
+                  'interfaces': 'lo', 'bind interfaces only': 'yes',
+                  'name resolve order': 'host',
+                  'server services': 's3fs rpc nbt wrepl ldap cldap kdc drepl winbindd ntp_signd kcc dnsupdate dns',
+                  'dns update command': '/bin/true', 'spn update command': '/bin/true',
+                  'log file': str(image_root/'live-samba.log'),
+                  'ntp signd socket directory': str(image_root/'ntp_signd'),
+                  'winbindd socket directory': '/run/samba/winbindd',
+                  'usershare path': str(image_root/'usershares'),
+                  'usershare max shares': '0'}
+        # Preserve authentication restrictions; do not silently enable NTLM
+        # in a domain whose restored configuration disallows it.
+        for key in ['ntlm auth', 'server signing', 'smb encrypt', 'ldap server require strong auth']:
+            value = lp.get(key)
+            if value is not None:
+                values[key] = value
+        for key in PATH_PARAMETERS:
+            if lp.get(key):
+                mapped = pathlib.Path(lp.get(key))
+                mapped.relative_to(image_root)
+                values[key] = str(mapped)
+        modules = lp.get('vfs objects') or []
+        if isinstance(modules, str):
+            modules = modules.split()
+        if any(m not in {'dfs_samba4', 'acl_xattr', 'xattr_tdb'} for m in modules):
+            raise ValueError('Unsupported VFS module for live restore verification')
+        if modules:
+            values['vfs objects'] = ' '.join(modules)
+        values['acl_xattr:ignore system acls'] = lp.get('acl_xattr:ignore system acls') or 'no'
+        # libwbclient uses its compiled socket location. /run is a private
+        # tmpfs in the helper unit, so this cannot reach the host winbindd.
+        pathlib.Path('/run/samba').mkdir(mode=0o755, parents=True, exist_ok=True)
+        live_config = pathlib.Path(config).parent/'live.conf'
+        lines = ['[global]']
+        for key, value in values.items():
+            value = str(value)
+            if '\n' in value or '\r' in value:
+                raise ValueError('Invalid live configuration value')
+            lines.append(key+' = '+value)
+        lines.extend(['[sysvol]', 'path = '+paths.sysvol, 'read only = yes'])
+        live_config.write_text('\n'.join(lines)+'\n')
+        realm = lp.get('realm')
+        domain = lp.get('workgroup')
+        import re
+        controller = job['controller'].lower()
+        if not re.fullmatch(r'[a-z0-9][a-z0-9.-]*[a-z0-9]', controller) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]', realm):
+            raise ValueError('Invalid Kerberos realm or controller name')
+        addresses = {item[4][0] for item in socket.getaddrinfo(controller, 389, type=socket.SOCK_STREAM)}
+        if addresses != {'127.0.0.1'}:
+            raise ValueError('Isolated controller name must resolve only to loopback')
+        krb_config = image_root/'krb5-live.conf'
+        krb_config.write_text('[libdefaults]\n default_realm = '+realm+'\n'
+                             ' dns_lookup_kdc = false\n dns_lookup_realm = false\n'
+                             ' dns_canonicalize_hostname = false\n rdns = false\n'
+                             '[realms]\n '+realm+' = {\n  kdc = 127.0.0.1\n }\n'
+                             '[domain_realm]\n '+controller+' = '+realm+'\n')
+        os.environ['KRB5_CONFIG'] = str(krb_config)
+        kerberos_cache = 'MEMORY:sambaadm-live-'+secrets.token_hex(16)
+        os.environ['KRB5CCNAME'] = kerberos_cache
+        del sam, lp
+        log = (pathlib.Path(config).parent/'live-process.log').open('x')
+        stage = 'startup'
+        daemon = subprocess.Popen(['/usr/sbin/samba', '--foreground', '--no-process-group',
+                                   '--configfile='+str(live_config)], stdout=log, stderr=log)
+        client_lp = s3param.get_context()
+        client_lp.load(str(live_config))
+        ldap_lp = param.LoadParm()
+        ldap_lp.load(str(live_config))
+        def credentials(secret, kerberos=False):
+            creds = Credentials()
+            creds.guess(ldap_lp)
+            creds.set_username(username); creds.set_domain(domain); creds.set_realm(realm)
+            creds.set_password(secret); creds.set_kerberos_state(MUST_USE_KERBEROS if kerberos else DONT_USE_KERBEROS)
+            creds.set_gensec_features(gensec.FEATURE_SEAL)
+            return creds
+        stage = 'ntlm-ldap'
+        creds = credentials(password)
+        deadline = time.monotonic()+45
+        while True:
+            try:
+                bound = SamDB(url='ldap://127.0.0.1', credentials=creds, lp=ldap_lp)
+                break
+            except Exception:
+                if daemon.poll() is not None or time.monotonic() >= deadline:
+                    raise ValueError('Restored DC did not become ready')
+                time.sleep(0.5)
+        row = bound.search(base=bound.domain_dn(), scope=ldb.SCOPE_BASE, attrs=['objectGUID'])[0]
+        if bytes(row['objectGUID'][0]) != domain_guid:
+            raise ValueError('Live domain identity mismatch')
+        rows = bound.search(expression='(sAMAccountName='+username+')', attrs=['objectGUID'])
+        if len(rows) != 1 or bytes(rows[0]['objectGUID'][0]) != user_guid:
+            raise ValueError('Live user identity mismatch')
+        stage = 'ntlm-invalid-password'
+        try:
+            SamDB(url='ldap://127.0.0.1', credentials=credentials(password+'wrong'), lp=ldap_lp)
+        except ldb.LdbError as error:
+            if error.args[0] != ldb.ERR_INVALID_CREDENTIALS:
+                raise
+        else:
+            raise ValueError('Invalid password was accepted')
+        # Default Domain Policy is readable by an ordinary authenticated user.
+        # Compare actual SMB bytes with the recovered file, not just a tree connect.
+        stage = 'ntlm-sysvol'
+        relative = realm.lower()+'/Policies/{31B2F340-016D-11D2-945F-00C04FB984F9}/GPT.INI'
+        expected = (pathlib.Path(paths.sysvol)/relative).read_bytes()
+        if not expected or len(expected) > 1024*1024:
+            raise ValueError('Invalid default policy GPT.INI')
+        connection = libsmb.Conn('127.0.0.1', 'sysvol', client_lp, creds, force_smb1=False)
+        if connection.loadfile(relative.replace('/', '\\')) != expected:
+            raise ValueError('SYSVOL SMB content mismatch')
+        # A fresh in-memory TGT and MUST_USE_KERBEROS forbid a successful NTLM
+        # fallback from being mistaken for a working KDC or service principal.
+        stage = 'kerberos-tgt'
+        kerberos_creds = credentials(password, kerberos=True)
+        kerberos_creds.get_named_ccache(ldap_lp, kerberos_cache)
+        stage = 'kerberos-ldap'
+        kerberos_bound = SamDB(url='ldap://'+controller, credentials=kerberos_creds, lp=ldap_lp)
+        kerberos_domain = kerberos_bound.search(base=kerberos_bound.domain_dn(), scope=ldb.SCOPE_BASE, attrs=['objectGUID'])[0]
+        kerberos_users = kerberos_bound.search(expression='(sAMAccountName='+username+')', attrs=['objectGUID'])
+        if bytes(kerberos_domain['objectGUID'][0]) != domain_guid or len(kerberos_users) != 1 or bytes(kerberos_users[0]['objectGUID'][0]) != user_guid:
+            raise ValueError('Kerberos LDAP identity mismatch')
+        stage = 'kerberos-sysvol'
+        smb_kerberos_creds = credentials('', kerberos=True)
+        smb_kerberos_creds.set_named_ccache(kerberos_cache, SPECIFIED, ldap_lp)
+        if smb_kerberos_creds.get_kerberos_state() != MUST_USE_KERBEROS:
+            raise ValueError('Kerberos requirement was changed')
+        # Explicitly request the CIFS service ticket as well as requiring
+        # Kerberos in SMB; a different service ticket must not satisfy this check.
+        cifs_security = gensec.Security.start_client({'lp_ctx': ldap_lp, 'target_hostname': controller})
+        cifs_security.set_credentials(smb_kerberos_creds)
+        cifs_security.set_target_hostname(controller)
+        cifs_security.set_target_service('cifs')
+        cifs_security.start_mech_by_name('gssapi_krb5')
+        _, cifs_token = cifs_security.update(b'')
+        if not cifs_token:
+            raise ValueError('CIFS Kerberos service ticket unavailable')
+        del cifs_token
+        kerberos_smb = libsmb.Conn(controller, 'sysvol', client_lp, smb_kerberos_creds, force_smb1=False)
+        if kerberos_smb.loadfile(relative.replace('/', '\\')) != expected:
+            raise ValueError('Kerberos SYSVOL SMB content mismatch')
+        if daemon.poll() is not None:
+            raise ValueError('Restored DC exited during verification')
+        result.send(dict(dcStarted=True, userLogin=True, invalidPasswordRejected=True,
+                         sysvolRead=True, authentication='temporary-user-ntlm-and-kerberos',
+                         kerberosTGT=True, kerberosLDAP=True, kerberosSYSVOL=True,
+                         sysvolPath=relative))
+    except BaseException:
+        traceback.print_exc()
+        result.send(dict(failedStage=stage))
+    finally:
+        result.close()
+
+
+def verify_live_restore(config, job, timeout=90):
+    import multiprocessing, signal, ctypes, time
+    require_isolated_network()
+    # Adopt daemon descendants even when Samba creates its own process groups.
+    libc = ctypes.CDLL(None, use_errno=True)
+    previous = ctypes.c_int()
+    if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) != 0 or libc.prctl(36, 1, 0, 0, 0) != 0:
+        raise ValueError('Cannot supervise restored DC descendants')
+    context = multiprocessing.get_context('fork')
+    receiver, sender = context.Pipe(duplex=False)
+    process = context.Process(target=live_restore_probe, args=(config, job, sender))
+    process.start()
+    sender.close()
+    try:
+        if not receiver.poll(5) or receiver.recv() != 'started':
+            raise ValueError('Live restore worker did not start')
+        if not receiver.poll(timeout):
+            raise ValueError('Live restore verification timed out')
+        evidence = receiver.recv()
+        if not evidence or evidence.get('failedStage'):
+            raise ValueError('Live restore verification failed at '+(evidence or {}).get('failedStage', 'unknown'))
+        return evidence
+    finally:
+        # Walk descendants as well as the process group: smbd may create
+        # independent sessions. Subreaping keeps them owned by this worker.
+        for attempt in range(100):
+            parents = {}
+            for entry in pathlib.Path('/proc').iterdir():
+                if not entry.name.isdecimal():
+                    continue
+                try:
+                    fields = (entry/'stat').read_text().rsplit(')', 1)[1].split()
+                    parents[int(entry.name)] = int(fields[1])
+                except FileNotFoundError:
+                    continue
+            descendants = {os.getpid()}
+            while True:
+                expanded = descendants | {pid for pid, ppid in parents.items() if ppid in descendants}
+                if expanded == descendants:
+                    break
+                descendants = expanded
+            descendants.discard(os.getpid())
+            for pid in descendants:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            process.join(0.05)
+            while True:
+                try:
+                    if os.waitpid(-1, os.WNOHANG)[0] == 0:
+                        break
+                except ChildProcessError:
+                    break
+            if not descendants:
+                break
+            time.sleep(0.05)
+        receiver.close()
+        libc.prctl(36, previous.value, 0, 0, 0)
+        if descendants:
+            raise ValueError('Restored DC processes did not stop')
 
 
 def rehearse_cleanup(directory, archive, job, checksum):
@@ -409,14 +669,27 @@ def rehearse_cleanup(directory, archive, job, checksum):
         else:
             raise ValueError('Rehearsal deletion was not observed')
     del sam
-    recovered=restore_isolated(archive,directory/'recovery',checksum)
-    lp,sam,_=identity(recovered['config'],job)
-    for obj in objects:
-        check_object(obj)
-    check_database(sam)
+    with tempfile.TemporaryDirectory(prefix='sambaadm-live-') as temporary:
+        os.chmod(temporary, 0o711)
+        recovered=restore_isolated(archive,pathlib.Path(temporary)/'recovery',checksum)
+        lp,sam,_=identity(recovered['config'],job)
+        for obj in objects:
+            check_object(obj)
+        check_database(sam)
+        del sam
+        try:
+            live = verify_live_restore(recovered['config'], job)
+        finally:
+            # Keep bounded private daemon diagnostics after removing the image.
+            with (directory/'live.log').open('x') as log:
+                for name in ['live-process.log', 'live-samba.log']:
+                    path = pathlib.Path(recovered['config']).parent/name
+                    if path.exists():
+                        with path.open(errors='replace') as source:
+                            log.write(source.read(4*1024*1024))
     if digest_file(archive)!=checksum:
-        raise ValueError('Archive changed during rehearsal')
-    receipt=dict(id=job['id'],sha256=checksum,planRevision=job['planRevision'],status='verified',finished=now(),kind='offline-dbcheck-cleanup-second-restore')
+        raise ValueError('Archive changed during live verification')
+    receipt=dict(id=job['id'],sha256=checksum,planRevision=job['planRevision'],status='verified',finished=now(),kind='live-dc-kerberos-ldap-sysvol-cleanup-second-restore-v2', live=live)
     save(directory/'restore.json',receipt)
     return receipt
 
@@ -435,8 +708,7 @@ def main():
         with (directory/'worker.log').open('x') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
             archive=capture(directory,conf,job)
             checksum=digest_file(archive)
-            if job.get('plan'):
-                rehearse_cleanup(directory,archive,job,checksum)
+            rehearse_cleanup(directory,archive,job,checksum)
         status.update(status='backed_up',sha256=digest_file(archive),bytes=archive.stat().st_size,archive=archive.name)
     except Exception:
         with (directory/'worker.log').open('a') as log:

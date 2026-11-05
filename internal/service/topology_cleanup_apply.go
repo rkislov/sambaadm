@@ -13,15 +13,32 @@ import (
 	ldapproto "sambaadm/internal/ldap"
 )
 
-const backupRestoreKind = "offline-dbcheck-cleanup-second-restore"
+const backupRestoreKind = "live-dc-kerberos-ldap-sysvol-cleanup-second-restore-v2"
+
+type BackupLiveVerification struct {
+	KerberosTGT             bool   `json:"kerberosTGT"`
+	KerberosLDAP            bool   `json:"kerberosLDAP"`
+	KerberosSYSVOL          bool   `json:"kerberosSYSVOL"`
+	DCStarted               bool   `json:"dcStarted"`
+	UserLogin               bool   `json:"userLogin"`
+	InvalidPasswordRejected bool   `json:"invalidPasswordRejected"`
+	SYSVOLRead              bool   `json:"sysvolRead"`
+	Authentication          string `json:"authentication"`
+	SYSVOLPath              string `json:"sysvolPath"`
+}
+
+func (v *BackupLiveVerification) verified() bool {
+	return v != nil && v.DCStarted && v.UserLogin && v.InvalidPasswordRejected && v.SYSVOLRead && v.KerberosTGT && v.KerberosLDAP && v.KerberosSYSVOL && v.Authentication == "temporary-user-ntlm-and-kerberos" && v.SYSVOLPath != ""
+}
 
 type BackupRestoreReceipt struct {
-	Kind         string    `json:"kind"`
-	ID           string    `json:"id"`
-	SHA256       string    `json:"sha256"`
-	PlanRevision string    `json:"planRevision"`
-	Status       string    `json:"status"`
-	Finished     time.Time `json:"finished"`
+	Live         *BackupLiveVerification `json:"live,omitempty"`
+	Kind         string                  `json:"kind"`
+	ID           string                  `json:"id"`
+	SHA256       string                  `json:"sha256"`
+	PlanRevision string                  `json:"planRevision"`
+	Status       string                  `json:"status"`
+	Finished     time.Time               `json:"finished"`
 }
 type CleanupApplyRequest struct {
 	CleanupBackupRequest
@@ -401,7 +418,7 @@ func (s *SiteService) ApplyCleanup(ctx context.Context, in CleanupApplyRequest, 
 	return out, nil
 }
 func validateCleanupBackup(p *CleanupPlan, b *DomainBackupJob) error {
-	if b.Status != "backed_up" || !b.RestoreVerified || b.PlanRevision != p.Revision || b.Plan == nil || cleanupRevision(b.Plan) != p.Revision || dnKey(b.BaseDN) != dnKey(p.BaseDN) || b.Finished.IsZero() || time.Since(b.Finished) > 24*time.Hour || b.Finished.After(time.Now().Add(time.Minute)) {
+	if b.Status != "backed_up" || !b.RestoreVerified || !b.LiveVerification.verified() || b.PlanRevision != p.Revision || b.Plan == nil || cleanupRevision(b.Plan) != p.Revision || dnKey(b.BaseDN) != dnKey(p.BaseDN) || b.Finished.IsZero() || time.Since(b.Finished) > 24*time.Hour || b.Finished.After(time.Now().Add(time.Minute)) {
 		return topologyBad("matching backup with verified isolated restore, less than 24 hours old, required")
 	}
 	return nil

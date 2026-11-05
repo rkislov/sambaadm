@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"sambaadm/internal/config"
 	"strings"
@@ -37,8 +38,8 @@ func seedVerifiedCleanupBackup(t *testing.T, cfg *config.Config, p *CleanupPlan,
 	req := DomainBackupRequest{ID: id, Controller: cfg.Helper.Node, DomainGUID: guid, BaseDN: p.BaseDN, PlanRevision: p.Revision, Plan: p}
 	data := []byte("test fixture: archive recovery is tested separately")
 	h := sha256.Sum256(data)
-	job := &DomainBackupJob{DomainBackupRequest: req, Status: "backed_up", SHA256: hex.EncodeToString(h[:]), Archive: "domain.tar.gz", Bytes: int64(len(data)), Finished: time.Now().UTC(), RestoreVerified: true}
-	for name, v := range map[string]any{"request.json": req, "status.json": job, "restore.json": BackupRestoreReceipt{Kind: backupRestoreKind, ID: id, SHA256: job.SHA256, PlanRevision: p.Revision, Status: "verified", Finished: time.Now().UTC()}} {
+	job := &DomainBackupJob{DomainBackupRequest: req, Status: "backed_up", SHA256: hex.EncodeToString(h[:]), Archive: "domain.tar.gz", Bytes: int64(len(data)), Finished: time.Now().UTC(), RestoreVerified: true, LiveVerification: &BackupLiveVerification{DCStarted: true, UserLogin: true, InvalidPasswordRejected: true, SYSVOLRead: true, KerberosTGT: true, KerberosLDAP: true, KerberosSYSVOL: true, Authentication: "temporary-user-ntlm-and-kerberos", SYSVOLPath: "example.com/Policies/default/GPT.INI"}}
+	for name, v := range map[string]any{"request.json": req, "status.json": job, "restore.json": BackupRestoreReceipt{Live: &BackupLiveVerification{DCStarted: true, UserLogin: true, InvalidPasswordRejected: true, SYSVOLRead: true, KerberosTGT: true, KerberosLDAP: true, KerberosSYSVOL: true, Authentication: "temporary-user-ntlm-and-kerberos", SYSVOLPath: "example.com/Policies/default/GPT.INI"}, Kind: backupRestoreKind, ID: id, SHA256: job.SHA256, PlanRevision: p.Revision, Status: "verified", Finished: time.Now().UTC()}} {
 		if e = createBackupJSON(root, id+"/"+name, v); e != nil {
 			t.Fatal(e)
 		}
@@ -58,6 +59,12 @@ func TestCleanupApplyBackupGuards(t *testing.T) {
 	if e := validateCleanupBackup(p, job); e != nil {
 		t.Fatal(e)
 	}
+	verifiedLive := job.LiveVerification
+	job.LiveVerification = nil
+	if err := validateCleanupBackup(p, job); err == nil {
+		t.Fatal("accepted old helper without live verification")
+	}
+	job.LiveVerification = verifiedLive
 	job.RestoreVerified = false
 	if validateCleanupBackup(p, job) == nil {
 		t.Fatal("unverified backup accepted")
@@ -208,5 +215,61 @@ func TestCleanupRejectsLegacyRestoreReceipt(t *testing.T) {
 	}
 	if got.RestoreVerified {
 		t.Fatal("legacy rehearsal receipt accepted")
+	}
+}
+
+func TestCleanupRejectsOfflineOrIncompleteRestoreReceipt(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Helper.BackupRoot = t.TempDir()
+	cfg.Helper.DomainBackupEnabled = true
+	cfg.Helper.Node = "dc.example.com"
+	job := seedVerifiedCleanupBackup(t, cfg, executableCleanupPlan(), make([]byte, 16))
+	root, err := backupRoot(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	var receipt BackupRestoreReceipt
+	if err = readBackupJSON(root, job.ID+"/restore.json", &receipt); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"offline", "missing-live", "failed-sysvol", "ntlm-only", "failed-kerberos-ldap", "failed-kerberos-sysvol", "valid"} {
+		t.Run(mode, func(t *testing.T) {
+			candidate := receipt
+			live := *receipt.Live
+			candidate.Live = &live
+			switch mode {
+			case "offline":
+				candidate.Kind = "offline-dbcheck-cleanup-second-restore"
+			case "ntlm-only":
+				candidate.Kind = "live-dc-ldap-sysvol-cleanup-second-restore-v1"
+				candidate.Live.Authentication = "temporary-user-ntlm"
+			case "failed-kerberos-ldap":
+				candidate.Live.KerberosLDAP = false
+			case "failed-kerberos-sysvol":
+				candidate.Live.KerberosSYSVOL = false
+			case "missing-live":
+				candidate.Live = nil
+			case "failed-sysvol":
+				candidate.Live.SYSVOLRead = false
+			}
+			data, err := json.Marshal(candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = root.WriteFile(job.ID+"/restore.json", data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			status, err := localBackupStatus(context.Background(), root, job.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.RestoreVerified != (mode == "valid") {
+				t.Fatal("incorrect receipt decision", mode)
+			}
+			if mode != "valid" && status.LiveVerification != nil {
+				t.Fatal("unverified evidence exposed as verified")
+			}
+		})
 	}
 }

@@ -3361,7 +3361,7 @@
                 - {"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}
                 - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
             "responses":
-                "200": {"description": "Job status, restoreVerified receipt result, applyReserved and persisted applyEvents (including updating/updated)"}
+                "200": {"description": "Job status, restoreVerified receipt result, liveVerification (isolated DC startup, temporary-user NTLM LDAP login, invalid-password rejection, SMB SYSVOL read, and mandatory kerberosTGT/kerberosLDAP/kerberosSYSVOL without NTLM fallback), applyReserved and persisted applyEvents (including updating/updated)"}
                 "403": {"description": "Admin required"}
                 "502": {"description": "Helper status unavailable"}
     "/sites/topology/cleanup/apply":

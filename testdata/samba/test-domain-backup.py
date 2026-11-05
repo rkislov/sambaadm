@@ -26,6 +26,17 @@ result=provision(logging.getLogger('test'),system_session(),targetdir=str(source
 conf=source/'etc/smb.conf'
 lp=param.LoadParm();lp.load(str(conf))
 sam=SamDB(session_info=system_session(),lp=lp)
+# Native provisioning does not run the normal first-start SPN updater.
+# Model an initialized source DC; the restore worker must never repair missing
+# service principals just to make its own Kerberos check pass.
+dc_account=sam.search(expression='(sAMAccountName=DC1$)',attrs=['servicePrincipalName'])[0]
+existing_spns=[str(value) for value in dc_account.get('servicePrincipalName',[])]
+required_spns=['ldap/dc1.sambaadm.test','cifs/dc1.sambaadm.test']
+missing_spns=[value for value in required_spns if value.lower() not in {v.lower() for v in existing_spns}]
+if missing_spns:
+    message=ldb.Message();message.dn=dc_account.dn
+    message['servicePrincipalName']=ldb.MessageElement(missing_spns,ldb.FLAG_MOD_ADD,'servicePrincipalName')
+    sam.modify(message)
 guid=bytes(sam.search(base=sam.domain_dn(),scope=ldb.SCOPE_BASE,attrs=['objectGUID'])[0]['objectGUID'][0])
 request=dict(id='00000000-0000-0000-0000-000000000001',controller='dc1.sambaadm.test',
              domainGUID=base64.b64encode(guid).decode(),baseDN=str(sam.domain_dn()),planRevision='a'*64)
@@ -114,7 +125,12 @@ def guarded_check(database,expected_deleted_links=None):
 worker.check_database=guarded_check
 archive=worker.capture(job,str(conf),request)
 manifest=worker.verify_archive(archive)
-receipt=worker.rehearse_cleanup(job,archive,request,worker.digest_file(archive))
+try:
+    receipt=worker.rehearse_cleanup(job,archive,request,worker.digest_file(archive))
+except Exception:
+    if (job/'live.log').exists():
+        print((job/'live.log').read_text())
+    raise
 assert receipt['status']=='verified' and receipt['planRevision']==request['planRevision']
 print('PASS: native cleanup rehearsal removes NTDS/RID/DFSR and one shared DNS record, then a second archive restore recovers GUIDs and original records')
 try:
@@ -134,38 +150,147 @@ for name,meta in manifest['files'].items():
             assert worker.digest_file('/tmp/restored/'+name)==meta['sha256'],name
 print('PASS: native cold backup, all file checksums, isolated restore and native dbcheck and SYSVOL ACLs; Samba CLI disabled')
 
-# Start the restored DC only inside this networkless container, then bind with
-# an actual restored secret. This is stronger than merely opening the databases.
-import subprocess, time, signal
-from samba.credentials import Credentials, DONT_USE_KERBEROS
-from samba import gensec
-config=pathlib.Path(restored['config'])
-with config.open('a') as f:
-    f.write('\n[global]\ninterfaces = lo\nbind interfaces only = yes\n')
-log=open('/tmp/restored-daemon.log','w')
-daemon=subprocess.Popen(['/usr/sbin/samba','--foreground','--no-process-group','--configfile='+str(config)],stdout=log,stderr=log,start_new_session=True)
+import subprocess, time
+
+# The production per-copy path must provide live evidence, not only dbcheck.
+assert receipt['kind']=='live-dc-kerberos-ldap-sysvol-cleanup-second-restore-v2'
+assert all(receipt['live'][key] for key in ['dcStarted','userLogin','invalidPasswordRejected','sysvolRead','kerberosTGT','kerberosLDAP','kerberosSYSVOL'])
+assert receipt['live']['authentication']=='temporary-user-ntlm-and-kerberos'
+worker.require_stopped()
+print('PASS: per-copy NTLM checks plus fresh Kerberos TGT, LDAP login, CIFS ticket, SMB SYSVOL read and process cleanup')
+
+# Exercise failure on actual SMB content. No source/archived file is changed.
+_, local_sam, restored_paths = worker.identity(restored['config'],request)
+del local_sam
+policy = pathlib.Path(restored_paths.sysvol)/receipt['live']['sysvolPath']
+policy.unlink()
 try:
-    creds=Credentials();creds.guess(lp);creds.set_kerberos_state(DONT_USE_KERBEROS);creds.set_username('Administrator');creds.set_domain('SAMBAADM');creds.set_realm('SAMBAADM.TEST');creds.set_password('Lab-Only-Adm1n-Pass!');creds.set_gensec_features(gensec.FEATURE_SEAL)
-    bound=None
-    for attempt in range(40):
-        try:
-            bound=SamDB(url='ldap://127.0.0.1',credentials=creds,lp=lp)
-            break
-        except Exception:
-            if daemon.poll() is not None:
-                raise AssertionError(open('/tmp/restored-daemon.log').read())
-            time.sleep(0.5)
-    assert bound is not None,open('/tmp/restored-daemon.log').read()
-    restored_guid=bytes(bound.search(base=bound.domain_dn(),scope=ldb.SCOPE_BASE,attrs=['objectGUID'])[0]['objectGUID'][0])
-    assert restored_guid==guid
-    assert len(bound.search(expression='(objectClass=groupPolicyContainer)',attrs=['name']))>=2
+    worker.verify_live_restore(restored['config'],request)
+    raise AssertionError('missing restored SYSVOL file accepted')
+except ValueError as error:
+    assert 'verification failed' in str(error)
+worker.require_stopped()
+print('PASS: missing SYSVOL blocks live verification and stops all DC processes')
+
+# A missing/broken daemon must fail before any success evidence is returned.
+original_popen=subprocess.Popen
+(pathlib.Path(restored['config']).parent/'live-process.log').unlink()
+startup_marker=pathlib.Path('/tmp/live-startup-failed')
+def broken_daemon(*args,**kwargs):
+    startup_marker.write_text('attempted')
+    raise OSError('injected daemon startup failure')
+subprocess.Popen=broken_daemon
+try:
     try:
-        worker.capture(job,str(conf),request)
-        raise AssertionError('running Samba was accepted for a cold snapshot')
-    except ValueError as e:
-        assert 'must be stopped' in str(e)
-    print('PASS: restored DC starts, secret-based LDAP bind and GPO lookup succeed; running-DC backup is blocked')
+        worker.verify_live_restore(restored['config'],request)
+        raise AssertionError('daemon startup failure accepted')
+    except ValueError as error:
+        assert 'verification failed' in str(error)
 finally:
-    os.killpg(daemon.pid,signal.SIGTERM)
-    daemon.wait(timeout=15)
-    log.close()
+    subprocess.Popen=original_popen
+worker.require_stopped()
+assert startup_marker.read_text()=='attempted'
+print('PASS: daemon startup failure blocks verification')
+
+# A hung child and a descendant in a different session must both be killed.
+original_probe = worker.live_restore_probe
+pidfile = pathlib.Path('/tmp/live-timeout-child.pid')
+def hung_probe(config, job, channel):
+    os.setsid()
+    child=subprocess.Popen(['/bin/sleep','120'],start_new_session=True)
+    pidfile.write_text(str(child.pid))
+    channel.send('started')
+    time.sleep(120)
+worker.live_restore_probe=hung_probe
+try:
+    try:
+        worker.verify_live_restore(restored['config'],request,timeout=0.2)
+        raise AssertionError('hung probe accepted')
+    except ValueError as error:
+        assert 'timed out' in str(error)
+    assert not pathlib.Path('/proc/'+pidfile.read_text()).exists()
+finally:
+    worker.live_restore_probe=original_probe
+print('PASS: live timeout kills and reaps descendants across process groups')
+
+# Kerberos is independently mandatory even though the same user already
+# authenticated and read SYSVOL over NTLM. Removing only the relevant service
+# principals must fail at LDAP or SMB, without an NTLM fallback.
+import tempfile
+for service, expected_stage in [('ldap','kerberos-ldap'),('cifs','kerberos-sysvol'),('cifs','host-alias-success')]:
+    with tempfile.TemporaryDirectory(prefix='kerberos-negative-') as temporary:
+        os.chmod(temporary,0o711)
+        negative=worker.restore_isolated(archive,pathlib.Path(temporary)/'image',worker.digest_file(archive))
+        _, negative_sam, _=worker.identity(negative['config'],request)
+        account=negative_sam.search(expression='(sAMAccountName=DC1$)',attrs=['servicePrincipalName'])[0]
+        remove=[bytes(v) for v in account['servicePrincipalName'] if str(v).lower().startswith((service+'/', 'host/'))]
+        assert remove
+        change=ldb.Message();change.dn=account.dn
+        change['servicePrincipalName']=ldb.MessageElement(remove,ldb.FLAG_MOD_DELETE,'servicePrincipalName')
+        negative_sam.modify(change)
+        assert not negative_sam.search(expression='(servicePrincipalName='+service+'/dc1.sambaadm.test)',attrs=['name'])
+        assert not negative_sam.search(expression='(servicePrincipalName=HOST/dc1.sambaadm.test)',attrs=['name'])
+        if service=='cifs' and expected_stage!='host-alias-success':
+            # Samba can resolve HOST/DC by computer CN even without HOST SPNs.
+            # Remove the standard CIFS->HOST mapping in this disposable negative
+            # fixture too, so a legitimate Kerberos alias cannot satisfy it.
+            mapping_dn='CN=Directory Service,CN=Windows NT,CN=Services,'+str(negative_sam.get_config_basedn())
+            mappings=negative_sam.search(base=mapping_dn,scope=ldb.SCOPE_BASE,attrs=['sPNMappings'])[0]
+            values=[]
+            for value in mappings['sPNMappings']:
+                name, aliases=str(value).split('=',1)
+                values.append(name+'='+','.join(alias for alias in aliases.split(',') if alias.lower()!='cifs'))
+            change=ldb.Message();change.dn=ldb.Dn(negative_sam,mapping_dn)
+            change['sPNMappings']=ldb.MessageElement(values,ldb.FLAG_MOD_REPLACE,'sPNMappings')
+            negative_sam.modify(change)
+        del negative_sam
+        try:
+            evidence=worker.verify_live_restore(negative['config'],request)
+            if expected_stage!='host-alias-success':
+                raise AssertionError('missing '+service+' SPN accepted via fallback')
+            assert evidence['kerberosSYSVOL'] and evidence['kerberosLDAP'] and evidence['kerberosTGT']
+        except ValueError as error:
+            assert expected_stage in str(error),str(error)
+        worker.require_stopped()
+    if expected_stage=='host-alias-success':
+        print('PASS: legitimate CIFS to HOST mapping passes Kerberos verification without explicit CIFS SPN')
+    else:
+        print('PASS: unavailable '+service+' ticket blocks '+expected_stage+' despite successful NTLM; no fallback')
+
+# The KDC itself must be running; passing NTLM checks cannot substitute for a TGT.
+with tempfile.TemporaryDirectory(prefix='kerberos-kdc-') as temporary:
+    os.chmod(temporary,0o711)
+    negative=worker.restore_isolated(archive,pathlib.Path(temporary)/'image',worker.digest_file(archive))
+    def without_kdc(args,**kwargs):
+        config_path=pathlib.Path(next(v.split('=',1)[1] for v in args if v.startswith('--configfile=')))
+        config_path.write_text(config_path.read_text().replace(' cldap kdc drepl ', ' cldap drepl '))
+        return original_popen(args,**kwargs)
+    subprocess.Popen=without_kdc
+    try:
+        try:
+            worker.verify_live_restore(negative['config'],request)
+            raise AssertionError('stopped KDC accepted')
+        except ValueError as error:
+            assert 'kerberos-tgt' in str(error),str(error)
+    finally:
+        subprocess.Popen=original_popen
+    worker.require_stopped()
+print('PASS: stopped KDC blocks verification despite successful NTLM')
+
+# Failure cannot leave a verified receipt, even after successful offline recovery.
+failed_job=pathlib.Path('/tmp/failed-job');failed_job.mkdir(mode=0o700)
+original_live=worker.verify_live_restore
+def fail_live(*args,**kwargs):
+    raise ValueError('injected live failure')
+worker.verify_live_restore=fail_live
+try:
+    try:
+        worker.rehearse_cleanup(failed_job,archive,request,worker.digest_file(archive))
+        raise AssertionError('failed live check accepted')
+    except ValueError as error:
+        assert 'injected live failure' in str(error)
+    assert not (failed_job/'restore.json').exists()
+finally:
+    worker.verify_live_restore=original_live
+assert worker.digest_file(archive)==receipt['sha256']
+print('PASS: failed live check cannot issue a restore receipt; archive remains unchanged')

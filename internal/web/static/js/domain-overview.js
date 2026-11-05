@@ -107,7 +107,7 @@
       output.replaceChildren(el('p', states[job.status] || job.status), el('p', 'ID: '+job.id), el('p', formatTime(job.finished || job.started)));
       if (job.sha256) output.append(el('p','SHA-256: '+job.sha256),el('p',t('Размер, байт: ','Size, bytes: ')+job.bytes));
       if (job.error) output.append(el('p',job.error));
-      output.append(el('p',job.restoreVerified ? t('Изолированная очистка и повторное восстановление базы/SYSVOL из архива проверены.','Isolated cleanup and a second database/SYSVOL restore from the archive verified.') : t('Восстановление этой копии ещё не проверено.','Restore of this backup has not been verified.')));
+      output.append(el('p',job.restoreVerified ? t('Проверены пробная очистка, повторное восстановление, запуск DC в изоляции, вход тестового пользователя и чтение SYSVOL по SMB — отдельно с NTLM и Kerberos.','Verified cleanup rehearsal, second restore, isolated DC startup, test-user login and SYSVOL read over SMB with both NTLM and mandatory Kerberos.') : t('Восстановление этой копии ещё не проверено.','Restore of this backup has not been verified.')));
       if (job.applyReserved) output.append(el('p',t('Применение уже запускалось: повтор заблокирован. Проверьте журнал.','Apply was already reserved: retry blocked. Inspect the journal.')));
       if (job.applyEvents?.length) table(output,[t('Время','Time'),'DN',t('Статус','Status'),t('Подробности','Details')],job.applyEvents.map(e=>[formatTime(e.time),e.dn || '',e.status,e.detail || '']));
     };
