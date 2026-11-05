@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/google/uuid"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -32,16 +33,17 @@ type DomainBackupRequest struct {
 type DomainBackupJob struct {
 	Format string `json:"format,omitempty"`
 	DomainBackupRequest
-	Status          string              `json:"status"`
-	Started         time.Time           `json:"started,omitempty"`
-	Finished        time.Time           `json:"finished,omitempty"`
-	SHA256          string              `json:"sha256,omitempty"`
-	Bytes           int64               `json:"bytes,omitempty"`
-	Archive         string              `json:"archive,omitempty"`
-	Error           string              `json:"error,omitempty"`
-	RestoreVerified bool                `json:"restoreVerified"`
-	ApplyEvents     []CleanupApplyEvent `json:"applyEvents,omitempty"`
-	ApplyReserved   bool                `json:"applyReserved"`
+	Status           string                  `json:"status"`
+	Started          time.Time               `json:"started,omitempty"`
+	Finished         time.Time               `json:"finished,omitempty"`
+	SHA256           string                  `json:"sha256,omitempty"`
+	Bytes            int64                   `json:"bytes,omitempty"`
+	Archive          string                  `json:"archive,omitempty"`
+	Error            string                  `json:"error,omitempty"`
+	LiveVerification *BackupLiveVerification `json:"liveVerification,omitempty"`
+	RestoreVerified  bool                    `json:"restoreVerified"`
+	ApplyEvents      []CleanupApplyEvent     `json:"applyEvents,omitempty"`
+	ApplyReserved    bool                    `json:"applyReserved"`
 }
 type CleanupBackupRequest struct {
 	CleanupRequest
@@ -169,6 +171,30 @@ func createBackupJSON(root *os.Root, name string, value any) error {
 	defer d.Close()
 	return d.Sync()
 }
+
+// Only a DNS hostname can be placed in the isolated hosts file or used as a
+// Kerberos service target. In particular, reject addresses and config syntax.
+func backupHostFile(controller string) ([]byte, error) {
+	labels := strings.Split(controller, ".")
+	if len(controller) > 253 || len(labels) < 2 {
+		return nil, topologyBad("controller FQDN required")
+	}
+	for _, label := range labels {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return nil, topologyBad("invalid controller FQDN")
+		}
+		for _, c := range label {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return nil, topologyBad("invalid controller FQDN")
+			}
+		}
+	}
+	if net.ParseIP(controller) != nil {
+		return nil, topologyBad("controller FQDN required")
+	}
+	return []byte("127.0.0.1 localhost\n127.0.0.1 " + strings.ToLower(controller) + " " + strings.ToLower(labels[0]) + "\n::1 localhost\n"), nil
+}
+
 func backupUnit(id string) string { return "sambaadm-domain-backup-" + id + ".service" }
 func backupActive(ctx context.Context, id string) (bool, error) {
 	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "show", backupUnit(id), "--property=LoadState", "--property=ActiveState")
@@ -211,6 +237,9 @@ func helperDomainBackup(ctx context.Context, cfg *config.Config, method string, 
 	} else if !os.IsNotExist(e) {
 		return nil, e
 	}
+	if request.Plan == nil || request.Plan.Revision != request.PlanRevision {
+		return nil, topologyBad("cleanup plan required for verified backup")
+	}
 	// Global helper dispatch lock serializes creation. No second unfinished worker.
 	dir, e := root.Open(".")
 	if e != nil {
@@ -246,14 +275,21 @@ func helperDomainBackup(ctx context.Context, cfg *config.Config, method string, 
 	if !filepath.IsAbs(conf) {
 		return nil, fmt.Errorf("absolute samba.smb_conf required")
 	}
+	hosts, e := backupHostFile(request.Controller)
+	if e != nil {
+		return nil, e
+	}
 	if e = root.Mkdir(request.ID, 0700); e != nil {
 		return nil, e
 	}
 	if e = createBackupJSON(root, request.ID+"/request.json", request); e != nil {
 		return nil, e
 	}
+	if e = root.WriteFile(request.ID+"/hosts", hosts, 0644); e != nil {
+		return nil, e
+	}
 	jobDir := filepath.Join(cfg.Helper.BackupRoot, "domain-backups", request.ID)
-	args := []string{"--quiet", "--unit=" + backupUnit(request.ID), "--property=Type=exec", "--property=UMask=0077", "--property=PrivateNetwork=yes", "--property=RuntimeMaxSec=900", "--property=KillMode=control-group", "--property=InaccessiblePaths=-/usr/bin/samba-tool", "--property=StandardOutput=null", "--property=StandardError=null", "--", "/usr/bin/python3", "-c", domainBackupWorker, jobDir, conf}
+	args := []string{"--quiet", "--unit=" + backupUnit(request.ID), "--property=Type=exec", "--property=UMask=0077", "--property=PrivateNetwork=yes", "--property=PrivateTmp=yes", "--property=TemporaryFileSystem=/run", "--property=BindReadOnlyPaths=" + strconv.Quote(filepath.Join(jobDir, "hosts")+":/etc/hosts"), "--property=RuntimeMaxSec=900", "--property=KillMode=control-group", "--property=InaccessiblePaths=-/usr/bin/samba-tool", "--property=StandardOutput=null", "--property=StandardError=null", "--", "/usr/bin/python3", "-c", domainBackupWorker, jobDir, conf}
 	if e = exec.CommandContext(ctx, executable, args...).Run(); e != nil {
 		return nil, fmt.Errorf("backup launch unconfirmed; check job status before retrying")
 	}
@@ -279,9 +315,13 @@ func localBackupStatus(ctx context.Context, root *os.Root, id string) (*DomainBa
 	// Restore evidence is a separate private worker receipt bound to exact archive
 	// bytes and plan; never trust the status boolean supplied by the worker alone.
 	job.RestoreVerified = false
+	job.LiveVerification = nil
 	var receipt BackupRestoreReceipt
 	if err := readBackupJSON(root, id+"/restore.json", &receipt); err == nil {
-		job.RestoreVerified = receipt.ID == id && receipt.SHA256 == job.SHA256 && receipt.PlanRevision == request.PlanRevision && receipt.Status == "verified" && receipt.Kind == backupRestoreKind && !receipt.Finished.IsZero()
+		job.RestoreVerified = receipt.ID == id && receipt.SHA256 == job.SHA256 && receipt.PlanRevision == request.PlanRevision && receipt.Status == "verified" && receipt.Kind == backupRestoreKind && !receipt.Finished.IsZero() && receipt.Live.verified()
+		if job.RestoreVerified {
+			job.LiveVerification = receipt.Live
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
