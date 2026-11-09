@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var hostLabel = regexp.MustCompile("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -97,38 +97,73 @@ func resolveCandidates(ctx context.Context, candidates []string, domain, dc stri
 }
 
 func init() {
-	var dc, group, ca string
+	var dc, group, ca, output string
 	cmd := &cobra.Command{Use: "discover", Short: "Определить конфигурацию сервера по Samba и DNS", Args: cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx, cancel := context.WithTimeout(cmd.Context(), 10*time.Second)
-			defer cancel()
-			domain, target, err := discoverAD(ctx, realm, dc)
+			data, err := discoveredConfig(cmd.Context(), realm, dc, user, group, ca)
 			if err != nil {
 				return err
 			}
-			base := "DC=" + strings.Join(strings.Split(domain, "."), ",DC=")
-			bind := user
-			if bind == "" {
-				bind = "svc-sambaadm@" + domain
+			if output != "" {
+				if err := writeDiscoveredConfig(output, data); err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.ErrOrStderr(), "Создан %s. Проверьте служебную запись и группу администраторов; задайте SAMBAADM_PASSWORD.\n", output)
+				return nil
 			}
-			admins := group
-			if admins == "" {
-				admins = "CN=Domain Admins,CN=Users," + base
-			}
-			if ca != "" && !filepath.IsAbs(ca) {
-				return fmt.Errorf("для CA требуется абсолютный путь")
-			}
-			cfg := map[string]any{"server": map[string]string{"listen": "127.0.0.1:8080", "enrollment_dir": "/var/lib/sambaadm/enrollment"},
-				"ldap":  map[string]any{"uri": "ldaps://" + target + ":636", "base_dn": base, "ca_cert": ca, "bind": map[string]string{"type": "simple", "user": bind, "password_env": "SAMBAADM_PASSWORD"}},
-				"auth":  map[string]any{"roles": map[string][]string{"admins": {admins}}},
-				"audit": map[string]string{"file": "/var/log/sambaadm/audit.log"}, "logging": map[string]string{"file": "/var/log/sambaadm/events.log"}}
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			return enc.Encode(cfg)
+			_, err = cmd.OutOrStdout().Write(data)
+			return err
 		}}
+	cmd.Flags().StringVar(&output, "output", "", "создать config.yaml без перезаписи существующего файла")
 	cmd.Flags().StringVar(&dc, "dc", "", "FQDN контроллера LDAPS")
 	cmd.Flags().StringVar(&group, "admin-group", "", "DN группы администраторов")
 	cmd.Flags().StringVar(&ca, "ca", "", "абсолютный путь к CA для LDAPS")
 	rootCmd.AddCommand(cmd)
+}
+
+// Publish a complete file atomically without replacing an existing configuration.
+func writeDiscoveredConfig(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".sambaadm-config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err = tmp.Close(); err != nil {
+		return err
+	}
+	if err = os.Link(tmp.Name(), path); err != nil {
+		return fmt.Errorf("создать конфигурацию %s: %w", path, err)
+	}
+	return nil
+}
+
+func discoveredConfig(ctx context.Context, realm, dc, user, group, ca string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	domain, target, err := discoverAD(ctx, realm, dc)
+	if err != nil {
+		return nil, err
+	}
+	base := "DC=" + strings.Join(strings.Split(domain, "."), ",DC=")
+	bind := user
+	if bind == "" {
+		bind = "svc-sambaadm@" + domain
+	}
+	admins := group
+	if admins == "" {
+		admins = "CN=Domain Admins,CN=Users," + base
+	}
+	if ca != "" && !filepath.IsAbs(ca) {
+		return nil, fmt.Errorf("для CA требуется абсолютный путь")
+	}
+	cfg := map[string]any{"server": map[string]string{"listen": "127.0.0.1:8080", "enrollment_dir": "/var/lib/sambaadm/enrollment"},
+		"ldap":  map[string]any{"uri": "ldaps://" + target + ":636", "base_dn": base, "ca_cert": ca, "bind": map[string]string{"type": "simple", "user": bind, "password_env": "SAMBAADM_PASSWORD"}},
+		"auth":  map[string]any{"roles": map[string][]string{"admins": {admins}}},
+		"audit": map[string]string{"file": "/var/log/sambaadm/audit.log"}, "logging": map[string]string{"file": "/var/log/sambaadm/events.log"}}
+	return yaml.Marshal(cfg)
 }

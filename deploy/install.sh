@@ -17,8 +17,15 @@ fi
 install -d -o root -g sambaadm -m 0750 /etc/sambaadm
 install -d -o sambaadm -g sambaadm -m 0750 /var/log/sambaadm
 install -m 0755 "$1" /usr/local/bin/sambaadm
-if [ ! -e /etc/sambaadm/config.yaml ]; then
-  install -o root -g sambaadm -m 0640 "$source_dir/configs/config.example.yaml" /etc/sambaadm/config.yaml
+if [ ! -e /etc/sambaadm/config.yaml ] && [ ! -L /etc/sambaadm/config.yaml ]; then
+  if /usr/local/bin/sambaadm discover --output /etc/sambaadm/config.yaml; then
+    chown root:sambaadm /etc/sambaadm/config.yaml
+    chmod 0640 /etc/sambaadm/config.yaml
+  else
+    [ ! -e /etc/sambaadm/config.yaml ] && [ ! -L /etc/sambaadm/config.yaml ] || exit 1
+    echo 'Домен не обнаружен. Установлен пример config.yaml; настройте LDAP вручную.' >&2
+    install -o root -g sambaadm -m 0640 "$source_dir/configs/config.example.yaml" /etc/sambaadm/config.yaml
+  fi
 fi
 if [ ! -e /etc/sambaadm/env ]; then
   (umask 077; printf '%s\n' '# Set the password for ldap.bind.user before starting:' '# SAMBAADM_PASSWORD="replace-me"' > /etc/sambaadm/env)

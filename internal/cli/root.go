@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -31,6 +32,13 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Only a first server start creates configuration. Existing files and
+		// all read-only CLI commands retain their normal loading behavior.
+		if cmd.Name() == "serve" && !checkStartup {
+			if err := ensureServerConfig(cmd); err != nil {
+				return err
+			}
+		}
 		cfg, err := config.Load(cfgFile)
 		if err != nil {
 			return err
@@ -92,4 +100,33 @@ var versionCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println(version.String())
 	},
+}
+
+func ensureServerConfig(cmd *cobra.Command) error {
+	path := cfgFile
+	if path == "" {
+		cfg, err := config.Load("")
+		if err != nil {
+			return err
+		}
+		if cfg.Source != "" {
+			return nil
+		}
+		path = "config.yaml"
+	}
+	if _, err := os.Lstat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	data, err := discoveredConfig(cmd.Context(), realm, "", user, "", "")
+	if err != nil {
+		return fmt.Errorf("предзаполнение config.yaml: %w; выполните sambaadm discover --realm DOMAIN --dc DC --output %s", err, path)
+	}
+	if err := writeDiscoveredConfig(path, data); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(), "Создан %s. Проверьте служебную запись и группу администраторов; задайте SAMBAADM_PASSWORD.\n", path)
+	cfgFile = path
+	return nil
 }
