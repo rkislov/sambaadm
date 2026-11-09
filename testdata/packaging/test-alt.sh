@@ -36,19 +36,21 @@ test "$(rpm -q --qf '%{VERSION}' sambaadm)" == 0.25.0
 /usr/bin/sambaadm version
 check_logs
 # Privileged preparation must not follow links to unrelated files.
-printf 'unrelated secret\n' > "$work/unrelated"
-chmod 0600 "$work/unrelated"
+link_target=$(mktemp /var/log/sambaadm-unrelated.XXXXXX)
+printf 'unrelated secret\n' > "$link_target"
+chmod 0600 "$link_target"
 mv /var/log/sambaadm/events.log "$work/events.log"
-ln -s "$work/unrelated" /var/log/sambaadm/events.log
+ln -s "$link_target" /var/log/sambaadm/events.log
 if /usr/libexec/sambaadm-prepare-logs; then echo 'Log symlink accepted'; exit 1; fi
-[[ $(stat -c '%a:%U:%G' "$work/unrelated") == 600:root:root ]]
-[[ $(cat "$work/unrelated") == 'unrelated secret' ]]
+[[ $(stat -c '%a:%U:%G' "$link_target") == 600:root:root ]]
+[[ $(cat "$link_target") == 'unrelated secret' ]]
 rm /var/log/sambaadm/events.log
-ln "$work/unrelated" /var/log/sambaadm/events.log
+ln "$link_target" /var/log/sambaadm/events.log
 if /usr/libexec/sambaadm-prepare-logs; then echo 'Log hard link accepted'; exit 1; fi
-[[ $(stat -c '%a:%U:%G' "$work/unrelated") == 600:root:root ]]
+[[ $(stat -c '%a:%U:%G' "$link_target") == 600:root:root ]]
 rm /var/log/sambaadm/events.log
 mv "$work/events.log" /var/log/sambaadm/events.log
+rm "$link_target"
 /usr/libexec/sambaadm-prepare-logs
 check_logs
 getent passwd sambaadm
