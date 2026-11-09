@@ -365,8 +365,13 @@ func TestIntegrationCleanupDCRemnants(t *testing.T) {
 	enabled.Replace("userAccountControl", []string{"8194"})
 	must(peer.Modify(ctx, enabled))
 	reset()
-	must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", base, "test", ""))
-	must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", base, "test", ""))
+	// The paused DC can record failed background replication for any NC, and
+	// its options live in Configuration. Restore every partition on both
+	// peers before asking the production health guard to permit deletion.
+	for _, nc := range []string{base, ConfigDN(base), "CN=Schema," + ConfigDN(base), "DC=DomainDnsZones," + base, "DC=ForestDnsZones," + base} {
+		must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", nc, "test", ""))
+		must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", nc, "test", ""))
+	}
 	p, e = s.Sites.PreviewCleanup(ctx, []string{server})
 	must(e)
 	domain, e := s.Sites.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: base, Scope: ldapproto.ScopeBase(), Attributes: []string{"objectGUID"}})
