@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"sambaadm/internal/adremote"
@@ -92,5 +94,33 @@ func TestHostServicesUseHelperAndDoNotFallBack(t *testing.T) {
 	}
 	if flags, e := helperNativeOpenFlags(helperOpenFlags(os.O_WRONLY | os.O_CREATE | os.O_EXCL)); e != nil || flags != os.O_WRONLY|os.O_CREATE|os.O_EXCL {
 		t.Fatal(flags, e)
+	}
+}
+
+func TestForwardedSYSVOLCredentialsDoNotMutateServiceIdentity(t *testing.T) {
+	var fallbackUsed atomic.Bool
+	client := ldapproto.NewClient(config.LDAPConfig{URI: "ldaps://127.0.0.1:636"})
+	backend := NewWithOptions(client, nil, ServiceOptions{Username: "service@example.org", Password: func() string { fallbackUsed.Store(true); return "service-password" }})
+	cfg := &config.Config{}
+	cfg.Helper.SYSVOLPrefix = "example.org/Policies"
+	cfg.GPO.SMBPort = 1
+	ctx := agent.WithCredentials(t.Context(), func() (agent.Credentials, error) {
+		return agent.Credentials{Username: "admin@example.org", Password: "admin-password"}, nil
+	})
+	raw, _ := json.Marshal(helperFSRequest{Path: "example.org/Policies"})
+	if _, err := backend.helperSYSVOL(ctx, cfg, "stat", raw); err == nil {
+		t.Fatal("closed test port accepted")
+	}
+	if fallbackUsed.Load() {
+		t.Fatal("helper used configured password instead of request identity")
+	}
+	if backend.GPO.remote.User != "service@example.org" {
+		t.Fatal("shared service identity mutated")
+	}
+	if err := backend.GPO.sysvol(ctx, backend.GPO.remote, 1, func(*sysvolShare) error { return nil }); err == nil || !strings.Contains(err.Error(), "registered sambaadm-helper") {
+		t.Fatal("missing helper silently fell back", err)
+	}
+	if fallbackUsed.Load() {
+		t.Fatal("missing helper used configured password")
 	}
 }

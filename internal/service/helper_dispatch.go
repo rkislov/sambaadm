@@ -16,6 +16,7 @@ import (
 
 	smb2 "github.com/cloudsoda/go-smb2"
 	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	"sambaadm/internal/config"
 	"sambaadm/internal/policy"
 )
@@ -58,17 +59,22 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 	}
 	defer unlock()
 	defer func() {
+		actor := "sambaadm-key"
+		if credentials, present, e := agent.OperationCredentials(ctx); present && e == nil {
+			actor = credentials.Username
+			err = agent.RedactCredentialError(err, credentials)
+		}
 		if err != nil {
-			s.Audit.Failure("sambaadm-key", method, cfg.Helper.Node, "", err)
+			s.Audit.Failure(actor, method, cfg.Helper.Node, "", err)
 		} else {
-			s.Audit.Success("sambaadm-key", method, cfg.Helper.Node, "")
+			s.Audit.Success(actor, method, cfg.Helper.Node, "")
 		}
 	}()
 	if strings.HasPrefix(method, "sysvol.") {
 		return s.helperSYSVOL(ctx, cfg, strings.TrimPrefix(method, "sysvol."), raw)
 	}
 	if method == "health" {
-		return map[string]any{"protocol": 1, "node": cfg.Helper.Node}, nil
+		return map[string]any{"protocol": agent.Version, "credential_protocol": agent.CredentialVersion, "node": cfg.Helper.Node}, nil
 	}
 	if method == "rodc.preload" {
 		return runLocalRODCPreload(ctx, cfg.Helper.Node, raw)
@@ -227,6 +233,12 @@ func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method 
 	}
 	remote := *s.GPO.remote
 	remote.Host = "127.0.0.1"
+	if credentials, present, e := agent.OperationCredentials(ctx); e != nil {
+		return nil, e
+	} else if present {
+		remote.User = credentials.Username
+		remote.Password = func() string { return credentials.Password }
+	}
 	err = remote.SYSVOL(ctx, cfg.GPO.SMBPort, func(sh *smb2.Share) error {
 		// Existing path checking rejects symlinked ancestors, including the root.
 		root := &smbPolicyStore{share: &sysvolShare{local: sh, ctx: ctx}, base: strings.ReplaceAll(p, `\`, "/")}

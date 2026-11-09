@@ -3,6 +3,7 @@
 package testldap
 
 import (
+	"crypto/tls"
 	"net"
 	"sync"
 	"testing"
@@ -27,6 +28,7 @@ type Bind struct {
 }
 type Server struct {
 	listener  net.Listener
+	secure    bool
 	mu        sync.Mutex
 	clients   map[net.Conn]bool
 	binds     []Bind
@@ -39,12 +41,21 @@ type Server struct {
 }
 
 func New(t *testing.T, passwords map[string]string, lookup func(Search) ([]Entry, int64)) *Server {
+	return newServer(t, passwords, lookup, nil)
+}
+func NewTLS(t *testing.T, passwords map[string]string, lookup func(Search) ([]Entry, int64), config *tls.Config) *Server {
+	return newServer(t, passwords, lookup, config)
+}
+func newServer(t *testing.T, passwords map[string]string, lookup func(Search) ([]Entry, int64), config *tls.Config) *Server {
 	t.Helper()
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
 		t.Fatal(e)
 	}
-	s := &Server{listener: listener, clients: map[net.Conn]bool{}, Passwords: passwords, Lookup: lookup}
+	if config != nil {
+		listener = tls.NewListener(listener, config)
+	}
+	s := &Server{secure: config != nil, listener: listener, clients: map[net.Conn]bool{}, Passwords: passwords, Lookup: lookup}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -77,7 +88,13 @@ func New(t *testing.T, passwords map[string]string, lookup func(Search) ([]Entry
 	})
 	return s
 }
-func (s *Server) URI() string { return "ldap://" + s.listener.Addr().String() }
+func (s *Server) URI() string {
+	scheme := "ldap"
+	if s.secure {
+		scheme = "ldaps"
+	}
+	return scheme + "://" + s.listener.Addr().String()
+}
 func (s *Server) Binds() []Bind {
 	s.mu.Lock()
 	defer s.mu.Unlock()

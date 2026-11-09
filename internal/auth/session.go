@@ -19,18 +19,20 @@ const (
 
 // Session holds authenticated user state.
 type Session struct {
-	ID         string
-	Username   string
-	DN         string
-	Role       Role
-	CSRFToken  string
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
+	ID            string
+	Username      string
+	DN            string
+	Role          Role
+	AllowLegacyCN bool
+	CSRFToken     string
+	CreatedAt     time.Time
+	ExpiresAt     time.Time
 }
 
 // Store is an in-memory session store (replace with Redis/DB later if needed).
 type Store struct {
 	mu       sync.RWMutex
+	vault    *credentialVault
 	sessions map[string]*Session
 	ttl      time.Duration
 	cookie   string
@@ -91,6 +93,7 @@ func (s *Store) Get(id string) (*Session, bool) {
 // Delete removes a session.
 func (s *Store) Delete(id string) {
 	s.mu.Lock()
+	s.forgetCredentialsLocked(id)
 	delete(s.sessions, id)
 	s.mu.Unlock()
 }

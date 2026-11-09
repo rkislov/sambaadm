@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -78,11 +79,13 @@ type TLSConfig struct {
 }
 
 type LDAPConfig struct {
-	ManagedCAFile string     `mapstructure:"-"`
-	CACert        string     `mapstructure:"ca_cert"`
-	URI           string     `mapstructure:"uri"`
-	BaseDN        string     `mapstructure:"base_dn"`
-	Bind          BindConfig `mapstructure:"bind"`
+	ManagedCAFile  string     `mapstructure:"-"`
+	ManagedTLSFile string     `mapstructure:"-"`
+	AllowLegacyCN  bool       `mapstructure:"allow_legacy_cn"`
+	CACert         string     `mapstructure:"ca_cert"`
+	URI            string     `mapstructure:"uri"`
+	BaseDN         string     `mapstructure:"base_dn"`
+	Bind           BindConfig `mapstructure:"bind"`
 }
 
 type BindConfig struct {
@@ -147,6 +150,7 @@ func Load(cfgFile string) (*Config, error) {
 		return nil, fmt.Errorf("server.certificate_dir requires an absolute path")
 	}
 	cfg.LDAP.ManagedCAFile = filepath.Join(cfg.Server.CertificateDir, "ldap-ca.pem")
+	cfg.LDAP.ManagedTLSFile = filepath.Join(cfg.Server.CertificateDir, "ldap-legacy-cn.json")
 	if cfg.GPO.RepairBackupKeep < 1 || cfg.GPO.RepairBackupKeep > 100 || cfg.GPO.RepairBackupMaxMiB < 1 || cfg.GPO.RepairBackupMaxMiB > 10240 {
 		return nil, fmt.Errorf("gpo.repair_backup_keep must be 1..100 and repair_backup_max_mib 1..10240")
 	}
@@ -168,7 +172,7 @@ func Load(cfgFile string) (*Config, error) {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("helper.state_dir", "/var/lib/sambaadm-helper")
-	for _, key := range []string{"ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file", "logging.file"} {
+	for _, key := range []string{"ldap.allow_legacy_cn", "ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file", "logging.file"} {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)
@@ -222,4 +226,22 @@ func (c LDAPConfig) LDAPCAFile() string {
 		}
 	}
 	return c.CACert
+}
+
+func (c LDAPConfig) LegacyCNAllowed() (bool, error) {
+	if c.ManagedTLSFile == "" {
+		return c.AllowLegacyCN, nil
+	}
+	raw, err := os.ReadFile(c.ManagedTLSFile)
+	if os.IsNotExist(err) {
+		return c.AllowLegacyCN, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var allow bool
+	if err := json.Unmarshal(raw, &allow); err != nil {
+		return false, fmt.Errorf("invalid managed LDAP TLS policy: %w", err)
+	}
+	return allow, nil
 }

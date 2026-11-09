@@ -20,11 +20,12 @@ import (
 // Client owns one LDAP connection. Service clients bind before publishing any
 // connection and never allow callers to change its authentication identity.
 type Client struct {
-	cfg      config.LDAPConfig
-	mu       sync.Mutex
-	conn     *ldap.Conn
-	service  bool
-	password func() string
+	cfg        config.LDAPConfig
+	mu         sync.Mutex
+	conn       *ldap.Conn
+	legacyConn *ldap.Conn
+	service    bool
+	password   func() string
 }
 
 // NewClient creates an LDAP client from config. Connection is lazy.
@@ -40,16 +41,30 @@ func (c *Client) Connect(ctx context.Context) error {
 }
 
 func (c *Client) connectLocked(ctx context.Context) error {
+	allow, err := LegacyCNAllowed(ctx, c.cfg)
+	if err != nil {
+		return err
+	}
+	return c.connectProfileLocked(ctx, allow)
+}
+func (c *Client) connectionSlot(allow bool) **ldap.Conn {
+	if allow {
+		return &c.legacyConn
+	}
+	return &c.conn
+}
+func (c *Client) connectProfileLocked(ctx context.Context, allow bool) error {
+	slot := c.connectionSlot(allow)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if c.conn != nil && !c.conn.IsClosing() {
+	if *slot != nil && !(*slot).IsClosing() {
 		return nil
 	}
 
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+	if *slot != nil {
+		(*slot).Close()
+		*slot = nil
 	}
 	var servicePassword string
 	if c.service {
@@ -64,7 +79,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 			return fmt.Errorf("LDAP service account password is not configured")
 		}
 	}
-	conn, err := dial(ctx, c.cfg.URI, c.cfg.LDAPCAFile())
+	conn, err := dial(ctx, c.cfg.URI, c.cfg.LDAPCAFile(), allow)
 	if err != nil {
 		return err
 	}
@@ -79,7 +94,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 		return err
 	}
 
-	c.conn = conn
+	*slot = conn
 	return nil
 }
 
@@ -87,9 +102,11 @@ func (c *Client) connectLocked(ctx context.Context) error {
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
+	for _, slot := range []**ldap.Conn{&c.conn, &c.legacyConn} {
+		if *slot != nil {
+			(*slot).Close()
+			*slot = nil
+		}
 	}
 	return nil
 }
@@ -98,10 +115,14 @@ func (c *Client) Close() error {
 func (c *Client) Conn(ctx context.Context) (*ldap.Conn, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := c.connectLocked(ctx); err != nil {
+	allow, err := LegacyCNAllowed(ctx, c.cfg)
+	if err != nil {
 		return nil, err
 	}
-	return c.conn, nil
+	if err := c.connectProfileLocked(ctx, allow); err != nil {
+		return nil, err
+	}
+	return *c.connectionSlot(allow), nil
 }
 
 // BaseDN returns the configured search base.
@@ -120,7 +141,7 @@ func NewServiceClient(cfg config.LDAPConfig, password func() string) *Client {
 	return &Client{cfg: cfg, service: true, password: password}
 }
 
-func dial(ctx context.Context, uri string, caFile string) (*ldap.Conn, error) {
+func dial(ctx context.Context, uri string, caFile string, legacy ...bool) (*ldap.Conn, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	var raw net.Conn
 	var err error
@@ -172,6 +193,14 @@ func dial(ctx context.Context, uri string, caFile string) (*ldap.Conn, error) {
 					return nil, fmt.Errorf("LDAP CA certificate contains no valid PEM certificates")
 				}
 				tlsConfig.RootCAs = roots
+			}
+			if len(legacy) > 0 && legacy[0] {
+				// Default verification is replaced, not removed: the callback verifies
+				// chain, server EKU, dates and either SAN or an exact CN-only DNS identity.
+				tlsConfig.InsecureSkipVerify = true
+				tlsConfig.VerifyConnection = func(state tls.ConnectionState) error {
+					return VerifyServerCertificate(state.PeerCertificates, host, tlsConfig.RootCAs, true)
+				}
 			}
 			tlsDialer := &tls.Dialer{NetDialer: dialer, Config: tlsConfig}
 			raw, err = tlsDialer.DialContext(ctx, "tcp", net.JoinHostPort(host, port))

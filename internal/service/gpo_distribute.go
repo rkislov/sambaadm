@@ -9,6 +9,7 @@ import (
 	"github.com/go-ldap/ldap/v3"
 	"os"
 	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	"strings"
 	"sync"
 	"time"
@@ -238,7 +239,7 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 	s.jobs.put(job)
 	s.audit.Success(actor, "gpo.distribute.start", gpo, ip)
 
-	go s.runDistribute(id, local)
+	go s.runDistribute(ldapproto.CarryTLSProfile(agent.CarryCredentials(context.Background(), ctx), ctx), id, local)
 
 	out, _ := s.jobs.get(id)
 	return out, nil
@@ -252,8 +253,8 @@ func (s *GPOService) GetDistributeJob(id string) (*DistributeJob, bool) {
 	return s.jobs.get(id)
 }
 
-func (s *GPOService) runDistribute(jobID, local string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+func (s *GPOService) runDistribute(parent context.Context, jobID, local string) {
+	ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
 	defer cancel()
 
 	s.jobs.update(jobID, func(j *DistributeJob) { j.Status = JobRunning })

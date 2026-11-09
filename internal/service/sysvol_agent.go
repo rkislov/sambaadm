@@ -74,6 +74,13 @@ func (s *GPOService) sysvol(ctx context.Context, remote *adremote.Client, port i
 		}
 		return fn(&sysvolShare{helpers: s.helpers, node: node, ctx: ctx})
 	}
+	// A session identity must never silently become the configured service
+	// account when no helper is available (including embedded web setups).
+	if _, present, err := agent.OperationCredentials(ctx); err != nil {
+		return err
+	} else if present {
+		return fmt.Errorf("session SYSVOL credentials require a registered sambaadm-helper")
+	}
 	return remote.SYSVOL(ctx, port, func(sh *smb2.Share) error { return fn(&sysvolShare{local: sh, ctx: ctx}) })
 }
 func (s *sysvolShare) call(op string, in helperFSRequest, out any) error {

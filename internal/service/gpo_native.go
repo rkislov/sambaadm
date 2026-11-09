@@ -49,7 +49,7 @@ func (s *GPOService) createNative(ctx context.Context, name, actor, ip string) (
 	defer func() {
 		if err != nil {
 			for i := len(created) - 1; i >= 0; i-- {
-				if e := s.ldap.Delete(context.Background(), created[i]); e != nil {
+				if e := s.ldap.Delete(ldapproto.CarryTLSProfile(context.Background(), ctx), created[i]); e != nil {
 					err = errors.Join(err, fmt.Errorf("rollback %s: %w", created[i], e))
 				}
 			}

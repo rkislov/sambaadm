@@ -16,6 +16,7 @@ Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=30s
 UMask=0077
+LimitCORE=0
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

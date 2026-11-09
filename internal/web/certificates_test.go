@@ -18,6 +18,7 @@ import (
 	"sambaadm/internal/agent"
 	"sambaadm/internal/auth"
 	"sambaadm/internal/config"
+	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/service"
 )
 
@@ -196,5 +197,43 @@ func TestCertificateInspectionDoesNotAuthenticateOrTrustPeer(t *testing.T) {
 	status = s.inspectLDAPCertificate(t.Context(), &view)
 	if !strings.Contains(status, "Сертификат действителен") {
 		t.Fatal(status)
+	}
+}
+
+func TestLegacyCNMenuPersistsDefaultWithoutWeakeningCurrentSession(t *testing.T) {
+	s := testWorkspaceServer(t)
+	s.cfg.Server.CertificateDir = filepath.Join(t.TempDir(), "certificates")
+	s.cfg.LDAP.ManagedTLSFile = filepath.Join(s.cfg.Server.CertificateDir, "ldap-legacy-cn.json")
+	admin, _ := s.sessions.Create("admin", "cn=admin", auth.RoleAdmin)
+	form := url.Values{"action": {"legacy-cn"}, "legacy_cn": {"allow"}, "csrf_token": {admin.CSRFToken}}
+	req := httptest.NewRequest("POST", "/settings/certificates", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	cookie := &http.Cookie{Name: "sambaadm_session", Value: admin.ID}
+	req.AddCookie(cookie)
+	out := httptest.NewRecorder()
+	s.Router().ServeHTTP(out, req)
+	if out.Code != 200 {
+		t.Fatal(out.Code, out.Body)
+	}
+	if allowed, err := s.cfg.LDAP.LegacyCNAllowed(); err != nil || !allowed {
+		t.Fatal("default not persisted", err)
+	}
+	req = httptest.NewRequest("GET", "/test", nil)
+	req.AddCookie(cookie)
+	s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if allowed, err := ldapproto.LegacyCNAllowed(r.Context(), s.cfg.LDAP); err != nil || allowed {
+			t.Error("global default changed current strict session", err)
+		}
+	})).ServeHTTP(httptest.NewRecorder(), req)
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("server:\n  certificate_dir: "+s.cfg.Server.CertificateDir+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := config.Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := reloaded.LDAP.LegacyCNAllowed(); err != nil || !allowed {
+		t.Fatal("default lost on restart", err)
 	}
 }

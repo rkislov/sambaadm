@@ -17,7 +17,8 @@ func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lang := langFrom(r)
-	s.render(w, "login.html", pageData{
+	allowLegacy, _ := s.cfg.LDAP.LegacyCNAllowed()
+	s.render(w, "login.html", pageData{HelperSession: true, LegacyCN: allowLegacy,
 		Title: i18n.T(lang, "login.title"),
 		Lang:  lang,
 	})
@@ -30,7 +31,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		if extra != "" {
 			msg = msg + ": " + extra
 		}
-		s.render(w, "login.html", pageData{
+		s.render(w, "login.html", pageData{HelperSession: r.FormValue("helper_auth") == "session", LegacyCN: r.FormValue("ldap_legacy_cn") == "allow",
 			Title: i18n.T(lang, "login.title"),
 			Lang:  lang,
 			Error: msg,
@@ -48,19 +49,22 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	loginContext := r.Context()
+	allowLegacy := r.FormValue("ldap_legacy_cn") == "allow"
+	loginContext = ldapproto.WithLegacyCN(loginContext, allowLegacy)
 	loginLDAP := ldapproto.NewClient(s.cfg.LDAP)
 	defer loginLDAP.Close()
-	if err := loginLDAP.Connect(r.Context()); err != nil {
+	if err := loginLDAP.Connect(loginContext); err != nil {
 		loginPage("login.error.ldap", err.Error())
 		return
 	}
-	if err := loginLDAP.BindSimple(r.Context(), username, password); err != nil {
+	if err := loginLDAP.BindSimple(loginContext, username, password); err != nil {
 		s.audit.Failure(username, "login", "", r.RemoteAddr, err)
 		loginPage("login.error.auth", "")
 		return
 	}
 
-	dn, role, err := s.resolveLoginIdentity(r.Context(), loginLDAP, username)
+	dn, role, err := s.resolveLoginIdentity(loginContext, loginLDAP, username)
 
 	if err != nil || dn == "" {
 		slog.Warn("login identity lookup failed", "user", username, "err", err)
@@ -70,7 +74,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 	// Ensure operations are bound to their own configured service identity.
 	// A failed service bind must never leave a browser identity on that connection.
-	if err := s.ldap.Connect(r.Context()); err != nil {
+	if err := s.ldap.Connect(loginContext); err != nil {
 		slog.Warn("LDAP service connection failed", "err", err)
 		s.audit.Failure(username, "login.service", "", r.RemoteAddr, err)
 		loginPage("login.error.service", "")
@@ -82,9 +86,22 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
+	sess.AllowLegacyCN = allowLegacy
+	if r.FormValue("helper_auth") == "session" {
+		if err := s.sessions.RememberHelperPassword(sess.ID, password); err != nil {
+			s.sessions.Delete(sess.ID)
+			http.Error(w, "session credential storage failed", http.StatusInternalServerError)
+			return
+		}
+	}
+	r.PostForm.Del("password")
+	r.Form.Del("password")
 	secure := s.cfg.Server.TLS.Cert != ""
 	s.sessions.SetCookie(w, sess, secure)
 	s.audit.Success(username, "login", dn, r.RemoteAddr)
+	if allowLegacy {
+		s.audit.Success(username, "login.legacy-cn", dn, r.RemoteAddr)
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 

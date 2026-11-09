@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"sambaadm/internal/agent"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -203,5 +205,56 @@ func TestBuiltinUPNIdentityFallback(t *testing.T) {
 				t.Fatal("foreign UPN must not fall back to local account")
 			}
 		})
+	}
+}
+
+func TestSessionHelperIdentityIsRevokedAtLogout(t *testing.T) {
+	fake := testldap.New(t, map[string]string{"service": "service-password", "alice@example.com": "alice-pass"}, func(q testldap.Search) ([]testldap.Entry, int64) {
+		return []testldap.Entry{{DN: "CN=Alice,CN=Users,DC=example,DC=com", Attributes: map[string][]string{"sAMAccountName": {"alice"}, "memberOf": {testAdminDN}}}}, 0
+	})
+	s := newLoginTestServer(t, fake.URI(), config.RolesConfig{Admins: []string{testAdminDN}}, "service-password")
+	form := url.Values{"username": {"alice@example.com"}, "password": {"alice-pass"}, "helper_auth": {"session"}, "ldap_legacy_cn": {"allow"}}
+	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logged := httptest.NewRecorder()
+	s.Router().ServeHTTP(logged, req)
+	if logged.Code != 303 {
+		t.Fatal(logged.Code, logged.Body)
+	}
+	cookie := logged.Result().Cookies()[0]
+	sess, ok := s.sessions.Get(cookie.Value)
+	if !ok || !s.sessions.HasHelperCredentials(sess.ID) {
+		t.Fatal("session credentials missing")
+	}
+	if !sess.AllowLegacyCN {
+		t.Fatal("login TLS profile not retained")
+	}
+	var operation context.Context
+	protected := s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		allowed, err := ldapproto.LegacyCNAllowed(r.Context(), s.cfg.LDAP)
+		if err != nil || !allowed {
+			t.Error("session TLS profile not propagated")
+		}
+		operation = agent.CarryCredentials(context.Background(), r.Context())
+	}))
+	next := httptest.NewRequest("GET", "/test", nil)
+	next.AddCookie(cookie)
+	protected.ServeHTTP(httptest.NewRecorder(), next)
+	credentials, present, err := agent.OperationCredentials(operation)
+	if err != nil || !present || credentials.Username != "alice@example.com" || credentials.Password != "alice-pass" {
+		t.Fatal("wrong helper identity")
+	}
+	if s.ldap.URI() != fake.URI() {
+		t.Fatal("shared LDAP client changed")
+	}
+	logout := httptest.NewRequest("POST", "/logout", strings.NewReader(url.Values{"csrf_token": {sess.CSRFToken}}.Encode()))
+	logout.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	logout.AddCookie(cookie)
+	s.Router().ServeHTTP(httptest.NewRecorder(), logout)
+	if _, present, err := agent.OperationCredentials(operation); !present || err == nil {
+		t.Fatal("captured background operation retained credentials after logout")
+	}
+	if s.sessions.HasHelperCredentials(sess.ID) {
+		t.Fatal("logout retained encrypted record")
 	}
 }

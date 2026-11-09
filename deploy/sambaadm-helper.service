@@ -8,6 +8,7 @@ User=root
 ExecStart=/usr/bin/sambaadm-helper serve --config /etc/sambaadm-helper/config.yaml
 Restart=on-failure
 RestartSec=5
+LimitCORE=0
 NoNewPrivileges=true
 ProtectHome=true
 PrivateTmp=true

@@ -80,8 +80,8 @@ func (s *SiteService) Create(ctx context.Context, name, actor, ip string) (*Site
 	for _, child := range []struct{ name, class string }{{"Servers", "serversContainer"}, {"NTDS Site Settings", "nTDSSiteSettings"}} {
 		childDN := BuildDN("CN", child.name, dn)
 		if err := s.ldap.Add(ctx, childDN, []ldap.Attribute{{Type: "objectClass", Vals: []string{"top", child.class}}, {Type: "cn", Vals: []string{child.name}}}); err != nil {
-			cleanup := s.ldap.Delete(context.Background(), BuildDN("CN", "Servers", dn))
-			rollback := s.ldap.Delete(context.Background(), dn)
+			cleanup := s.ldap.Delete(ldapproto.CarryTLSProfile(context.Background(), ctx), BuildDN("CN", "Servers", dn))
+			rollback := s.ldap.Delete(ldapproto.CarryTLSProfile(context.Background(), ctx), dn)
 			s.audit.Failure(actor, "site.create", dn, ip, err)
 			return nil, fmt.Errorf("create site child: %w (rollback: %v, %v)", err, cleanup, rollback)
 		}

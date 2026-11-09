@@ -14,7 +14,7 @@ func TestIntegrationHelperSSHAndHTTPS(t *testing.T) {
 	if os.Getenv("SAMBAADM_IT_HELPERS") != "1" {
 		t.Skip("requires two helper nodes")
 	}
-	s, _ := integrationServices(t, false)
+	s, serverConfig := integrationServices(t, false)
 	ctx := context.Background()
 	for _, transport := range []string{"https", "ssh"} {
 		t.Run(transport, func(t *testing.T) {
@@ -38,6 +38,22 @@ func TestIntegrationHelperSSHAndHTTPS(t *testing.T) {
 			var auth RODCAuthReport
 			if e := client.Call(ctx, "dc2.sambaadm.test", "rodc.auth", struct{ After, Account string }{}, &auth); e != nil {
 				t.Fatal(e)
+			}
+			// Use the browser identity for real SMB through each transport. A
+			// deliberately nonexistent identity must fail even though the helper has
+			// valid configured credentials: no fallback to the service account.
+			scoped := agent.WithCredentials(ctx, func() (agent.Credentials, error) {
+				return agent.Credentials{Username: serverConfig.Bind.User, Password: os.Getenv(serverConfig.Bind.PasswordEnv)}, nil
+			})
+			var scopedFiles []helperFileInfo
+			if e := client.Call(scoped, "dc2.sambaadm.test", "sysvol.list", helperFSRequest{Path: `sambaadm.test\Policies`}, &scopedFiles); e != nil {
+				t.Fatal("session SYSVOL identity", e)
+			}
+			rejected := agent.WithCredentials(ctx, func() (agent.Credentials, error) {
+				return agent.Credentials{Username: "missing-session-" + uuid.NewString() + "@sambaadm.test", Password: "not-a-real-password"}, nil
+			})
+			if e := client.Call(rejected, "dc2.sambaadm.test", "sysvol.list", helperFSRequest{Path: `sambaadm.test\Policies`}, &scopedFiles); e == nil {
+				t.Fatal("invalid session identity fell back to configured credentials")
 			}
 			var files []helperFileInfo
 			if e := client.Call(ctx, "dc2.sambaadm.test", "sysvol.list", helperFSRequest{Path: `sambaadm.test\Policies`}, &files); e != nil {

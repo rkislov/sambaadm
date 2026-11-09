@@ -20,6 +20,10 @@
       <label>{{t .Lang "login.password"}}
         <input type="password" name="password" autocomplete="current-password" required>
       </label>
+      <details class="login-advanced" {{if .LegacyCN}}open{{end}}><summary>Расширенные параметры</summary>
+        <label class="session-auth-choice"><input type="checkbox" name="helper_auth" value="session" {{if .HelperSession}}checked{{end}}><span>Моя учётная запись для SYSVOL через helper<small>Пароль хранится зашифрованным в памяти до выхода или окончания сессии.</small></span></label>
+        <label class="session-auth-choice"><input type="checkbox" name="ldap_legacy_cn" value="allow" {{if .LegacyCN}}checked{{end}}><span>Разрешить LDAP-сертификат без SAN с точным CN<small>Только для этой сессии. Доверие к CA, срок действия и имя контроллера проверяются. Сертификат с другим SAN не принимается.</small></span></label>
+      </details>
       <button type="submit">{{t .Lang "login.submit"}}</button>
     </form>
   </main>

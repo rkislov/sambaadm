@@ -24,9 +24,12 @@ import (
 
 	"sambaadm/internal/auth"
 	"sambaadm/internal/config"
+	ldapproto "sambaadm/internal/ldap"
 )
 
 type certificatePage struct {
+	LegacyCN                       bool
+	EffectiveLegacyCN              bool
 	Host, URI, Trust, Status       string
 	Subject, Issuer, SANs, Expires string
 	Helpers                        []string
@@ -162,7 +165,9 @@ func (s *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	u, _ := url.Parse(s.cfg.LDAP.URI)
-	view := certificatePage{URI: s.cfg.LDAP.URI, Trust: s.cfg.LDAP.LDAPCAFile()}
+	defaultLegacy, _ := s.cfg.LDAP.LegacyCNAllowed()
+	effectiveLegacy, _ := ldapproto.LegacyCNAllowed(r.Context(), s.cfg.LDAP)
+	view := certificatePage{LegacyCN: defaultLegacy, EffectiveLegacyCN: effectiveLegacy, URI: s.cfg.LDAP.URI, Trust: s.cfg.LDAP.LDAPCAFile()}
 	if u != nil && enrollmentDNS(u.Hostname()) {
 		view.Host = u.Hostname()
 	}
@@ -199,6 +204,23 @@ func (s *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Disposition", "attachment; filename=sambaadm-ldap-ca.pem")
 				w.Write(ca)
 				return
+			}
+		case "legacy-cn":
+			s.certMu.Lock()
+			err := certificateDir(s.cfg.Server.CertificateDir)
+			if err == nil {
+				raw, _ := json.Marshal(r.FormValue("legacy_cn") == "allow")
+				err = saveCertificateFile(filepath.Join(s.cfg.Server.CertificateDir, "ldap-legacy-cn.json"), raw)
+			}
+			s.certMu.Unlock()
+			if err != nil {
+				pd.Error = err.Error()
+			} else {
+				view.LegacyCN = r.FormValue("legacy_cn") == "allow"
+				pd.Flash = "Настройка совместимости сохранена для новых входов и CLI. Для текущей сессии действует выбор в окне входа."
+				if s.audit != nil {
+					s.audit.Success(sessionFrom(r).Username, "certificate.legacy-cn", fmt.Sprint(view.LegacyCN), r.RemoteAddr)
+				}
 			}
 		case "inspect":
 			view.Status = s.inspectLDAPCertificate(r.Context(), &view)
@@ -292,12 +314,15 @@ func (s *Server) inspectLDAPCertificate(ctx context.Context, view *certificatePa
 			return "Файл доверия не содержит сертификатов CA."
 		}
 	}
-	intermediates := x509.NewCertPool()
-	for _, c := range chain[1:] {
-		intermediates.AddCert(c)
+	allow, err := ldapproto.LegacyCNAllowed(ctx, s.cfg.LDAP)
+	if err != nil {
+		return err.Error()
 	}
-	if _, err := cert.Verify(x509.VerifyOptions{DNSName: u.Hostname(), Roots: roots, Intermediates: intermediates}); err != nil {
+	if err := ldapproto.VerifyServerCertificate(chain, u.Hostname(), roots, allow); err != nil {
 		return "Проверка не пройдена: " + err.Error()
+	}
+	if allow && len(cert.DNSNames) == 0 && len(cert.IPAddresses) == 0 {
+		return "Сертификат действителен в режиме legacy CN: имя, срок и CA проверены."
 	}
 	return "Сертификат действителен: имя, срок и цепочка доверия проверены."
 }

@@ -127,6 +127,12 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 		t.Skip("browser harness only")
 	}
 	s := testWorkspaceServer(t)
+	loginRequest := httptest.NewRequest("GET", "/login", nil)
+	loginResponse := httptest.NewRecorder()
+	s.Router().ServeHTTP(loginResponse, loginRequest)
+	if err := os.WriteFile(filepath.Join(dir, "login.html"), loginResponse.Body.Bytes(), 0600); err != nil {
+		t.Fatal(err)
+	}
 	s.cfg.Server.EnrollmentDir = filepath.Join(dir, "enrollment")
 	s.cfg.LDAP.URI = "ldaps://dc1.example.org:636"
 	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{BaseDN: "DC=example,DC=com"}), nil, service.ServiceOptions{})

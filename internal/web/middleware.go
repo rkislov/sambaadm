@@ -3,7 +3,10 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sambaadm/internal/agent"
+	ldapproto "sambaadm/internal/ldap"
 
 	"sambaadm/internal/auth"
 )
@@ -24,6 +27,17 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), sessionKey, sess)
+		ctx = ldapproto.WithLegacyCN(ctx, sess.AllowLegacyCN)
+		if s.sessions.HasHelperCredentials(sess.ID) {
+			id := sess.ID
+			ctx = agent.WithCredentials(ctx, func() (agent.Credentials, error) {
+				username, password, ok := s.sessions.HelperCredentials(id)
+				if !ok {
+					return agent.Credentials{}, fmt.Errorf("session credentials expired; sign in again")
+				}
+				return agent.Credentials{Username: username, Password: password}, nil
+			})
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

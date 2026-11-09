@@ -113,6 +113,16 @@ func (c *Client) Call(ctx context.Context, name, method string, in, out any) err
 		return e
 	}
 	req := Request{Version: Version, Node: node.Name, ID: hex.EncodeToString(nonce), Time: time.Now().Unix(), Method: method, Params: params}
+	if strings.HasPrefix(method, "sysvol.") {
+		credentials, present, err := OperationCredentials(ctx)
+		if err != nil {
+			return err
+		}
+		if present {
+			req.Version = CredentialVersion
+			req.Credentials = &credentials
+		}
+	}
 	data, e := json.Marshal(req)
 	if e != nil {
 		return e
@@ -181,8 +191,8 @@ func (c *Client) Call(ctx context.Context, name, method string, in, out any) err
 		return fmt.Errorf("helper transport must be ssh or https")
 	}
 	var result Response
-	if json.Unmarshal(response, &result) != nil || result.ID != req.ID || result.Version != Version {
-		return fmt.Errorf("invalid helper response")
+	if json.Unmarshal(response, &result) != nil || result.ID != req.ID || result.Version != req.Version {
+		return fmt.Errorf("helper %s rejected the request or session credential protocol; check its version and trusted signing key", node.Name)
 	}
 	if result.Error != "" {
 		switch result.Code {

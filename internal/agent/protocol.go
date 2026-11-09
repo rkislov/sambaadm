@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -19,12 +20,13 @@ const MaxMessage = 96 << 20
 const Version = 1
 
 type Request struct {
-	Version int             `json:"version"`
-	Node    string          `json:"node"`
-	ID      string          `json:"id"`
-	Time    int64           `json:"time"`
-	Method  string          `json:"method"`
-	Params  json.RawMessage `json:"params"`
+	Version     int             `json:"version"`
+	Node        string          `json:"node"`
+	ID          string          `json:"id"`
+	Time        int64           `json:"time"`
+	Method      string          `json:"method"`
+	Params      json.RawMessage `json:"params"`
+	Credentials *Credentials    `json:"credentials,omitempty"`
 }
 type Envelope struct {
 	Request   json.RawMessage `json:"request"`
@@ -135,12 +137,22 @@ func (v *Verifier) Dispatch(ctx context.Context, raw []byte, handler Handler) Re
 		return unauthorized(out)
 	}
 	var req Request
-	if json.Unmarshal(env.Request, &req) != nil || req.Version != Version || req.Node != v.Node || len(req.ID) != 32 || len(req.Method) > 80 {
+	if json.Unmarshal(env.Request, &req) != nil || (req.Version != Version && req.Version != CredentialVersion) || req.Node != v.Node || len(req.ID) != 32 || len(req.Method) > 80 {
 		return unauthorized(out)
 	}
 	if id, e := hex.DecodeString(req.ID); e != nil || len(id) != 16 {
 		return unauthorized(out)
 	}
+	// Version 2 is mandatory when forwarding credentials, so older helpers
+	// cannot silently ignore them and fall back to a service identity.
+	if req.Credentials != nil {
+		if req.Version != CredentialVersion || !req.Credentials.Valid() || !strings.HasPrefix(req.Method, "sysvol.") {
+			return unauthorized(out)
+		}
+	} else if req.Version != Version {
+		return unauthorized(out)
+	}
+	out.Version = req.Version
 	out.ID = req.ID
 	now := time.Now().Unix()
 	if req.Time < now-90 || req.Time > now+30 {
@@ -164,7 +176,14 @@ func (v *Verifier) Dispatch(ctx context.Context, raw []byte, handler Handler) Re
 	if e := v.remember(req, now); e != nil {
 		return unauthorized(out)
 	}
+	if req.Credentials != nil {
+		credentials := *req.Credentials
+		ctx = WithCredentials(ctx, func() (Credentials, error) { return credentials, nil })
+	}
 	result, e := handler(ctx, req.Method, req.Params)
+	if req.Credentials != nil {
+		e = RedactCredentialError(e, *req.Credentials)
+	}
 	if e != nil {
 		out.Error = e.Error()
 		switch {
