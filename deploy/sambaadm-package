@@ -8,7 +8,7 @@ cache=/var/cache/sambaadm-packages
 unit=sambaadm.service
 usage() {
  cat <<'HELP'
-Usage (root):
+Usage (root); install also updates an existing installation:
   sambaadm-package install /path/sambaadm.rpm
   sambaadm-package update /path/new.rpm [--previous-rpm /path/installed-version.rpm]
   sambaadm-package list
@@ -40,11 +40,11 @@ main() {
    printf '%s  %s  active=%s\n' "${dir##*/}" "$(cat "$dir/nevra")" "$(cat "$dir/active")"
   done;;
  install|update)
-  [[ $# == 1 || ( $operation == update && $# == 3 && $2 == --previous-rpm ) ]] || { usage; exit 2; }
+  [[ $# == 1 || ( $# == 3 && $2 == --previous-rpm ) ]] || { usage; exit 2; }
   cp -- "$1" "$work/target.rpm"; verify_rpm "$work/target.rpm"
   local target; target=$(nevra_file "$work/target.rpm")
+  if [[ $operation == install ]] && rpm -q sambaadm >/dev/null 2>&1; then operation=update; fi
   if [[ $operation == install ]]; then
-   rpm -q sambaadm >/dev/null 2>&1 && die 'Already installed; use update.'
    [[ ! -e /etc/systemd/system/sambaadm.service && ! -e /usr/local/bin/sambaadm ]] || die 'Manual installation detected; follow docs/alt-install.md migration instructions first.'
    if [[ -e /etc/sambaadm || -L /etc/sambaadm ]]; then
     tar --acls --xattrs --numeric-owner -cpf "$work/existing-config.tar" -C / etc/sambaadm
@@ -57,10 +57,15 @@ main() {
    cache_rpm "$work/target.rpm" "$target"
    echo 'Installed; configure /etc/sambaadm/config.yaml and /etc/sambaadm/env before enabling sambaadm.'
   else
-   require_systemd
    local current old snapshot
    current=$(installed_nevra) || die 'sambaadm is not installed.'
-   [[ $target != "$current" ]] || die 'Target version is already installed.'
+   if [[ $target == "$current" ]]; then
+    cache_rpm "$work/target.rpm" "$target"
+    if [[ -x /usr/libexec/sambaadm-prepare-logs ]]; then /usr/libexec/sambaadm-prepare-logs; fi
+    echo "$target is already installed; configuration preserved."
+    return
+   fi
+   require_systemd
    if [[ $# == 3 ]]; then
     cp -- "$3" "$work/previous.rpm"; verify_rpm "$work/previous.rpm"
     [[ $(nevra_file "$work/previous.rpm") == "$current" ]] || die '--previous-rpm does not match installed version.'

@@ -75,6 +75,8 @@ jobs:
         run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-helper-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-helper-linux-${{ matrix.arch }} /src/dist
       - name: Host helper RPM lifecycle
         run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-helper-alt.sh /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
+      - name: Combined installer first install, update and repeat
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-installer-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
       - name: ALT p10 real systemd update and rollback
         run: |
           trap 'docker logs --tail 50 sambaadm-alt-systemd || true; docker rm -f sambaadm-alt-systemd || true' EXIT

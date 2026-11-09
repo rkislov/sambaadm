@@ -88,3 +88,69 @@ func TestHelperEnrollment(t *testing.T) {
 		t.Fatal("incorrect certificate binding")
 	}
 }
+
+func TestHelperEnrollmentGeneratesDownloadOnlyKey(t *testing.T) {
+	s := testWorkspaceServer(t)
+	s.cfg.Server.EnrollmentDir = filepath.Join(t.TempDir(), "enrollment")
+	admin, _ := s.sessions.Create("admin", "cn=admin", auth.RoleAdmin)
+	form := url.Values{"node": {"dc0.ipr.loc"}, "domain": {"ipr.loc"}, "key_mode": {"generate"}, "csrf_token": {admin.CSRFToken}}
+	req := httptest.NewRequest("POST", "/settings/helpers", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: admin.ID})
+	w := httptest.NewRecorder()
+	s.Router().ServeHTTP(w, req)
+	if w.Code != 200 || w.Header().Get("Content-Type") != "application/zip" {
+		t.Fatal(w.Code, w.Body)
+	}
+	z, err := zip.NewReader(bytes.NewReader(w.Body.Bytes()), int64(w.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{}
+	for _, f := range z.File {
+		if f.Mode().Perm() != 0600 {
+			t.Fatal(f.Name, f.Mode())
+		}
+		r, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[f.Name], err = io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(files) != 4 {
+		t.Fatal("missing helper files")
+	}
+	block, _ := pem.Decode(files["tls.key"])
+	if block == nil {
+		t.Fatal("missing key")
+	}
+	key, err := x509.ParseECPrivateKey(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ = pem.Decode(files["tls.crt"])
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !key.PublicKey.Equal(cert.PublicKey) || cert.VerifyHostname("dc0.ipr.loc") != nil {
+		t.Fatal("incorrect certificate or key")
+	}
+	entries, err := os.ReadDir(s.cfg.Server.EnrollmentDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		raw, err := os.ReadFile(filepath.Join(s.cfg.Server.EnrollmentDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Contains(raw, files["tls.key"]) {
+			t.Fatal("helper private key persisted")
+		}
+	}
+}

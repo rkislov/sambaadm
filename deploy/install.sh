@@ -7,6 +7,8 @@ if command -v rpm >/dev/null 2>&1 && rpm -q sambaadm >/dev/null 2>&1; then
   echo 'RPM installation detected; use sambaadm-package update instead.' >&2
   exit 1
 fi
+was_active=false
+if systemctl is-active --quiet sambaadm; then was_active=true; fi
 source_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 getent group sambaadm >/dev/null || groupadd --system sambaadm
 if ! getent passwd sambaadm >/dev/null; then
@@ -18,7 +20,12 @@ install -d -o root -g sambaadm -m 0750 /etc/sambaadm
 install -d -o root -g root -m 0755 /usr/local/libexec
 install -m 0755 "$source_dir/deploy/sambaadm-prepare-logs" /usr/local/libexec/sambaadm-prepare-logs
 /usr/local/libexec/sambaadm-prepare-logs
-install -m 0755 "$1" /usr/local/bin/sambaadm
+# Rename a new inode over the executable, including while the old one is running.
+new_binary=$(mktemp /usr/local/bin/.sambaadm.XXXXXX)
+trap 'rm -f "$new_binary"' EXIT
+install -m 0755 "$1" "$new_binary"
+mv -f "$new_binary" /usr/local/bin/sambaadm
+trap - EXIT
 if [ ! -e /etc/sambaadm/config.yaml ] && [ ! -L /etc/sambaadm/config.yaml ]; then
   if /usr/local/bin/sambaadm discover --output /etc/sambaadm/config.yaml; then
     chown root:sambaadm /etc/sambaadm/config.yaml
@@ -34,4 +41,5 @@ if [ ! -e /etc/sambaadm/env ]; then
 fi
 install -m 0644 "$source_dir/deploy/sambaadm.service" /etc/systemd/system/sambaadm.service
 systemctl daemon-reload
+if [ "$was_active" = true ]; then systemctl restart sambaadm; fi
 printf '%s\n' 'Installed. Existing config/env were preserved.' 'Edit /etc/sambaadm/config.yaml and /etc/sambaadm/env, then:' '  systemctl enable --now sambaadm' 'For an already running service, apply the upgrade with: systemctl restart sambaadm'

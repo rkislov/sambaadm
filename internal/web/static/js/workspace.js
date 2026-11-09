@@ -112,7 +112,24 @@
     if (content !== undefined) node.textContent = content;
     return node;
   }
-  function button(label, fn, className = '') { const b = el('button',className,label); b.type='button';b.addEventListener('click',fn);return b; }
+  function button(label, fn, className = '') {
+    const b = el('button',className,label); b.type='button'; b.addEventListener('click',fn);
+    const icons = [
+      [/Обнов|Перезагруз|Пересчитать|Refresh|Reload|Recalculate/i,'M20 7v5h-5M4 17v-5h5M6 8a7 7 0 0 1 12-2l2 3M4 15l2 3a7 7 0 0 0 12-2'],
+      [/Создать|Добавить|Create|Add/i,'M12 5v14M5 12h14'],
+      [/Удалить|Delete|Remove/i,'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6m4-6v6'],
+      [/Сохранить|Применить|Save|Apply/i,'m5 12 4 4L19 6'],
+      [/Найти|Search/i,'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0'],
+      [/Синхрон|Synchron/i,'M20 7H4l4-4M4 17h16l-4 4'],
+      [/Тополог|Topology/i,'M12 3v7M5 19v-9h14v9M3 19h4m10 0h4'],
+      [/Состояние|Status/i,'M4 20V10m8 10V4m8 16v-7'],
+      [/Соединен|Connection/i,'m9 15 6-6M7 17l-1 1a4 4 0 0 1-5-5l5-5a4 4 0 0 1 5 0m2-1 1-1a4 4 0 0 1 5 5l-5 5a4 4 0 0 1-5 0'],
+      [/Закрыть|Close/i,'m6 6 12 12M18 6 6 18']
+    ];
+    const match=icons.find(([pattern])=>pattern.test(label));
+    if(match){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','1.7');svg.setAttribute('aria-hidden','true');svg.classList.add('action-icon');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',match[1]);path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');svg.append(path);b.prepend(svg);}
+    return b;
+  }
   function message(node, content, error = false) { node.textContent=content;node.className='workspace-message'+(error?' error':'');node.setAttribute('role',error?'alert':'status'); }
   async function request(path, method = 'GET', body) {
     const headers = {'Accept':'application/json'};
@@ -147,8 +164,13 @@
     parent.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));
   }
   tools.append(button(t('Обновить','Refresh'),()=>load()));
-  if(cfg.create)addAction(tools,cfg.create);
-  (cfg.toolbar||[]).forEach(a=>addAction(tools,a));
+  if(cfg.create){const before=tools.childElementCount;addAction(tools,cfg.create);if(tools.childElementCount>before)tools.lastElementChild.classList.add('btn-primary');}
+  const views=el('nav','workspace-views');views.setAttribute('aria-label',t('Представления раздела','Section views'));
+  const operations=el('details','workspace-menu');operations.append(el('summary','',t('Действия','Actions')));
+  const operationList=el('div','workspace-menu-list');operations.append(operationList);
+  (cfg.toolbar||[]).forEach(a=>addAction(a.method==='GET'||a.topology||a.rodc?views:operationList,a));
+  if(views.childElementCount)root.insertBefore(views,status);
+  if(operationList.childElementCount)tools.append(operations);
   function value(v) {if(v===true)return t('Включён','Enabled');if(v===false)return t('Отключён','Disabled');if(Array.isArray(v))return v.length;return v??'—';}
   function attributeValue(key, values) {
     key=key.toLowerCase();

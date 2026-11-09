@@ -78,7 +78,28 @@ func (s *Server) enrollHelper(w http.ResponseWriter, r *http.Request) {
 	}
 	node := strings.ToLower(strings.TrimSpace(r.FormValue("node")))
 	domain := strings.ToLower(strings.TrimSpace(r.FormValue("domain")))
-	block, _ := pem.Decode([]byte(r.FormValue("csr")))
+	var keyPEM []byte
+	csrPEM := []byte(r.FormValue("csr"))
+	if r.FormValue("key_mode") == "generate" {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			http.Error(w, "Ошибка создания ключа", 500)
+			return
+		}
+		keyDER, err := x509.MarshalECPrivateKey(key)
+		if err != nil {
+			http.Error(w, "Ошибка кодирования ключа", 500)
+			return
+		}
+		keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+		csrDER, err := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+		if err != nil {
+			http.Error(w, "Ошибка создания CSR", 500)
+			return
+		}
+		csrPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrDER})
+	}
+	block, _ := pem.Decode(csrPEM)
 	if !enrollmentDNS(node) || !enrollmentDNS(domain) || block == nil || len(block.Bytes) > 16384 || block.Type != "CERTIFICATE REQUEST" {
 		http.Error(w, "Проверьте DNS-имена и CSR", 400)
 		return
@@ -90,7 +111,7 @@ func (s *Server) enrollHelper(w http.ResponseWriter, r *http.Request) {
 	}
 	s.enrollMu.Lock()
 	defer s.enrollMu.Unlock()
-	bundle, err := s.registerHelper(dir, node, domain, csr, r.FormValue("host") == "on", r.FormValue("sysvol") == "on")
+	bundle, err := s.registerHelper(dir, node, domain, csr, r.FormValue("host") == "on", r.FormValue("sysvol") == "on", keyPEM)
 	if err != nil {
 		http.Error(w, "Ошибка подготовки комплекта: "+err.Error(), 500)
 		return
@@ -103,7 +124,7 @@ func (s *Server) enrollHelper(w http.ResponseWriter, r *http.Request) {
 	w.Write(bundle)
 }
 
-func (s *Server) registerHelper(dir, node, domain string, csr *x509.CertificateRequest, host, sysvol bool) ([]byte, error) {
+func (s *Server) registerHelper(dir, node, domain string, csr *x509.CertificateRequest, host, sysvol bool, keyPEM []byte) ([]byte, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
@@ -164,8 +185,14 @@ func (s *Server) registerHelper(dir, node, domain string, csr *x509.CertificateR
 	}
 	var b bytes.Buffer
 	z := zip.NewWriter(&b)
-	for name, data := range map[string][]byte{"config.yaml": payload, "tls.crt": cert, "management.pub": []byte(base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) + "\n")} {
-		f, e := z.Create(name)
+	files := map[string][]byte{"config.yaml": payload, "tls.crt": cert, "management.pub": []byte(base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) + "\n")}
+	if len(keyPEM) > 0 {
+		files["tls.key"] = keyPEM
+	}
+	for name, data := range files {
+		header := &zip.FileHeader{Name: name, Method: zip.Deflate}
+		header.SetMode(0600)
+		f, e := z.CreateHeader(header)
 		if e != nil {
 			return nil, e
 		}

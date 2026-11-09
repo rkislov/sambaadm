@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sambaadm/internal/agent"
 	"strings"
 	"time"
@@ -62,11 +64,12 @@ type GPOConfig struct {
 }
 
 type ServerConfig struct {
-	EnrollmentDir string    `mapstructure:"enrollment_dir"`
-	SurveyDir     string    `mapstructure:"survey_dir"`
-	Listen        string    `mapstructure:"listen"`
-	TLS           TLSConfig `mapstructure:"tls"`
-	Metrics       bool      `mapstructure:"metrics"`
+	CertificateDir string    `mapstructure:"certificate_dir"`
+	EnrollmentDir  string    `mapstructure:"enrollment_dir"`
+	SurveyDir      string    `mapstructure:"survey_dir"`
+	Listen         string    `mapstructure:"listen"`
+	TLS            TLSConfig `mapstructure:"tls"`
+	Metrics        bool      `mapstructure:"metrics"`
 }
 
 type TLSConfig struct {
@@ -75,10 +78,11 @@ type TLSConfig struct {
 }
 
 type LDAPConfig struct {
-	CACert string     `mapstructure:"ca_cert"`
-	URI    string     `mapstructure:"uri"`
-	BaseDN string     `mapstructure:"base_dn"`
-	Bind   BindConfig `mapstructure:"bind"`
+	ManagedCAFile string     `mapstructure:"-"`
+	CACert        string     `mapstructure:"ca_cert"`
+	URI           string     `mapstructure:"uri"`
+	BaseDN        string     `mapstructure:"base_dn"`
+	Bind          BindConfig `mapstructure:"bind"`
 }
 
 type BindConfig struct {
@@ -139,6 +143,10 @@ func Load(cfgFile string) (*Config, error) {
 		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
 	}
 	cfg.Source = v.ConfigFileUsed()
+	if !filepath.IsAbs(cfg.Server.CertificateDir) {
+		return nil, fmt.Errorf("server.certificate_dir requires an absolute path")
+	}
+	cfg.LDAP.ManagedCAFile = filepath.Join(cfg.Server.CertificateDir, "ldap-ca.pem")
 	if cfg.GPO.RepairBackupKeep < 1 || cfg.GPO.RepairBackupKeep > 100 || cfg.GPO.RepairBackupMaxMiB < 1 || cfg.GPO.RepairBackupMaxMiB > 10240 {
 		return nil, fmt.Errorf("gpo.repair_backup_keep must be 1..100 and repair_backup_max_mib 1..10240")
 	}
@@ -169,6 +177,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gpo.script_backup_max_mib", 64)
 	v.SetDefault("gpo.repair_backup_keep", 10)
 	v.SetDefault("gpo.repair_backup_max_mib", 512)
+	certificateDir := "/var/lib/sambaadm/certificates"
+	if runtime.GOOS == "windows" {
+		base := os.Getenv("ProgramData")
+		if base == "" {
+			base = `C:\ProgramData`
+		}
+		certificateDir = filepath.Join(base, "sambaadm", "certificates")
+	}
+	v.SetDefault("server.certificate_dir", certificateDir)
 	v.SetDefault("server.survey_dir", "/var/lib/sambaadm/surveys")
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)
@@ -195,4 +212,14 @@ func (c *Config) BindPassword() string {
 		env = "SAMBAADM_PASSWORD"
 	}
 	return os.Getenv(env)
+}
+
+// LDAPCAFile selects the CA uploaded by an administrator, falling back to YAML.
+func (c LDAPConfig) LDAPCAFile() string {
+	if c.ManagedCAFile != "" {
+		if _, err := os.Stat(c.ManagedCAFile); !os.IsNotExist(err) {
+			return c.ManagedCAFile
+		}
+	}
+	return c.CACert
 }

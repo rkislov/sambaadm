@@ -39,6 +39,7 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
+	certMu      sync.Mutex
 	enrollMu    sync.Mutex
 	surveyMu    sync.Mutex
 	cfg         *config.Config
@@ -49,7 +50,7 @@ type Server struct {
 	audit       *audit.Logger
 	tmpl        *template.Template
 	router      chi.Router
-	monitor     service.HostMonitor
+	monitor     service.HostMonitor // Local host only; helpers may refer to a different server.
 	diagnostics *service.DiagnosticService
 }
 
@@ -65,7 +66,6 @@ func New(opts Options) (*Server, error) {
 		audit:       opts.Audit,
 	}
 	if opts.Services != nil {
-		s.monitor.Helpers = opts.Services.Helpers
 		s.diagnostics = service.NewDiagnosticService(opts.Config, opts.Services.Helpers)
 	}
 	tmpl, err := template.New("").Funcs(template.FuncMap{
@@ -150,6 +150,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/surveys", s.surveyPage)
 		r.Get("/diagnostics", s.handleDiagnostics)
 		r.Post("/diagnostics/run", s.handleDiagnosticsRun)
+		r.Get("/settings/certificates", s.handleCertificates)
+		r.Post("/settings/certificates", s.handleCertificates)
 		r.Get("/settings/helpers", s.enrollHelper)
 		r.Post("/settings/helpers", s.enrollHelper)
 		r.Get("/settings", s.handleSettings)

@@ -1,0 +1,6 @@
+{
+  "name": "sambaadm-ui",
+  "private": true,
+  "scripts": { "build:css": "tailwindcss -c tailwind.config.cjs -i ui/styles.css -o internal/web/static/css/ui.css --minify" },
+  "devDependencies": { "tailwindcss": "3.4.17" }
+}

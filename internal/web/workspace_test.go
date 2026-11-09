@@ -127,11 +127,13 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 		t.Skip("browser harness only")
 	}
 	s := testWorkspaceServer(t)
+	s.cfg.Server.EnrollmentDir = filepath.Join(dir, "enrollment")
+	s.cfg.LDAP.URI = "ldaps://dc1.example.org:636"
 	s.svcs = service.NewWithOptions(ldapproto.NewClient(config.LDAPConfig{BaseDN: "DC=example,DC=com"}), nil, service.ServiceOptions{})
 	for _, role := range []auth.Role{auth.RoleAdmin, auth.RoleHelpdesk, auth.RoleReadonly} {
 		sess, _ := s.sessions.Create("fixture@example.com", "CN=fixture", role)
-		for _, path := range []string{"", "shares/new", "settings", "diagnostics", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
-			if path == "diagnostics" && role != auth.RoleAdmin {
+		for _, path := range []string{"", "shares/new", "settings", "settings/helpers", "settings/certificates", "diagnostics", "users", "groups", "computers", "ou", "dns", "gpo", "domain", "sites", "repl", "trusts", "shares", "printers"} {
+			if (path == "diagnostics" || strings.HasPrefix(path, "settings/")) && role != auth.RoleAdmin {
 				continue
 			}
 			req := httptest.NewRequest("GET", "/"+path, nil)

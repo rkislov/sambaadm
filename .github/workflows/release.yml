@@ -33,6 +33,12 @@ jobs:
           version=${REQUESTED_VERSION:-$GITHUB_REF_NAME}
           [[ "$version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Expected version X.Y.Z'; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Verify compiled Tailwind stylesheet
+        run: npm ci --ignore-scripts && npm run build:css && git diff --exit-code -- internal/web/static/css/ui.css
       - name: Test and vet
         run: go test ./... && go vet ./...
       - name: Build release assets

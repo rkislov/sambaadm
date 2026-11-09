@@ -34,6 +34,7 @@ check_logs() {
 bash "$repo/deploy/sambaadm-package" install "$old"
 test "$(rpm -q --qf '%{VERSION}' sambaadm)" == 0.25.0
 /usr/bin/sambaadm version
+bash "$repo/deploy/sambaadm-package" install "$old"
 check_logs
 # Privileged preparation must not follow links to unrelated files.
 link_target=$(mktemp /var/log/sambaadm-unrelated.XXXXXX)
@@ -132,7 +133,7 @@ rm /var/cache/sambaadm-packages/sambaadm-0.25.0-alt1."$arch".rpm
 if sambaadm-package update "$new"; then echo 'Missing rollback RPM was accepted'; exit 1; fi
 chown root:root /var/log/sambaadm/{audit,events}.log
 chmod 0600 /var/log/sambaadm/{audit,events}.log
-sambaadm-package update "$new" --previous-rpm "$old"
+sambaadm-package install "$new" --previous-rpm "$old"
 check_logs
 [[ $(rpm -q --qf '%{VERSION}' sambaadm) == 0.25.1 ]]
 sha256sum -c "$work/before.sha"

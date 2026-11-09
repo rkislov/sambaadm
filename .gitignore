@@ -13,3 +13,6 @@ dist/
 *.pem
 *.key
 !**/testdata/**
+
+# UI build dependencies (runtime CSS is embedded)
+node_modules/

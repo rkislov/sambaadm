@@ -64,7 +64,7 @@ func (c *Client) connectLocked(ctx context.Context) error {
 			return fmt.Errorf("LDAP service account password is not configured")
 		}
 	}
-	conn, err := dial(ctx, c.cfg.URI, c.cfg.CACert)
+	conn, err := dial(ctx, c.cfg.URI, c.cfg.LDAPCAFile())
 	if err != nil {
 		return err
 	}

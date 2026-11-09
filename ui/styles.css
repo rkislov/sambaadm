@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Shared Tailwind components cover SSR pages and dynamically generated forms. */
+:root { --bg:#f5f7fa; --surface:#fff; --ink:#182436; --muted:#64748b; --accent:#0f766e; --accent-hover:#115e59; --border:#e2e8f0; --radius:12px; }
+body { @apply bg-slate-50 text-sm leading-relaxed text-slate-800; background-image:none; }
+button,input,select,textarea { font:inherit; }
+h1 { @apply text-2xl font-semibold tracking-tight text-slate-900; }
+h2 { @apply text-base font-semibold text-slate-900; }
+h3 { @apply text-sm font-semibold text-slate-900; }
+.container { @apply px-6 py-8; width:min(1280px,100%); }
+.workspace { width:min(1540px,100%); }
+.topbar { @apply sticky top-0 z-40 flex flex-wrap items-center gap-5 border-b border-slate-200 bg-white px-6 py-3; }
+.brand { @apply text-lg font-bold tracking-tight text-slate-900; }
+.topbar .user { @apply ml-auto flex items-center gap-3 text-xs text-slate-500; }
+.topbar .user > span { @apply max-w-xs truncate; }
+.app-navigation { position:relative; }
+.app-navigation > summary { @apply flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700; }
+.app-navigation > summary::-webkit-details-marker { display:none; }
+.app-navigation > summary svg { width:18px;height:18px; }
+.topbar .nav-links { @apply absolute left-0 top-full mt-3 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-float; grid-template-columns:repeat(4,minmax(0,1fr));width:min(780px,calc(100vw - 3rem)); }
+.topbar .nav-links a { @apply flex min-w-0 flex-col items-start gap-3 rounded-xl border border-slate-100 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-100 hover:bg-brand-50 hover:text-brand-700 hover:shadow-md; text-decoration:none; }
+.topbar .nav-links a.active { @apply border-brand-100 bg-brand-50 text-brand-700; }
+.nav-tile-icon { @apply flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-500; }
+.nav-tile-icon svg { width:21px;height:21px; }
+.nav-links a.active .nav-tile-icon { @apply bg-brand-100 text-brand-700; }
+.icon-sprite { position:absolute;width:0;height:0;overflow:hidden; }
+button,.btn { @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium leading-5 text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50; min-height:36px; white-space:normal; }
+.btn { color:#334155!important; }
+button[type=submit],.btn-primary,.setup-submit > button,.form-card > button,.workspace-form > button:not([type=button]) { @apply border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700; }
+.btn-primary { color:white!important; }
+button.secondary { @apply border-slate-200 bg-white text-slate-600 hover:bg-slate-50; }
+button.danger { @apply border-red-200 bg-red-50 text-red-700 hover:bg-red-100; }
+button.linkish { @apply border-transparent bg-transparent text-slate-500 shadow-none hover:bg-slate-100; }
+button:disabled { @apply cursor-not-allowed opacity-50; }
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,summary:focus-visible { outline:3px solid #99d9ca;outline-offset:2px; }
+input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),select,textarea,.workspace input:not([type=checkbox]):not([type=radio]),.workspace-dialog input:not([type=checkbox]):not([type=radio]) { @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-800 shadow-sm; min-height:38px; }
+input[type=checkbox],input[type=radio] { @apply h-4 w-4 shrink-0; accent-color:#0f766e; }
+textarea,.workspace-form textarea,.setup-card textarea { @apply w-full rounded-lg border border-slate-300 p-3 text-sm; line-height:1.6;resize:vertical; }
+input[type=file] { @apply w-full text-xs text-slate-500; }
+input[type=file]::file-selector-button { @apply mr-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-medium text-slate-600; }
+label,.form-card label,.workspace-form label { @apply text-sm font-medium text-slate-700; }
+.form-card,.setup-card,.job-card,.workspace-tree,.workspace-list,.overview-section,.dashboard-card,.metric-card { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
+.form-card,.setup-card { @apply p-6; }
+.form-card { max-width:600px; }
+.form-wide { max-width:none; }
+.workspace-head { @apply mb-4 flex flex-wrap items-center justify-between gap-3; }
+.workspace-head h1 { @apply m-0; }
+.workspace-tools { @apply flex flex-wrap items-center gap-2; }
+.workspace-tools button,.workspace-actions button { @apply px-3 py-1.5 text-xs; }
+.workspace-views { @apply mb-4 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-1.5; }
+.workspace-views button { @apply border-transparent bg-transparent px-3 py-2 text-xs text-slate-500 shadow-none hover:bg-brand-50 hover:text-brand-700; }
+.workspace-menu { position:relative; }
+.workspace-menu > summary { @apply flex cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm; }
+.workspace-menu > summary::after { content:'⌄'; }
+.workspace-menu-list { @apply absolute right-0 top-full z-30 mt-2 flex min-w-64 flex-col gap-1 rounded-xl border border-slate-200 bg-white p-2 shadow-float; }
+.workspace-menu-list button { @apply w-full justify-start border-transparent bg-white px-3 py-2 text-left text-sm shadow-none hover:bg-slate-50; }
+.workspace-menu-list button.danger { @apply text-red-700 hover:bg-red-50; }
+.workspace-filter { @apply mb-5 flex flex-wrap gap-2; }
+.workspace-filter input { flex:1;min-width:160px;max-width:600px; }
+.workspace-filter > span { @apply w-full text-xs text-slate-500; }
+.workspace-columns { grid-template-columns:minmax(180px,230px) minmax(0,1fr);gap:20px; }
+.workspace-tree,.workspace-list { @apply p-4; }
+.workspace-tree h2 { @apply mb-3 mt-0 text-xs font-semibold uppercase tracking-wider text-slate-400; }
+.directory-tree button { @apply h-auto justify-start rounded-lg border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-slate-600 shadow-none; min-height:30px; }
+.directory-tree button.selected { @apply bg-brand-50 text-brand-700; }
+.workspace-selection { @apply mb-3 text-sm font-semibold text-slate-700; }
+.workspace-message { @apply text-xs text-slate-500; }
+.workspace-message:empty { display:none; }
+table { @apply rounded-lg border border-slate-200 bg-white text-sm; }
+th { @apply border-b border-slate-200 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500; }
+td { @apply border-b border-slate-100 px-4 py-3 text-sm text-slate-700; }
+tbody tr:hover { @apply bg-slate-50; }
+.workspace-actions { min-width:140px; }
+.workspace-actions button,.workspace-actions a { @apply m-0.5 px-2 py-1 text-xs; }
+.workspace-dialog { @apply rounded-2xl border border-slate-200 bg-white p-6 shadow-float; width:min(820px,94vw); }
+.workspace-dialog::backdrop { background:rgba(15,23,42,.4);backdrop-filter:blur(3px); }
+.workspace-form { @apply grid gap-4; }
+.workspace-form label { @apply grid gap-2; }
+.workspace-form label:has(input[type=checkbox]) { @apply flex items-start gap-2; }
+.alert { @apply rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-700; }
+.alert.error { @apply border-red-200 bg-red-50 text-red-700; }
+.panel,.setup-command { @apply rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs; }
+.login-page { @apply flex min-h-screen items-center justify-center bg-slate-50 p-5; }
+.login-card { @apply w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-float; }
+.login-card label { @apply mb-4 block text-sm font-medium; }
+.login-card input { @apply mt-2; }
+.login-card button { @apply w-full border-brand-600 bg-brand-600 text-white; }
+.footer { @apply border-t border-slate-200 px-6 py-4 text-xs text-slate-400; }
+@media(max-width:850px) { .workspace-columns { grid-template-columns:1fr; }.workspace-tree { max-height:220px; }.container { padding:20px 16px; } }
+@media(max-width:640px) { .topbar { gap:10px;padding:12px 16px; }.topbar .nav-links { position:fixed;top:62px;left:12px;width:calc(100vw - 24px);max-height:calc(100vh - 80px);overflow:auto;grid-template-columns:repeat(2,minmax(0,1fr)); }.topbar .nav-links a { padding:12px;gap:8px; }.topbar .user >span { max-width:100px; }.setup-card,.form-card { padding:16px; }.workspace-views { gap:0; }.workspace-views button { padding:8px; }.workspace-menu-list { min-width:230px; } }
+.action-icon { width:16px;height:16px;flex-shrink:0; }

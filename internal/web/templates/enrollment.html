@@ -1,15 +1,41 @@
 {{define "enrollment.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}</head><body>{{template "nav" .}}<main class="container">
-<h1>Подключение helper по HTTPS</h1>
-{{if .Content}}<p>На управляемом узле создайте TLS-ключ и запрос сертификата. Выполните команду от root в каталоге /etc/sambaadm-helper при первом подключении.</p>
-<pre>umask 077
-test ! -e tls.key &amp;&amp; openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout tls.key -out helper.csr -subj /CN=helper</pre>
-<form method="post"><input type="hidden" name="csrf_token" value="{{.CSRF}}">
-<label>DNS-имя узла <input name="node" required placeholder="dc1.example.org"></label>
-<label>DNS-имя домена для SYSVOL <input name="domain" required placeholder="example.org"></label>
-<label>Запрос сертификата (PEM) <textarea name="csr" required rows="8"></textarea></label>
-<label><input type="checkbox" name="host"> Основной узел для файловых операций (первый узел назначается автоматически)</label>
-<label><input type="checkbox" name="sysvol"> Использовать локальный файл пароля для SYSVOL</label><button>Зарегистрировать и скачать комплект</button></form>
-<p>ZIP содержит config.yaml, tls.crt и management.pub. Установите их на узел рядом с tls.key с правами root:root 0600. Для SYSVOL создайте там же domain.password с паролем служебной записи и правами 0600. Запустите службу sambaadm-helper и перезапустите sambaadm. Повторная регистрация имени выпускает новый сертификат.</p>
-{{else}}<p>Сначала включите server.enrollment_dir в конфигурации управляющего сервера и перезапустите sambaadm. Мастер первичной настройки включает эту возможность автоматически.</p>{{end}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/certificates.js" defer></script></head>
+<body>{{template "nav" .}}<main class="container setup-page">
+<a href="/settings/certificates">← Сертификаты и подключения</a>
+<h1>Подключение helper</h1><p class="muted">Подготовьте узел, зарегистрируйте его и установите комплект подключения.</p>
+{{if .Content}}
+<details class="setup-card"><summary>Существующий ключ: подготовка CSR на узле</summary><section aria-labelledby="prepare-title"><h2 id="prepare-title"><span class="setup-number">1</span> Подготовьте управляемый узел</h2>
+<p>Выполните от root на сервере, где установлен helper. Закрытый ключ останется на этом узле.</p>
+<pre id="helper-command" class="setup-command" tabindex="0">install -d -m 0700 /etc/sambaadm-helper
+cd /etc/sambaadm-helper
+umask 077
+if [ ! -f tls.key ]; then
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out tls.key
+fi
+openssl req -new -key tls.key -out helper.csr -subj /CN=helper
+cat helper.csr</pre>
+<button type="button" class="secondary" data-copy-command="helper-command">Скопировать команды</button><span class="copy-status" role="status"></span>
+</section></details>
+<form method="post" class="setup-card"><input type="hidden" name="csrf_token" value="{{.CSRF}}">
+<h2><span class="setup-number">1</span> Зарегистрируйте узел</h2>
+<label class="setup-field" for="helper-key-mode">Способ выпуска сертификата<select id="helper-key-mode" name="key_mode" data-helper-key-mode><option value="generate">Создать новый ключ и сертификат в меню</option><option value="csr">Подписать CSR с существующим ключом узла</option></select><small>При создании нового ключа ZIP содержит tls.key. Скачивайте и передавайте его через защищённое подключение.</small></label>
+<div class="setup-fields"><label for="helper-node">DNS-имя узла<input id="helper-node" type="text" name="node" required placeholder="dc1.example.org" autocomplete="off" spellcheck="false"><small>Полное имя сервера, доступное с управляющего узла.</small></label>
+<label for="helper-domain">Домен SYSVOL<input id="helper-domain" type="text" name="domain" required placeholder="example.org" autocomplete="off" spellcheck="false"><small>DNS-имя домена Active Directory.</small></label></div>
+<div class="setup-field" data-helper-csr><label for="helper-csr">Запрос сертификата (CSR)</label><input type="file" accept=".pem,.csr" data-pem-target="helper-csr" aria-label="Загрузить CSR helper из файла"><textarea id="helper-csr" name="csr" rows="9" spellcheck="false" placeholder="-----BEGIN CERTIFICATE REQUEST-----"></textarea><small>Вставьте весь вывод helper.csr, включая строки BEGIN и END.</small></div>
+<fieldset class="setup-options"><legend>Параметры узла</legend>
+<label><input type="checkbox" name="host"><span>Основной узел для файловых операций<small>Первый зарегистрированный узел назначается автоматически.</small></span></label>
+<label><input type="checkbox" name="sysvol"><span>Использовать локальный пароль для SYSVOL<small>Пароль хранится на узле в domain.password и не передаётся через эту форму.</small></span></label></fieldset>
+<div class="setup-submit"><button type="submit">Зарегистрировать и скачать ZIP</button><p class="muted">Комплект содержит конфигурацию, сертификат и открытый ключ доверия.</p></div>
+</form>
+<section class="setup-card"><h2><span class="setup-number">2</span> Установите комплект</h2>
+<p>Распакуйте ZIP во временный каталог на управляемом узле и установите файлы:</p>
+<pre class="setup-command">install -o root -g root -m 0600 config.yaml tls.crt management.pub /etc/sambaadm-helper/
+# Если ZIP содержит новый закрытый ключ:
+if [ -f tls.key ]; then
+  install -o root -g root -m 0600 tls.key /etc/sambaadm-helper/
+fi
+systemctl enable --now sambaadm-helper</pre>
+<p>Для SYSVOL создайте <code>/etc/sambaadm-helper/domain.password</code> с паролем служебной записи и правами <code>0600</code>. Затем перезапустите sambaadm на управляющем сервере.</p>
+<p class="muted">Повторная регистрация того же DNS-имени выпускает новый сертификат. Обновите файлы на узле и перезапустите helper.</p></section>
+{{else}}<section class="setup-card"><h2>Регистрация ещё не включена</h2><p>Укажите <code>server.enrollment_dir</code> в конфигурации управляющего сервера и перезапустите sambaadm.</p></section>{{end}}
 </main></body></html>{{end}}

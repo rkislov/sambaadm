@@ -4,6 +4,8 @@ server:
   #   cert: /etc/sambaadm/server.crt
   #   key:  /etc/sambaadm/server.key
   metrics: true
+  # Private local CA and uploaded LDAP trust; include in server backups.
+  certificate_dir: /var/lib/sambaadm/certificates
   survey_dir: /var/lib/sambaadm/surveys
 
 ldap:

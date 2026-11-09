@@ -76,3 +76,9 @@ rpm-helper-alt:
 	$(MAKE) checksums
 
 .PHONY: rpm-helper-alt
+
+# CSS is checked in and embedded; Node.js is only needed when editing the UI.
+.PHONY: ui
+ui:
+	npm ci --ignore-scripts
+	npm run build:css

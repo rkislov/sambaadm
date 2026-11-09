@@ -531,3 +531,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,su
 .overview-section button{margin:.4rem .4rem .4rem 0;white-space:normal}
 .overview-section input[type=datetime-local]{padding:.5rem;border:1px solid var(--border);border-radius:5px;background:#fff;color:var(--ink);font:inherit}
 .overview-section label{display:block;margin-top:.6rem}.overview-table td{min-width:6rem}
+
+/* Certificate and helper setup: bounded forms, readable commands, stacked options. */
+.setup-page { max-width: 980px; }
+.setup-page > h1 { margin-top: 1rem; }
+.setup-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-top: 1.25rem; min-width: 0; }
+.setup-card h2 { margin: 0 0 1rem; display: flex; align-items: center; gap: .65rem; }
+.setup-card p { line-height: 1.6; }
+.setup-number { display: inline-grid; place-items: center; flex-shrink: 0; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: #e1f0ee; color: var(--accent); font-size: .85rem; }
+.setup-command { padding: 1rem; background: #f3f6f8; border: 1px solid var(--border); border-radius: 8px; font: .82rem/1.7 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.setup-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 1.25rem; }
+.setup-fields label,.setup-field { display: flex; flex-direction: column; gap: .5rem; min-width: 0; font-weight: 600; }
+.setup-field { margin: 1.25rem 0; }
+.setup-card small { display: block; color: var(--muted); font-size: .83rem; font-weight: 400; line-height: 1.5; }
+.setup-card textarea { display: block; width: 100%; min-width: 0; padding: .8rem; border: 1px solid var(--border); border-radius: 6px; resize: vertical; font: .85rem/1.6 var(--mono); }
+.setup-options { margin: 1.25rem 0; padding: 0; border: 0; }
+.setup-options legend { font-weight: 600; margin-bottom: .75rem; }
+.setup-options label { display: flex; align-items: flex-start; gap: .7rem; padding: .6rem 0; line-height: 1.5; }
+.setup-options input { flex-shrink: 0; width: 1rem; height: 1rem; margin: .2rem 0 0; accent-color: var(--accent); }
+.setup-submit { border-top: 1px solid var(--border); padding-top: 1.25rem; }
+.setup-submit p { margin-bottom: 0; font-size: .85rem; }
+button.secondary { background: #e8f1f1; color: var(--accent); }
+.copy-status { margin-left: .75rem; color: var(--muted); font-size: .85rem; }
+.setup-card code { overflow-wrap: anywhere; }
+.setup-card dl { display: grid; grid-template-columns: 9rem minmax(0,1fr); gap: .65rem; }
+.setup-card dt { color: var(--muted); }.setup-card dd { margin: 0; overflow-wrap: anywhere; }
+.setup-card :focus-visible { outline: 3px solid #228baf; outline-offset: 2px; }
+@media(max-width:640px) { .setup-fields { grid-template-columns: 1fr; }.setup-card { padding: 1rem; }.setup-submit button { width: 100%; }.setup-card dl { grid-template-columns: 1fr; } }
+
+.setup-page [hidden] { display: none !important; }
+.setup-card summary { cursor: pointer; font-weight: 600; line-height: 1.5; }
