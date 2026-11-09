@@ -67,6 +67,17 @@ if [[ ${SAMBAADM_REAL_SYSTEMD:-0} == 1 ]]; then
  systemctl enable --now sambaadm.service
  check_logs
  systemctl is-active --quiet sambaadm.service
+ # Type=simple reports active before Go opens the audit logger. Wait for HTTP
+ # before reproducing permissions changed while the service is already running.
+ ready=false
+ for attempt in $(seq 1 50); do
+  if (exec 3<>/dev/tcp/127.0.0.1/8080
+      printf 'GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+      IFS= read -r response <&3
+      [[ $response == *' 200 '* ]]) 2>/dev/null; then ready=true; break; fi
+  sleep 0.2
+ done
+ [[ $ready == true ]] || { journalctl -u sambaadm --no-pager; exit 1; }
  chown root:root /var/log/sambaadm/{audit,events}.log
  chmod 0600 /var/log/sambaadm/{audit,events}.log
  sambaadm-package update "$new"
