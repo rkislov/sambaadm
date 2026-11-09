@@ -52,16 +52,17 @@ type SambaConfig struct {
 
 // GPOConfig controls remote policy editing and SYSVOL distribution.
 type GPOConfig struct {
-	DelegationStateDir string `mapstructure:"delegation_state_dir"`
-	ScriptBackupKeep   int    `mapstructure:"script_backup_keep"`
-	ScriptBackupMaxMiB int    `mapstructure:"script_backup_max_mib"`
-	RepairBackupKeep   int    `mapstructure:"repair_backup_keep"`
-	RepairBackupMaxMiB int    `mapstructure:"repair_backup_max_mib"`
-	SMBPort            int    `mapstructure:"smb_port"`
-	EditorEnabled      bool   `mapstructure:"editor_enabled"`
-	ADMXPath           string `mapstructure:"admx_path"`
-	SysvolPath         string `mapstructure:"sysvol_path"` // Deprecated: remote editor ignores local SYSVOL.
-	SyncMode           string `mapstructure:"sync_mode"`   // drs | smb | both (legacy rsync aliases smb)
+	ReplicationTimeout time.Duration `mapstructure:"replication_timeout"`
+	DelegationStateDir string        `mapstructure:"delegation_state_dir"`
+	ScriptBackupKeep   int           `mapstructure:"script_backup_keep"`
+	ScriptBackupMaxMiB int           `mapstructure:"script_backup_max_mib"`
+	RepairBackupKeep   int           `mapstructure:"repair_backup_keep"`
+	RepairBackupMaxMiB int           `mapstructure:"repair_backup_max_mib"`
+	SMBPort            int           `mapstructure:"smb_port"`
+	EditorEnabled      bool          `mapstructure:"editor_enabled"`
+	ADMXPath           string        `mapstructure:"admx_path"`
+	SysvolPath         string        `mapstructure:"sysvol_path"` // Deprecated: remote editor ignores local SYSVOL.
+	SyncMode           string        `mapstructure:"sync_mode"`   // drs | smb | both (legacy rsync aliases smb)
 }
 
 type ServerConfig struct {
@@ -142,6 +143,9 @@ func Load(cfgFile string) (*Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
+	if cfg.GPO.ReplicationTimeout < time.Second || cfg.GPO.ReplicationTimeout > 30*time.Minute {
+		return nil, fmt.Errorf("gpo.replication_timeout must be 1s..30m")
+	}
 	if cfg.GPO.ScriptBackupKeep < 1 || cfg.GPO.ScriptBackupKeep > 100 || cfg.GPO.ScriptBackupMaxMiB < 1 || cfg.GPO.ScriptBackupMaxMiB > 1024 {
 		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
 	}
@@ -176,6 +180,7 @@ func setDefaults(v *viper.Viper) {
 		v.SetDefault(key, "")
 	}
 	v.SetDefault("gpo.editor_enabled", false)
+	v.SetDefault("gpo.replication_timeout", "5m")
 	v.SetDefault("gpo.delegation_state_dir", "/var/lib/sambaadm/delegation")
 	v.SetDefault("gpo.script_backup_keep", 10)
 	v.SetDefault("gpo.script_backup_max_mib", 64)

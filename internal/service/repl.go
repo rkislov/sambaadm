@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-ldap/ldap/v3"
+	"github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 	"net/url"
 	"sambaadm/internal/adremote"
 	"strings"
@@ -104,14 +105,27 @@ func hostnameFromURI(uri string) string {
 }
 
 type ReplNeighbor struct {
-	Direction   string `json:"direction"`
-	Partition   string `json:"partition"`
-	Partner     string `json:"partner"`
-	LastAttempt string `json:"lastAttempt"`
-	LastSuccess string `json:"lastSuccess"`
-	Failures    int    `json:"failures"`
-	Result      string `json:"result"`
-	Health      string `json:"health"`
+	Direction         string `json:"direction"`
+	Partition         string `json:"partition"`
+	Partner           string `json:"partner"`
+	LastAttempt       string `json:"lastAttempt"`
+	LastSuccess       string `json:"lastSuccess"`
+	Failures          int    `json:"failures"`
+	Result            string `json:"result"`
+	Health            string `json:"health"`
+	ResultDescription string `json:"resultDescription,omitempty"`
+}
+
+// Keep the numeric result unchanged for API consumers while supplying readable
+// protocol descriptions for codes outside the UI's translated common errors.
+func replicationResultDescription(code uint32) string {
+	if code == 0 {
+		return "Success"
+	}
+	if e, ok := win32.FromCode(code).(*win32.Error); ok {
+		return e.Details
+	}
+	return ""
 }
 
 func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus, error) {
@@ -125,7 +139,7 @@ func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus
 	}
 	st := &ReplStatus{Server: remote.Host, Health: "no-partners", Neighbors: []ReplNeighbor{}}
 	for _, n := range neighbors {
-		item := ReplNeighbor{Direction: "inbound", Partition: n.NamingContext, Partner: n.SourceDSADN, Failures: int(n.ConsecutiveSyncFailuresCount), Result: fmt.Sprintf("%d", n.LastSyncResult), Health: "healthy"}
+		item := ReplNeighbor{Direction: "inbound", Partition: n.NamingContext, Partner: n.SourceDSADN, Failures: int(n.ConsecutiveSyncFailuresCount), Result: fmt.Sprintf("%d", n.LastSyncResult), Health: "healthy", ResultDescription: replicationResultDescription(n.LastSyncResult)}
 		if n.LastSyncAttempt != nil && !n.LastSyncAttempt.IsZero() {
 			item.LastAttempt = n.LastSyncAttempt.AsTime().Format(time.RFC3339)
 		}
@@ -193,7 +207,7 @@ func parseReplStatus(raw string) (*ReplStatus, error) {
 			if partner == "" {
 				partner = n.NTDS
 			}
-			st.Neighbors = append(st.Neighbors, ReplNeighbor{set.direction, n.Partition, partner, n.Attempt, n.Success, n.Failures, n.Result, health})
+			st.Neighbors = append(st.Neighbors, ReplNeighbor{set.direction, n.Partition, partner, n.Attempt, n.Success, n.Failures, n.Result, health, ""})
 			if st.Health == "no-partners" {
 				st.Health = "healthy"
 			}

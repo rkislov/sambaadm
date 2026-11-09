@@ -195,7 +195,7 @@ func scanPolicyTreeMetadata(ctx context.Context, root policyStore, allowBadGPT, 
 				}
 				v, _, err := gptVersion(data, nil)
 				if err != nil && !allowBadGPT {
-					return err
+					return fmt.Errorf("%s: %w", name, err)
 				}
 				if err == nil {
 					snap.GPT = &v
@@ -300,7 +300,7 @@ func (s *GPOService) probeConsistency(ctx context.Context, guid, base string, dc
 	}
 	peer := s.ldap.ServicePeer(uri)
 	defer peer.Close()
-	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers:s.helpers}
+	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers: s.helpers}
 	var before *ldap.Entry
 	conn, e := peer.Conn(ctx)
 	if e == nil {
@@ -353,14 +353,14 @@ func (s *GPOService) probeConsistency(ctx context.Context, guid, base string, dc
 			out.Pending = first.Pending
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", base, err)
 		}
 		second, err := scanConsistencyTree(ctx, store)
 		if second != nil {
 			out.Pending = out.Pending || second.Pending
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("%s: %w", base, err)
 		}
 		out.Files = second.Files
 		out.GPTVersion = second.GPT

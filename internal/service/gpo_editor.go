@@ -108,7 +108,7 @@ func readPolicyFile(root policyStore, path string) ([]byte, error) {
 	return b, e
 }
 func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
-	text, wide, err := decodePolicyText(data)
+	text, encode, err := decodeGPTText(data)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -146,7 +146,7 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	if !found {
 		return 0, nil, fmt.Errorf("GPT.INI version is missing")
 	}
-	return uint32(v), encodePolicyText(strings.Join(lines, "\n"), wide), nil
+	return uint32(v), encode(strings.Join(lines, "\n")), nil
 }
 func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *sysvolShare, locked bool, scope string) (*editorSnapshot, error) {
 	if !s.gpoCfg.EditorEnabled {

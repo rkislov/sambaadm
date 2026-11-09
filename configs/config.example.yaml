@@ -59,6 +59,7 @@ gpo:
   admx_path: ""
   # drs | smb | both — AD replication and/or native SMB SYSVOL delivery.
   sync_mode: both
+  replication_timeout: 5m # DRS sync wait per target; 1s..30m, connect stays 15s
   # Standard SMB port; use 1445 only for the loopback macOS lab.
   smb_port: 445
 

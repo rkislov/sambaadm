@@ -62,3 +62,25 @@ func TestRepairRetentionConfig(t *testing.T) {
 		}
 	}
 }
+
+func TestReplicationTimeoutConfiguration(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte("logging:\n  level: info\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil || cfg.GPO.ReplicationTimeout.String() != "5m0s" {
+		t.Fatalf("default: %+v %v", cfg, err)
+	}
+	t.Setenv("SAMBAADM_GPO_REPLICATION_TIMEOUT", "10m")
+	cfg, err = Load(p)
+	if err != nil || cfg.GPO.ReplicationTimeout.String() != "10m0s" {
+		t.Fatalf("override: %+v %v", cfg, err)
+	}
+	for _, invalid := range []string{"0s", "-1s", "31m", "garbage"} {
+		t.Setenv("SAMBAADM_GPO_REPLICATION_TIMEOUT", invalid)
+		if _, err := Load(p); err == nil {
+			t.Errorf("accepted timeout %s", invalid)
+		}
+	}
+}

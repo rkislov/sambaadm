@@ -2,7 +2,12 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
+	"sambaadm/internal/config"
+	ldapproto "sambaadm/internal/ldap"
+	"sambaadm/internal/testldap"
+	"strings"
 	"testing"
 )
 
@@ -79,5 +84,49 @@ func TestPolicyDACLPreservesOpaqueAndRights(t *testing.T) {
 		if _, e := policyACEs(sd[:i]); e == nil {
 			t.Fatalf("accepted truncation %d", i)
 		}
+	}
+}
+
+func TestMalformedScopeIsIsolatedAndCannotBeSavedOrModeled(t *testing.T) {
+	const base = "DC=example,DC=com"
+	const bad = "OU=Bad," + base
+	fake := testldap.New(t, map[string]string{"service": "password"}, func(q testldap.Search) ([]testldap.Entry, int64) {
+		if strings.Contains(string(q.Filter.Bytes()), "groupPolicyContainer") {
+			return nil, 0
+		}
+		return []testldap.Entry{
+			{DN: base, Attributes: map[string][]string{"name": {"example"}, "gPLink": {" "}, "uSNChanged": {"1"}}},
+			{DN: bad, Attributes: map[string][]string{"name": {"Bad"}, "gPLink": {"broken"}, "uSNChanged": {"1"}}},
+			{DN: "OU=Safe," + base, Attributes: map[string][]string{"name": {"Safe"}, "uSNChanged": {"1"}}},
+		}, 0
+	})
+	client := ldapproto.NewServiceClient(config.LDAPConfig{URI: fake.URI(), BaseDN: base, Bind: config.BindConfig{User: "service"}}, func() string { return "password" })
+	defer client.Close()
+	s := &GPOService{ldap: client}
+	model, err := s.Scope(t.Context())
+	if err != nil || len(model.Containers) != 3 {
+		t.Fatalf("scope failed globally: %+v %v", model, err)
+	}
+	if _, err := ScopeInheritance(model, "OU=Safe,"+base); err != nil {
+		t.Fatal("unrelated OU blocked", err)
+	}
+	if _, err := ScopeInheritance(model, bad); err == nil || !strings.Contains(err.Error(), bad) {
+		t.Fatal("bad branch not diagnosed", err)
+	}
+	if err := s.SaveScope(context.Background(), ScopeChange{Container: bad, Revision: "1"}, "test", ""); err == nil || !strings.Contains(err.Error(), "changes blocked") {
+		t.Fatal("unsafe scope save allowed", err)
+	}
+}
+
+func TestScopeLinkWhitespace(t *testing.T) {
+	for _, raw := range []string{"", " ", "\r\n\t"} {
+		links, err := parseScopeLinks(raw)
+		if err != nil || len(links) != 0 {
+			t.Fatalf("empty scope rejected: %q %v", raw, err)
+		}
+	}
+	links, err := parseScopeLinks(" \n[ldap://CN=A,DC=test;0] \r\n[LDAP://CN=B,DC=test;2] ")
+	if err != nil || len(links) != 2 || links[0].DN != "CN=B,DC=test" || !links[0].Enforced {
+		t.Fatalf("whitespace/order: %+v %v", links, err)
 	}
 }

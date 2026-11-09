@@ -26,6 +26,7 @@ type ScopeLink struct {
 	Reason   string `json:"reason,omitempty"`
 }
 type GPContainer struct {
+	Error    string      `json:"error,omitempty"`
 	DN       string      `json:"dn"`
 	Name     string      `json:"name"`
 	Parent   string      `json:"parent"`
@@ -47,7 +48,7 @@ type ScopeChange struct {
 
 func parseScopeLinks(raw string) ([]ScopeLink, error) {
 	out := []ScopeLink{}
-	for raw != "" {
+	for raw = strings.TrimSpace(raw); raw != ""; raw = strings.TrimSpace(raw) {
 		if raw[0] != '[' {
 			return nil, topologyBad("malformed gPLink")
 		}
@@ -100,22 +101,27 @@ func (s *GPOService) Scope(ctx context.Context) (*GPScope, error) {
 		out.Policies = append(out.Policies, entryToGPO(p))
 	}
 	for _, entry := range es {
-		links, e := parseScopeLinks(entry.GetAttributeValue("gPLink"))
-		if e != nil {
-			return nil, e
+		links, linkErr := parseScopeLinks(entry.GetAttributeValue("gPLink"))
+		problem := ""
+		if linkErr != nil {
+			problem = "gPLink: " + linkErr.Error()
+			links = []ScopeLink{}
 		}
 		options := uint64(0)
 		if v := entry.GetAttributeValue("gPOptions"); v != "" {
 			options, e = strconv.ParseUint(v, 10, 32)
 			if e != nil {
-				return nil, topologyBad("malformed gPOptions")
+				if problem != "" {
+					problem += "; "
+				}
+				problem += "gPOptions: invalid inheritance options"
 			}
 		}
 		parent, _ := parentDN(entry.DN)
 		if dnEqual(entry.DN, s.ldap.BaseDN()) {
 			parent = ""
 		}
-		c := GPContainer{DN: entry.DN, Name: entry.GetAttributeValue("name"), Parent: parent, Revision: entry.GetAttributeValue("uSNChanged"), Options: uint32(options), Block: options&1 != 0, Links: links}
+		c := GPContainer{Error: problem, DN: entry.DN, Name: entry.GetAttributeValue("name"), Parent: parent, Revision: entry.GetAttributeValue("uSNChanged"), Options: uint32(options), Block: options&1 != 0, Links: links}
 		for i := range c.Links {
 			l := &c.Links[i]
 			l.Missing = true
@@ -153,6 +159,9 @@ func (s *GPOService) SaveScope(ctx context.Context, in ScopeChange, actor, ip st
 	}
 	if container == nil {
 		return topologyBad("select a domain or OU in this domain")
+	}
+	if container.Error != "" {
+		return topologyBad(container.DN + ": " + container.Error + "; changes blocked")
 	}
 	if container.Revision != in.Revision {
 		return ErrTopologyConflict
@@ -229,6 +238,9 @@ func ScopeInheritance(model *GPScope, dn string) ([]ScopeLink, error) {
 		}
 		if found == nil {
 			return nil, topologyBad("container not found")
+		}
+		if found.Error != "" {
+			return nil, topologyBad(found.DN + ": " + found.Error + "; inheritance cannot be calculated")
 		}
 		if found.Options & ^uint32(1) != 0 {
 			return nil, topologyBad("unknown inheritance options; preview unavailable")

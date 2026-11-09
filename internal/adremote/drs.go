@@ -7,6 +7,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/drsr/drsuapi/v4"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"time"
 	"unicode/utf16"
 )
 
@@ -65,7 +66,14 @@ func (c *Client) Sync(ctx context.Context, nc string, sourceGUID []byte) error {
 	if err := ndr.Unmarshal(sourceGUID, &guid, ndr.Opaque); err != nil {
 		return err
 	}
-	return c.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {
+	// SyncReplica can wait for a complete replication cycle. Keep its budget
+	// separate from short inspection RPCs and never mutate the shared client.
+	operation := *c
+	operation.rpcTimeout = c.SyncTimeout
+	if operation.rpcTimeout <= 0 {
+		operation.rpcTimeout = 5 * time.Minute
+	}
+	return operation.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {
 		count := uint32(len(utf16.Encode([]rune(nc))))
 		_, err := client.SyncReplica(ctx, &drsuapi.SyncReplicaRequest{Handle: h, Version: 1, Sync: &drsuapi.MessageReplicaSync{Value: &drsuapi.MessageReplicaSync_V1{V1: &drsuapi.MessageReplicaSyncV1{NC: &drsuapi.DSName{StringName: nc, NameLength: count, Length: 56 + 2*(count+1)}, DSASourceID: &guid, Options: 0x10}}}})
 		return err

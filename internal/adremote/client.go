@@ -17,9 +17,11 @@ import (
 )
 
 type Client struct {
-	SMBPort    int
-	Host, User string
-	Password   func() string
+	SyncTimeout time.Duration
+	rpcTimeout  time.Duration
+	SMBPort     int
+	Host, User  string
+	Password    func() string
 }
 
 func (c *Client) Connect(ctx context.Context) (context.Context, dcerpc.Conn, error) {
@@ -42,10 +44,14 @@ func (c *Client) Connect(ctx context.Context) (context.Context, dcerpc.Conn, err
 	if port == 0 {
 		port = 445
 	}
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	operationTimeout, callTimeout := 45*time.Second, 15*time.Second
+	if c.rpcTimeout > 0 {
+		operationTimeout, callTimeout = c.rpcTimeout, c.rpcTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
 	dialer := &rpcDialer{ctx: ctx}
 	stop := context.AfterFunc(ctx, dialer.close)
-	cc, err := dcerpc.Dial(ctx, c.Host, dcerpc.WithTimeout(15*time.Second), epm.EndpointMapper(ctx, c.Host, dcerpc.WithTimeout(15*time.Second)), dcerpc.WithDialer(dialer), dcerpc.WithSMBPort(port), dcerpc.WithSMBDialer(smbDialer))
+	cc, err := dcerpc.Dial(ctx, c.Host, dcerpc.WithTimeout(callTimeout), epm.EndpointMapper(ctx, c.Host, dcerpc.WithTimeout(15*time.Second)), dcerpc.WithDialer(dialer), dcerpc.WithSMBPort(port), dcerpc.WithSMBDialer(smbDialer))
 	if err != nil {
 		dialer.close()
 		stop()

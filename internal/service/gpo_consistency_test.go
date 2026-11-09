@@ -179,3 +179,15 @@ func TestConsistencyComparesKnownLDAPWhenSYSVOLIsUnavailable(t *testing.T) {
 		t.Fatal("unavailable files reported missing")
 	}
 }
+
+func TestConsistencyReadsLegacyGPTWithoutReencoding(t *testing.T) {
+	root, _, _, _ := setupDelegationTx(t)
+	data := []byte("[General]\r\nVersion=7\r\nDisplayName=\xcf\xee\xeb\xe8\xf2\xe8\xea\xe0\r\n")
+	if err := root.Root.WriteFile("GPT.INI", data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := scanConsistencyTree(t.Context(), root)
+	if err != nil || snap.GPT == nil || *snap.GPT != 7 || root.writes != 0 {
+		t.Fatalf("legacy consistency: %+v %v", snap, err)
+	}
+}
