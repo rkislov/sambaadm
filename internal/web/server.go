@@ -379,20 +379,22 @@ func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
 		pd.CSRF = sess.CSRFToken
 		pd.HelperSession = s.sessions.HasHelperCredentials(sess.ID)
 		pd.LegacyCN = sess.AllowLegacyCN
+		pd.SkipLDAPVerify = sess.SkipLDAPVerify
 	}
 	return pd
 }
 
 type pageData struct {
-	LegacyCN      bool
-	HelperSession bool
-	Title         string
-	User          string
-	Role          auth.Role
-	Lang          i18n.Lang
-	CSRF          string
-	Active        string
-	Content       any
-	Flash         string
-	Error         string
+	LegacyCN       bool
+	SkipLDAPVerify bool
+	HelperSession  bool
+	Title          string
+	User           string
+	Role           auth.Role
+	Lang           i18n.Lang
+	CSRF           string
+	Active         string
+	Content        any
+	Flash          string
+	Error          string
 }

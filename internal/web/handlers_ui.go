@@ -31,7 +31,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		if extra != "" {
 			msg = msg + ": " + extra
 		}
-		s.render(w, "login.html", pageData{HelperSession: r.FormValue("helper_auth") == "session", LegacyCN: r.FormValue("ldap_legacy_cn") == "allow",
+		s.render(w, "login.html", pageData{HelperSession: r.FormValue("helper_auth") == "session", LegacyCN: r.FormValue("ldap_legacy_cn") == "allow", SkipLDAPVerify: r.FormValue("ldap_skip_verify") == "allow",
 			Title: i18n.T(lang, "login.title"),
 			Lang:  lang,
 			Error: msg,
@@ -52,6 +52,8 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	loginContext := r.Context()
 	allowLegacy := r.FormValue("ldap_legacy_cn") == "allow"
 	loginContext = ldapproto.WithLegacyCN(loginContext, allowLegacy)
+	skipVerify := r.FormValue("ldap_skip_verify") == "allow"
+	loginContext = ldapproto.WithInsecureTLS(loginContext, skipVerify)
 	loginLDAP := ldapproto.NewClient(s.cfg.LDAP)
 	defer loginLDAP.Close()
 	if err := loginLDAP.Connect(loginContext); err != nil {
@@ -87,6 +89,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess.AllowLegacyCN = allowLegacy
+	sess.SkipLDAPVerify = skipVerify
 	if r.FormValue("helper_auth") == "session" {
 		if err := s.sessions.RememberHelperPassword(sess.ID, password); err != nil {
 			s.sessions.Delete(sess.ID)
@@ -99,6 +102,9 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	secure := s.cfg.Server.TLS.Cert != ""
 	s.sessions.SetCookie(w, sess, secure)
 	s.audit.Success(username, "login", dn, r.RemoteAddr)
+	if skipVerify {
+		s.audit.Success(username, "login.ldap-insecure", dn, r.RemoteAddr)
+	}
 	if allowLegacy {
 		s.audit.Success(username, "login.legacy-cn", dn, r.RemoteAddr)
 	}

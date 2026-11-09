@@ -19,14 +19,15 @@ const (
 
 // Session holds authenticated user state.
 type Session struct {
-	ID            string
-	Username      string
-	DN            string
-	Role          Role
-	AllowLegacyCN bool
-	CSRFToken     string
-	CreatedAt     time.Time
-	ExpiresAt     time.Time
+	ID             string
+	Username       string
+	DN             string
+	Role           Role
+	AllowLegacyCN  bool
+	SkipLDAPVerify bool
+	CSRFToken      string
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 // Store is an in-memory session store (replace with Redis/DB later if needed).

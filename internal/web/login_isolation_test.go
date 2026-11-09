@@ -213,7 +213,7 @@ func TestSessionHelperIdentityIsRevokedAtLogout(t *testing.T) {
 		return []testldap.Entry{{DN: "CN=Alice,CN=Users,DC=example,DC=com", Attributes: map[string][]string{"sAMAccountName": {"alice"}, "memberOf": {testAdminDN}}}}, 0
 	})
 	s := newLoginTestServer(t, fake.URI(), config.RolesConfig{Admins: []string{testAdminDN}}, "service-password")
-	form := url.Values{"username": {"alice@example.com"}, "password": {"alice-pass"}, "helper_auth": {"session"}, "ldap_legacy_cn": {"allow"}}
+	form := url.Values{"username": {"alice@example.com"}, "password": {"alice-pass"}, "helper_auth": {"session"}, "ldap_legacy_cn": {"allow"}, "ldap_skip_verify": {"allow"}}
 	req := httptest.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	logged := httptest.NewRecorder()
@@ -226,13 +226,13 @@ func TestSessionHelperIdentityIsRevokedAtLogout(t *testing.T) {
 	if !ok || !s.sessions.HasHelperCredentials(sess.ID) {
 		t.Fatal("session credentials missing")
 	}
-	if !sess.AllowLegacyCN {
+	if !sess.AllowLegacyCN || !sess.SkipLDAPVerify {
 		t.Fatal("login TLS profile not retained")
 	}
 	var operation context.Context
 	protected := s.requireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowed, err := ldapproto.LegacyCNAllowed(r.Context(), s.cfg.LDAP)
-		if err != nil || !allowed {
+		if err != nil || !allowed || !ldapproto.InsecureTLSAllowed(r.Context()) {
 			t.Error("session TLS profile not propagated")
 		}
 		operation = agent.CarryCredentials(context.Background(), r.Context())
@@ -256,5 +256,26 @@ func TestSessionHelperIdentityIsRevokedAtLogout(t *testing.T) {
 	}
 	if s.sessions.HasHelperCredentials(sess.ID) {
 		t.Fatal("logout retained encrypted record")
+	}
+}
+
+func TestInsecureLDAPLoginOptionIsOptInAndPreservedOnError(t *testing.T) {
+	fake := testldap.New(t, map[string]string{"service": "service-password"}, nil)
+	s := newLoginTestServer(t, fake.URI(), config.RolesConfig{}, "service-password")
+	const selected = `name="ldap_skip_verify" value="allow" checked`
+	get := httptest.NewRecorder()
+	s.Router().ServeHTTP(get, httptest.NewRequest("GET", "/login", nil))
+	if !strings.Contains(get.Body.String(), `name="ldap_skip_verify"`) || strings.Contains(get.Body.String(), selected) {
+		t.Fatal("insecure checkbox missing or checked by default")
+	}
+	post := httptest.NewRequest("POST", "/login", strings.NewReader(url.Values{"ldap_skip_verify": {"allow"}}.Encode()))
+	post.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	s.Router().ServeHTTP(response, post)
+	if !strings.Contains(response.Body.String(), selected) {
+		t.Fatal("explicit selection lost on failed login")
+	}
+	if !strings.Contains(response.Body.String(), `class="login-advanced" open`) {
+		t.Fatal("selected advanced setting hidden")
 	}
 }

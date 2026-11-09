@@ -17,15 +17,16 @@ import (
 	"sambaadm/internal/config"
 )
 
-// Client owns one LDAP connection. Service clients bind before publishing any
+// Client owns separate LDAP connections for each TLS verification profile. Service clients bind before publishing any
 // connection and never allow callers to change its authentication identity.
 type Client struct {
-	cfg        config.LDAPConfig
-	mu         sync.Mutex
-	conn       *ldap.Conn
-	legacyConn *ldap.Conn
-	service    bool
-	password   func() string
+	cfg          config.LDAPConfig
+	mu           sync.Mutex
+	conn         *ldap.Conn
+	legacyConn   *ldap.Conn
+	insecureConn *ldap.Conn
+	service      bool
+	password     func() string
 }
 
 // NewClient creates an LDAP client from config. Connection is lazy.
@@ -45,16 +46,19 @@ func (c *Client) connectLocked(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.connectProfileLocked(ctx, allow)
+	return c.connectProfileLocked(ctx, allow, InsecureTLSAllowed(ctx))
 }
-func (c *Client) connectionSlot(allow bool) **ldap.Conn {
+func (c *Client) connectionSlot(allow, skip bool) **ldap.Conn {
+	if skip {
+		return &c.insecureConn
+	}
 	if allow {
 		return &c.legacyConn
 	}
 	return &c.conn
 }
-func (c *Client) connectProfileLocked(ctx context.Context, allow bool) error {
-	slot := c.connectionSlot(allow)
+func (c *Client) connectProfileLocked(ctx context.Context, allow, skip bool) error {
+	slot := c.connectionSlot(allow, skip)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -79,7 +83,7 @@ func (c *Client) connectProfileLocked(ctx context.Context, allow bool) error {
 			return fmt.Errorf("LDAP service account password is not configured")
 		}
 	}
-	conn, err := dial(ctx, c.cfg.URI, c.cfg.LDAPCAFile(), allow)
+	conn, err := dial(ctx, c.cfg.URI, c.cfg.LDAPCAFile(), allow, skip)
 	if err != nil {
 		return err
 	}
@@ -102,7 +106,7 @@ func (c *Client) connectProfileLocked(ctx context.Context, allow bool) error {
 func (c *Client) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, slot := range []**ldap.Conn{&c.conn, &c.legacyConn} {
+	for _, slot := range []**ldap.Conn{&c.conn, &c.legacyConn, &c.insecureConn} {
 		if *slot != nil {
 			(*slot).Close()
 			*slot = nil
@@ -119,10 +123,10 @@ func (c *Client) Conn(ctx context.Context) (*ldap.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := c.connectProfileLocked(ctx, allow); err != nil {
+	if err := c.connectProfileLocked(ctx, allow, InsecureTLSAllowed(ctx)); err != nil {
 		return nil, err
 	}
-	return *c.connectionSlot(allow), nil
+	return *c.connectionSlot(allow, InsecureTLSAllowed(ctx)), nil
 }
 
 // BaseDN returns the configured search base.
@@ -141,7 +145,7 @@ func NewServiceClient(cfg config.LDAPConfig, password func() string) *Client {
 	return &Client{cfg: cfg, service: true, password: password}
 }
 
-func dial(ctx context.Context, uri string, caFile string, legacy ...bool) (*ldap.Conn, error) {
+func dial(ctx context.Context, uri string, caFile string, profiles ...bool) (*ldap.Conn, error) {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	var raw net.Conn
 	var err error
@@ -180,7 +184,8 @@ func dial(ctx context.Context, uri string, caFile string, legacy ...bool) (*ldap
 			}
 			secure = true
 			tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: host}
-			if caFile != "" {
+			skipVerify := len(profiles) > 1 && profiles[1]
+			if caFile != "" && !skipVerify {
 				pem, e := os.ReadFile(caFile)
 				if e != nil {
 					return nil, fmt.Errorf("read LDAP CA certificate: %w", e)
@@ -194,7 +199,10 @@ func dial(ctx context.Context, uri string, caFile string, legacy ...bool) (*ldap
 				}
 				tlsConfig.RootCAs = roots
 			}
-			if len(legacy) > 0 && legacy[0] {
+			if skipVerify {
+				// Explicit per-session test mode; transport remains encrypted but unverified.
+				tlsConfig.InsecureSkipVerify = true
+			} else if len(profiles) > 0 && profiles[0] {
 				// Default verification is replaced, not removed: the callback verifies
 				// chain, server EKU, dates and either SAN or an exact CN-only DNS identity.
 				tlsConfig.InsecureSkipVerify = true

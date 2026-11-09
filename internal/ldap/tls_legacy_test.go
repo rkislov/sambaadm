@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -139,5 +140,32 @@ func TestSharedServiceDoesNotLendLegacyConnectionsToStrictSessions(t *testing.T)
 	binds := fake.Binds()
 	if len(binds) != 1 || binds[0].User != "service" {
 		t.Fatal("service identity changed", binds)
+	}
+}
+
+func TestInsecureLDAPProfileIsExplicitAndIsolated(t *testing.T) {
+	_, _, pair, _ := legacyCertificate(t, "wrong.example.org", nil, true, false, false, false)
+	fake := testldap.NewTLS(t, map[string]string{"service": "service-password"}, nil, &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12})
+	client := NewServiceClient(config.LDAPConfig{URI: fake.URI(), Bind: config.BindConfig{User: "service", Type: "simple"}}, func() string { return "service-password" })
+	defer client.Close()
+	insecure := WithInsecureTLS(t.Context(), true)
+	first, err := client.Conn(insecure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ctx := range []context.Context{t.Context(), WithLegacyCN(t.Context(), true), WithInsecureTLS(t.Context(), false)} {
+		if _, err := client.Conn(ctx); err == nil {
+			t.Fatal("verified profile reused insecure connection")
+		}
+	}
+	carried := CarryTLSProfile(context.Background(), insecure)
+	if !InsecureTLSAllowed(carried) {
+		t.Fatal("background profile lost")
+	}
+	if got, err := client.Conn(carried); err != nil || got != first {
+		t.Fatal("insecure connection not reused within profile", err)
+	}
+	if InsecureTLSAllowed(CarryTLSProfile(insecure, WithInsecureTLS(t.Context(), false))) {
+		t.Fatal("explicit strict profile lost")
 	}
 }

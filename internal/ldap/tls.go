@@ -12,11 +12,25 @@ import (
 )
 
 type legacyCNKey struct{}
+type insecureTLSKey struct{}
+
+// WithInsecureTLS explicitly disables LDAP certificate verification for one session.
+// It never changes verification of HTTPS helpers.
+func WithInsecureTLS(ctx context.Context, skip bool) context.Context {
+	return context.WithValue(ctx, insecureTLSKey{}, skip)
+}
+func InsecureTLSAllowed(ctx context.Context) bool {
+	skip, _ := ctx.Value(insecureTLSKey{}).(bool)
+	return skip
+}
 
 func WithLegacyCN(ctx context.Context, allow bool) context.Context {
 	return context.WithValue(ctx, legacyCNKey{}, allow)
 }
 func CarryTLSProfile(to, from context.Context) context.Context {
+	if skip, ok := from.Value(insecureTLSKey{}).(bool); ok {
+		to = WithInsecureTLS(to, skip)
+	}
 	if allow, ok := from.Value(legacyCNKey{}).(bool); ok {
 		return WithLegacyCN(to, allow)
 	}

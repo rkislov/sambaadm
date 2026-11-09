@@ -28,6 +28,7 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(r.Context(), sessionKey, sess)
 		ctx = ldapproto.WithLegacyCN(ctx, sess.AllowLegacyCN)
+		ctx = ldapproto.WithInsecureTLS(ctx, sess.SkipLDAPVerify)
 		if s.sessions.HasHelperCredentials(sess.ID) {
 			id := sess.ID
 			ctx = agent.WithCredentials(ctx, func() (agent.Credentials, error) {

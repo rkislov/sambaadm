@@ -34,7 +34,7 @@
     <a href="/settings" class="{{navClass .Active "/settings"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></svg></span><span>{{t .Lang "nav.settings"}}</span></a>
   </nav></details>
   <div class="user">
-    <span>{{.User}} <small>({{.Role}})</small>{{if .HelperSession}}<small class="session-identity">SYSVOL: текущая сессия</small>{{end}}</span>
+    <span>{{.User}} <small>({{.Role}})</small>{{if .HelperSession}}<small class="session-identity">SYSVOL: текущая сессия</small>{{end}}{{if .SkipLDAPVerify}}<small class="session-identity">LDAP: проверка сертификата отключена</small>{{end}}</span>
     <form method="post" action="/logout" class="inline">
       {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
       <button type="submit" class="linkish">{{t .Lang "nav.logout"}}</button>
