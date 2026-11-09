@@ -1,0 +1,28 @@
+#!/bin/sh
+# Run as root during installation and before the service drops privileges.
+# Never truncate logs or change ownership outside the application's log directory.
+set -eu
+log_dir=/var/log/sambaadm
+if [ -L "$log_dir" ] || { [ -e "$log_dir" ] && [ ! -d "$log_dir" ]; }; then
+  echo "Expected a real directory: $log_dir" >&2
+  exit 1
+fi
+# Temporarily prevent the service from replacing files during preparation.
+# Restore directory ownership for custom log paths and normal operation.
+install -d -o root -g sambaadm -m 0750 "$log_dir"
+trap 'chown sambaadm:sambaadm "$log_dir"' EXIT
+trap 'exit 1' HUP INT TERM
+for name in audit.log events.log; do
+  path="$log_dir/$name"
+  if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
+    echo "Expected a regular log file: $path" >&2
+    exit 1
+  fi
+  if [ -e "$path" ] && [ "$(stat -c %h "$path")" != 1 ]; then
+    echo "Refusing a log with multiple hard links: $path" >&2
+    exit 1
+  fi
+  (umask 077; touch "$path")
+  chown sambaadm:sambaadm "$path"
+  chmod 0640 "$path"
+done

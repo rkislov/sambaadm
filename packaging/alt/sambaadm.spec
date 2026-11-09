@@ -30,11 +30,12 @@ are optional and must be installed separately for file-server features.
 %build
 
 %install
-mkdir -p %buildroot/usr/bin %buildroot/usr/sbin %buildroot/lib/systemd/system
+mkdir -p %buildroot/usr/libexec %buildroot/usr/bin %buildroot/usr/sbin %buildroot/lib/systemd/system
 mkdir -p %buildroot/etc/sambaadm %buildroot/usr/share/doc/sambaadm
 mkdir -p %buildroot/var/lib/sambaadm %buildroot/var/log/sambaadm
 mkdir -p %buildroot/var/lib/sambaadm-packages %buildroot/var/cache/sambaadm-packages
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
+install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
 install -m755 %{payload_dir}/sambaadm-package %buildroot/usr/sbin/sambaadm-package
 install -m644 %{payload_dir}/sambaadm.service %buildroot/lib/systemd/system/sambaadm.service
 install -m640 %{payload_dir}/config.yaml %buildroot/etc/sambaadm/config.yaml
@@ -47,6 +48,7 @@ getent group sambaadm >/dev/null || groupadd -r sambaadm
 getent passwd sambaadm >/dev/null || useradd -r -g sambaadm -d /var/lib/sambaadm -s /bin/false sambaadm
 
 %post
+/usr/libexec/sambaadm-prepare-logs || exit 1
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || :
 fi
@@ -67,6 +69,7 @@ fi
 %defattr(-,root,root)
 /usr/bin/sambaadm
 /usr/sbin/sambaadm-package
+/usr/libexec/sambaadm-prepare-logs
 /lib/systemd/system/sambaadm.service
 %dir %attr(0750,root,sambaadm) /etc/sambaadm
 %config(noreplace) %attr(0640,root,sambaadm) /etc/sambaadm/config.yaml

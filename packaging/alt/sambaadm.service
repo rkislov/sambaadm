@@ -8,6 +8,7 @@ Type=simple
 User=sambaadm
 Group=sambaadm
 EnvironmentFile=/etc/sambaadm/env
+ExecStartPre=+/usr/libexec/sambaadm-prepare-logs
 WorkingDirectory=/var/lib/sambaadm
 ExecStartPre=/usr/bin/sambaadm --config /etc/sambaadm/config.yaml version
 ExecStart=/usr/bin/sambaadm --config /etc/sambaadm/config.yaml serve

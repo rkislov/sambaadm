@@ -17,10 +17,40 @@ arch=$(uname -m)
 old="$work/rpms/sambaadm-0.25.0-alt1.$arch.rpm"
 new="$work/rpms/sambaadm-0.25.1-alt1.$arch.rpm"
 bad="$work/rpms/sambaadm-0.25.2-alt1.$arch.rpm"
+# Reproduce logs created by a previous root invocation before installation.
+mkdir -p /var/log/sambaadm
+printf 'preserved audit\n' > /var/log/sambaadm/audit.log
+printf 'preserved events\n' > /var/log/sambaadm/events.log
+chown root:root /var/log/sambaadm/*.log
+chmod 0600 /var/log/sambaadm/*.log
+check_logs() {
+ for name in audit events; do
+  [[ $(head -n 1 "/var/log/sambaadm/$name.log") == "preserved $name" ]]
+  [[ $(stat -c '%a:%U:%G' "/var/log/sambaadm/$name.log") == 640:sambaadm:sambaadm ]]
+  runuser -u sambaadm -- test -w "/var/log/sambaadm/$name.log"
+ done
+}
 # No active systemd needed for the actual initial installation.
 bash "$repo/deploy/sambaadm-package" install "$old"
 test "$(rpm -q --qf '%{VERSION}' sambaadm)" == 0.25.0
 /usr/bin/sambaadm version
+check_logs
+# Privileged preparation must not follow links to unrelated files.
+printf 'unrelated secret\n' > "$work/unrelated"
+chmod 0600 "$work/unrelated"
+mv /var/log/sambaadm/events.log "$work/events.log"
+ln -s "$work/unrelated" /var/log/sambaadm/events.log
+if /usr/libexec/sambaadm-prepare-logs; then echo 'Log symlink accepted'; exit 1; fi
+[[ $(stat -c '%a:%U:%G' "$work/unrelated") == 600:root:root ]]
+[[ $(cat "$work/unrelated") == 'unrelated secret' ]]
+rm /var/log/sambaadm/events.log
+ln "$work/unrelated" /var/log/sambaadm/events.log
+if /usr/libexec/sambaadm-prepare-logs; then echo 'Log hard link accepted'; exit 1; fi
+[[ $(stat -c '%a:%U:%G' "$work/unrelated") == 600:root:root ]]
+rm /var/log/sambaadm/events.log
+mv "$work/events.log" /var/log/sambaadm/events.log
+/usr/libexec/sambaadm-prepare-logs
+check_logs
 getent passwd sambaadm
 [[ $(stat -c '%a' /etc/sambaadm/env) == 600 ]]
 [[ $(stat -c '%U:%G' /etc/sambaadm/config.yaml) == root:sambaadm ]]
@@ -29,9 +59,16 @@ if [[ ${SAMBAADM_REAL_SYSTEMD:-0} == 1 ]]; then
  printf "SAMBAADM_PASSWORD='test-secret'\n" > /etc/sambaadm/env
  printf '\n# operator configuration\n' >> /etc/sambaadm/config.yaml
  sha256sum /etc/sambaadm/config.yaml /etc/sambaadm/env > "$work/before.sha"
+ # A root invocation after installation must also be repaired on service start.
+ chown root:root /var/log/sambaadm/{audit,events}.log
+ chmod 0600 /var/log/sambaadm/{audit,events}.log
  systemctl enable --now sambaadm.service
+ check_logs
  systemctl is-active --quiet sambaadm.service
+ chown root:root /var/log/sambaadm/{audit,events}.log
+ chmod 0600 /var/log/sambaadm/{audit,events}.log
  sambaadm-package update "$new"
+ check_logs
  [[ $(rpm -q --qf '%{VERSION}' sambaadm) == 0.25.1 ]]
  sha256sum -c "$work/before.sha"
  first=$(sambaadm-package list | head -1 | cut -d' ' -f1)
@@ -80,7 +117,10 @@ sha256sum /etc/sambaadm/config.yaml /etc/sambaadm/env > "$work/before.sha"
 touch /run/sambaadm-active /run/sambaadm-enabled
 rm /var/cache/sambaadm-packages/sambaadm-0.25.0-alt1."$arch".rpm
 if sambaadm-package update "$new"; then echo 'Missing rollback RPM was accepted'; exit 1; fi
+chown root:root /var/log/sambaadm/{audit,events}.log
+chmod 0600 /var/log/sambaadm/{audit,events}.log
 sambaadm-package update "$new" --previous-rpm "$old"
+check_logs
 [[ $(rpm -q --qf '%{VERSION}' sambaadm) == 0.25.1 ]]
 sha256sum -c "$work/before.sha"
 test -f /etc/sambaadm/config.yaml.rpmnew

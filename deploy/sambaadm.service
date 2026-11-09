@@ -8,6 +8,7 @@ Type=simple
 User=sambaadm
 Group=sambaadm
 EnvironmentFile=/etc/sambaadm/env
+ExecStartPre=+/usr/local/libexec/sambaadm-prepare-logs
 ExecStart=/usr/local/bin/sambaadm serve --config /etc/sambaadm/config.yaml
 Restart=on-failure
 RestartSec=5

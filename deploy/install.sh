@@ -15,7 +15,9 @@ if ! getent passwd sambaadm >/dev/null; then
   useradd --system --gid sambaadm --home-dir /var/lib/sambaadm --no-create-home --shell "$nologin" sambaadm
 fi
 install -d -o root -g sambaadm -m 0750 /etc/sambaadm
-install -d -o sambaadm -g sambaadm -m 0750 /var/log/sambaadm
+install -d -o root -g root -m 0755 /usr/local/libexec
+install -m 0755 "$source_dir/deploy/sambaadm-prepare-logs" /usr/local/libexec/sambaadm-prepare-logs
+/usr/local/libexec/sambaadm-prepare-logs
 install -m 0755 "$1" /usr/local/bin/sambaadm
 if [ ! -e /etc/sambaadm/config.yaml ] && [ ! -L /etc/sambaadm/config.yaml ]; then
   if /usr/local/bin/sambaadm discover --output /etc/sambaadm/config.yaml; then
