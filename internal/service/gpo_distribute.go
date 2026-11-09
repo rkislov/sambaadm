@@ -288,61 +288,51 @@ func (s *GPOService) runDistribute(parent context.Context, jobID, local string) 
 		return
 	}
 	repl := &ReplService{ldap: s.ldap, audit: s.audit, remote: s.remote}
-	job, _ = s.jobs.get(jobID)
+	s.runTargetSteps(jobID, func(step DistributeStep) error {
+		if strings.HasPrefix(step.ID, "drs-") {
+			return repl.Sync(ctx, step.DC, local, s.ldap.BaseDN(), job.Actor, "")
+		}
+		remote := *s.remote
+		remote.Host = step.DC
+		return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error { return installPolicySnapshot(share, remotePath, snapshot) })
+	})
+}
+
+// Target operations are independent after the source snapshot has been read.
+// Keep the job running until every target and the final summary have completed:
+// the browser stops polling as soon as it sees a terminal job status.
+func (s *GPOService) runTargetSteps(jobID string, execute func(DistributeStep) error) {
+	job, ok := s.jobs.get(jobID)
+	if !ok {
+		return
+	}
 	for _, step := range job.Steps {
 		if step.Status != StepPending || step.ID == "done" {
 			continue
 		}
-		err := s.runStep(jobID, step.ID, func() error {
-			if strings.HasPrefix(step.ID, "drs-") {
-				return repl.Sync(ctx, step.DC, local, s.ldap.BaseDN(), job.Actor, "")
-			}
-			remote := *s.remote
-			remote.Host = step.DC
-			return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error { return installPolicySnapshot(share, remotePath, snapshot) })
-		})
-		if err != nil {
-			fail(err.Error())
-			s.markRemainingSkipped(jobID)
-			return
-		}
+		_ = s.runStep(jobID, step.ID, func() error { return execute(step) })
 	}
 
-	// Final summary
+	var failures []string
 	_ = s.runStep(jobID, "done", func() error {
 		job, _ := s.jobs.get(jobID)
-		failed := 0
-		for _, st := range job.Steps {
-			if st.ID == "done" {
-				continue
-			}
-			if st.Status == StepFailed {
-				failed++
+		for _, step := range job.Steps {
+			if step.ID != "done" && step.Status == StepFailed {
+				failures = append(failures, step.Title+": "+step.Message)
 			}
 		}
-		if failed > 0 {
-			return fmt.Errorf("завершено с ошибками: %d шаг(ов)", failed)
+		if len(failures) > 0 {
+			return fmt.Errorf("завершено с ошибками: %d шаг(ов)", len(failures))
 		}
 		return nil
 	})
-
 	s.jobs.update(jobID, func(j *DistributeJob) {
-		if j.Status != JobFailed {
-			// if done step failed, status already failed inside runStep
-			allOK := true
-			for _, st := range j.Steps {
-				if st.Status == StepFailed {
-					allOK = false
-					break
-				}
-			}
-			if allOK {
-				j.Status = JobOK
-			} else {
-				j.Status = JobFailed
-			}
+		j.Status = JobOK
+		j.Error = ""
+		if len(failures) > 0 {
+			j.Status = JobFailed
+			j.Error = fmt.Sprintf("Завершено с ошибками: %d шаг(ов).\n%s", len(failures), strings.Join(failures, "\n"))
 		}
-		j.Progress = 100
 	})
 }
 
@@ -366,8 +356,6 @@ func (s *GPOService) runStep(jobID, stepID string, fn func() error) error {
 			if err != nil {
 				j.Steps[i].Status = StepFailed
 				j.Steps[i].Message = err.Error()
-				j.Status = JobFailed
-				j.Error = err.Error()
 			} else {
 				j.Steps[i].Status = StepOK
 				j.Steps[i].Message = "OK"
