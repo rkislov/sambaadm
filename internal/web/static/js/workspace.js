@@ -60,7 +60,7 @@
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
-      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Каталог копии policy/{GUID} на сервере','Backup policy/{GUID} directory on server')],{confirm:true})],
+      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
@@ -71,7 +71,7 @@
         view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),
         action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[dn('container')]),
         action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[dn('container')],{confirm:true}),
-        action(t('Резервная копия','Back up'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/backup',[text('path','Каталог на сервере','Directory on server')]),
+        action(t('Резервная копия','Back up'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/backup',[text('path','Абсолютный каталог на узле helper','Absolute directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual'})],{help:t('Укажите полный путь внутри helper.backup_root на узле helper. Например, /var/lib/sambaadm-helper/backups/manual. Символ ~ не раскрывается.','Enter an absolute path under helper.backup_root on the helper node. Example: /var/lib/sambaadm-helper/backups/manual. The ~ symbol is not expanded.')}),
         action(t('Доставить на контроллеры','Distribute to DCs'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/distribute',[],{confirm:true,job:true}),remove(r=>'/gpo/'+enc(gpoID(r)))]},
     '/trusts':{title:t('Доверия','Trusts'),endpoint:'/trusts',id:r=>r.domain,
       columns:[['domain',t('Домен','Domain')],['direction',t('Направление','Direction')],['type',t('Тип','Type')]],
@@ -588,7 +588,7 @@
       if(f.type==='checkbox')input.checked=!!f.value;else input.value=defaults[f.key]??f.value??((f.key==='ou'||f.key==='parentDN')?selectedContainer:'');
       if(f.multiple){const selected=String(defaults[f.key]??f.value??'').split(';');for(const o of input.options)o.selected=selected.includes(o.value);}
       if(f.key==='container' && !input.value)input.value=selectedContainer||'';
-      if(f.placeholder)input.placeholder=f.placeholder;if(f.list)input.setAttribute('list',f.list);
+      if(f.absolutePath){input.pattern='/.*';input.title=t('Нужен абсолютный путь, начинающийся с /. Символ ~ не раскрывается.','Use an absolute path starting with /. The ~ symbol is not expanded.');}if(f.placeholder)input.placeholder=f.placeholder;if(f.list)input.setAttribute('list',f.list);
       label.append(input);form.append(label);inputs.push([f,input]);
       if(f.type==='password'){
         const confirm=el('label','',t('Повторите пароль','Repeat password'));const repeat=el('input');repeat.type='password';repeat.autocomplete='new-password';repeat.required=!f.optional;confirm.append(repeat);form.append(confirm);

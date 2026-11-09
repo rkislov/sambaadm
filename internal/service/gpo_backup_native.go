@@ -119,6 +119,9 @@ func (s *GPOService) backupNative(ctx context.Context, policy, path, actor, ip s
 	if path == "" {
 		return fmt.Errorf("backup path required")
 	}
+	if s.helpers != nil && !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("backup path must be absolute on helper node (~ is not expanded); use a directory under helper.backup_root")
+	}
 	backup, entry, err := s.captureNativeBackup(ctx, policy)
 	if err != nil {
 		return err
@@ -154,6 +157,9 @@ func (s *GPOService) backupNative(ctx context.Context, policy, path, actor, ip s
 	return nil
 }
 func (s *GPOService) restoreNative(ctx context.Context, name, path, actor, ip string) error {
+	if s.helpers != nil && !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("backup path must be absolute on helper node (~ is not expanded); use the policy/{GUID} directory under helper.backup_root")
+	}
 	var b policyBackup
 	var err error
 	if s.helpers != nil {
