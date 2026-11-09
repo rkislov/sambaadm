@@ -376,7 +376,7 @@ func (s *GPOService) probeConsistency(ctx context.Context, guid, base string, dc
 		if errors.Is(e, errConsistencyChanged) {
 			out.Status = "changing"
 		}
-		if os.IsNotExist(e) {
+		if errors.Is(e, os.ErrNotExist) {
 			out.SYSVOL = "missing"
 		}
 		out.Errors = append(out.Errors, "SYSVOL: "+e.Error())
