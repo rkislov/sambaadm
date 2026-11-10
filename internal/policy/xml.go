@@ -51,7 +51,7 @@ func decodeTemplateXML(data []byte, out any) error {
 	data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	decoder.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
-		if converted && (strings.EqualFold(label, "utf-16") || strings.EqualFold(label, "utf-16le") || strings.EqualFold(label, "utf-16be")) {
+		if converted && (strings.EqualFold(label, "utf-16") || strings.EqualFold(label, "utf-16le") || strings.EqualFold(label, "utf-16be") || strings.EqualFold(label, "unicode")) {
 			return input, nil
 		}
 		return nil, fmt.Errorf("unsupported template charset %s", label)
