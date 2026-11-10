@@ -100,21 +100,21 @@ func registryTarget(key, value string) bool {
 	return key != "" && !strings.ContainsRune(key, 0) && value != "" && !strings.ContainsRune(value, 0) && !strings.HasPrefix(value, "**")
 }
 
-// ParseADMX reads the ALT ADMX schema and optional ADML labels/presentations.
+// ParseADMX reads supported registry ADMX constructs and optional ADML labels/presentations.
 // Unknown editing constructs remain visible with a reason but cannot be saved.
 func ParseADMX(name string, data, resources []byte) ([]Definition, error) {
 	if len(data) > 2<<20 || len(resources) > 4<<20 {
 		return nil, fmt.Errorf("template exceeds size limit")
 	}
 	var root, lang xmlNode
-	if e := xml.Unmarshal(data, &root); e != nil {
+	if e := decodeTemplateXML(data, &root); e != nil {
 		return nil, e
 	}
 	if root.XMLName.Local != "policyDefinitions" {
 		return nil, fmt.Errorf("not an ADMX document")
 	}
 	if len(resources) > 0 {
-		if e := xml.Unmarshal(resources, &lang); e != nil {
+		if e := decodeTemplateXML(resources, &lang); e != nil {
 			return nil, fmt.Errorf("ADML: %w", e)
 		}
 	}
@@ -290,6 +290,20 @@ func ParseADMX(name string, data, resources []byte) ([]Definition, error) {
 					break
 				}
 			}
+			if !strings.HasPrefix(strings.ToLower(name), "basealt") && !strings.HasPrefix(strings.ToLower(d.Key), `software\basealt\`) {
+				// Import every vendor's definitions, but never infer ALT-specific default
+				// registry encodings or silently ignore policy-level extension semantics.
+				if d.Value == "" || d.Enabled == nil || d.Disabled == nil {
+					reject(fmt.Errorf("explicit enabled and disabled registry values are required for editing this template"))
+				}
+				for _, a := range n.Attrs {
+					switch a.Name.Local {
+					case "name", "class", "key", "valueName", "displayName", "explainText", "presentation":
+					default:
+						reject(fmt.Errorf("unsupported policy attribute %s", a.Name.Local))
+					}
+				}
+			}
 			if d.Value != "" {
 				if !registryTarget(d.Key, d.Value) {
 					reject(fmt.Errorf("invalid policy registry target"))
@@ -317,8 +331,8 @@ func ParseADMX(name string, data, resources []byte) ([]Definition, error) {
 // CategoryLabels resolves both local category names and cross-template prefixes.
 func CategoryLabels(name string, data, resources []byte) map[string]string {
 	var root, lang xmlNode
-	_ = xml.Unmarshal(data, &root)
-	_ = xml.Unmarshal(resources, &lang)
+	_ = decodeTemplateXML(data, &root)
+	_ = decodeTemplateXML(resources, &lang)
 	labels := map[string]string{}
 	for _, n := range lang.child("resources").child("stringTable").Children {
 		labels[n.attr("id")] = n.text()

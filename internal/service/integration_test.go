@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/go-ldap/ldap/v3"
-	"sambaadm/internal/audit"
 	"sambaadm/internal/agent"
+	"sambaadm/internal/audit"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 )
@@ -51,8 +51,10 @@ func integrationServices(t *testing.T, mutate bool) (*Services, config.LDAPConfi
 	t.Cleanup(func() { logger.Close() })
 	port, _ := strconv.Atoi(os.Getenv("SAMBAADM_IT_SMB_PORT"))
 	var helpers *agent.Client
-	if os.Getenv("SAMBAADM_IT_HELPERS")=="1" {helpers=&agent.Client{Config:agent.Config{PrivateKey:"/tmp/helper-signing.key",HostNode:"dc1.sambaadm.test",Nodes:[]agent.Node{{Name:"dc1.sambaadm.test",Transport:"https",Endpoint:"https://dc1.sambaadm.test:8444"},{Name:"dc2.sambaadm.test",Transport:"https",Endpoint:"https://dc2.sambaadm.test:8444"}}}}}
-	return NewWithOptions(client, logger, ServiceOptions{Helpers:helpers,GPO: config.GPOConfig{SMBPort: port}, Username: cfg.Bind.User, Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
+	if os.Getenv("SAMBAADM_IT_HELPERS") == "1" {
+		helpers = &agent.Client{Config: agent.Config{PrivateKey: "/tmp/helper-signing.key", HostNode: "dc1.sambaadm.test", Nodes: []agent.Node{{Name: "dc1.sambaadm.test", Transport: "https", Endpoint: "https://dc1.sambaadm.test:8444"}, {Name: "dc2.sambaadm.test", Transport: "https", Endpoint: "https://dc2.sambaadm.test:8444"}}}}
+	}
+	return NewWithOptions(client, logger, ServiceOptions{Helpers: helpers, GPO: config.GPOConfig{SMBPort: port}, Username: cfg.Bind.User, Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }}), cfg
 }
 func TestIntegrationDomainInfo(t *testing.T) {
 	s, _ := integrationServices(t, false)
@@ -175,7 +177,8 @@ func TestIntegrationDNSLifecycle(t *testing.T) {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { s.DNS.DeleteZone(context.Background(), zone, actor, ip) })
-	in := AddDNSRecordInput{Zone: zone, Name: "files", Type: "A", Data: "192.0.2.20"}
+	wantedTTL := uint32(1234)
+	in := AddDNSRecordInput{Zone: zone, Name: "files", Type: "A", Data: "192.0.2.20", TTL: &wantedTTL}
 	if e := s.DNS.AddRecord(ctx, in, actor, ip); e != nil {
 		t.Fatal(e)
 	}
@@ -187,12 +190,26 @@ func TestIntegrationDNSLifecycle(t *testing.T) {
 		}
 		for _, r := range records {
 			if strings.Contains(r.Raw, want) {
+				if r.TTL == nil || *r.TTL != wantedTTL {
+					t.Fatalf("DNS TTL was lost: %+v", r)
+				}
 				return
 			}
 		}
 		t.Fatalf("record %s not found in %+v", want, records)
 	}
 	check(in.Data)
+	child := AddDNSRecordInput{Zone: zone, Name: "child.files", Type: "A", Data: "192.0.2.22"}
+	if err := s.DNS.AddRecord(ctx, child, actor, ip); err != nil {
+		t.Fatal(err)
+	}
+	exact, err := s.DNS.QueryRecordsExact(ctx, zone, "files", "A")
+	if err != nil || len(exact) != 1 || exact[0].Name != "files" || exact[0].Data != in.Data {
+		t.Fatalf("exact-owner query included another node: %+v %v", exact, err)
+	}
+	if err = s.DNS.DeleteRecord(ctx, child, actor, ip); err != nil {
+		t.Fatal(err)
+	}
 	nodes, e := s.DNS.Nodes(ctx, zone)
 	if e != nil {
 		t.Fatal(e)
@@ -206,9 +223,11 @@ func TestIntegrationDNSLifecycle(t *testing.T) {
 	if !found {
 		t.Fatalf("DNS tree missing files: %+v", nodes)
 	}
-	if e = s.DNS.UpdateRecord(ctx, UpdateDNSRecordInput{Zone: zone, Name: "files", Type: "A", OldData: in.Data, NewData: "192.0.2.21"}, actor, ip); e != nil {
+	newTTL := uint32(2345)
+	if e = s.DNS.UpdateRecord(ctx, UpdateDNSRecordInput{Zone: zone, Name: "files", Type: "A", OldData: in.Data, NewData: "192.0.2.21", TTL: &newTTL}, actor, ip); e != nil {
 		t.Fatal(e)
 	}
+	wantedTTL = newTTL
 	check("192.0.2.21")
 	in.Data = "192.0.2.21"
 	if e = s.DNS.DeleteRecord(ctx, in, actor, ip); e != nil {

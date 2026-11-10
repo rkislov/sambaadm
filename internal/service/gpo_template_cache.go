@@ -66,7 +66,7 @@ func decodeTemplateCatalog(raw []byte) (templateCatalog, error) {
 }
 func catalogResponse(defs []policy.Definition, source string) (helperADMXCatalog, error) {
 	raw, e := encodeTemplateCatalog(templateCatalog{Schema: 1, Definitions: defs, Source: source})
-	return helperADMXCatalog{Definitions: defs, Source: source, Encoded: raw}, e
+	return helperADMXCatalog{Definitions: defs, Source: source, Encoded: raw, AllTemplates: true}, e
 }
 func decodedCatalog(out helperADMXCatalog) ([]policy.Definition, string, error) {
 	if len(out.Encoded) == 0 {

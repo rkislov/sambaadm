@@ -177,3 +177,20 @@ tbody tr:hover { @apply bg-slate-50; }
  .policy-settings-table .policy-setting-link { min-height:32px; }
  .policy-properties { flex:none; }
 }
+.workspace-columns.workspace-columns-single { grid-template-columns:minmax(0,1fr); }
+.policy-platform-badge { display:inline-flex;align-items:center;border:1px solid #bae6fd;background:#f0f9ff;color:#075985;border-radius:4px;padding:0 5px;margin-left:6px;font-size:10px;font-weight:600;line-height:18px;vertical-align:middle; }
+.policy-model-advanced { border:1px solid var(--border);border-radius:8px;padding:12px;background:#f8fafc; }
+.policy-model-advanced > summary { cursor:pointer;font-weight:500; }
+.policy-model-advanced > .workspace-form { margin-top:14px; }
+.policy-model-summary { margin:20px 0 12px;padding:16px;border:1px solid #bae6fd;border-radius:10px;background:#f0f9ff; }
+.policy-model-summary h3 { margin-top:0; }
+.dns-console-tree { max-height:75vh;overflow:auto;font-size:12px; }
+.dns-console-tree details { margin:5px 0; }.dns-console-tree details details { margin-left:12px; }
+.dns-console-tree summary { cursor:pointer;overflow-wrap:anywhere; }
+.dns-console-tree button { display:block;text-align:left;justify-content:start;max-width:100%;background:transparent;border:0;box-shadow:none;font-size:12px;min-height:24px;padding:4px 6px;overflow-wrap:anywhere; }
+.dns-console-tree summary>button { display:inline-flex; }.dns-console-tree button.selected { background:#dbeafe;color:#1e3a8a; }
+.dns-console-main { min-width:0; }.dns-console-tools { display:flex;gap:8px;flex-wrap:wrap;margin:12px 0; }
+.dns-console-tools input[type=search] { flex:1;min-width:180px; }.dns-console-tools select { width:auto; }
+.dns-record-table { font-size:12px; }.dns-record-table th button { background:transparent;border:0;box-shadow:none;padding:0;font-size:12px;min-height:24px; }
+.dns-record-table td button { padding:2px 6px;min-height:26px;font-size:12px; }
+@media(max-width:850px){.dns-console-tree { max-height:30vh; }}

@@ -174,12 +174,18 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 		if e != nil {
 			return nil, "", e
 		}
+		if !out.AllTemplates {
+			return nil, "", fmt.Errorf("Update sambaadm-helper to v0.41.0 or newer to import all ADMX templates")
+		}
 		return decodedCatalog(out)
 	}
 	if share != nil && share.helpers != nil && s.gpoCfg.ADMXPath == "" {
 		var out helperADMXCatalog
 		err := share.call("admx-catalog", helperFSRequest{Path: strings.ReplaceAll(path.Join(domain, "Policies", "PolicyDefinitions"), "/", `\`)}, &out)
 		if err == nil {
+			if !out.AllTemplates {
+				return nil, "", fmt.Errorf("Update sambaadm-helper to v0.41.0 or newer to import all ADMX templates")
+			}
 			return decodedCatalog(out)
 		}
 		if !strings.Contains(err.Error(), "unsupported SYSVOL helper method") {
@@ -190,7 +196,6 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 	var names []string
 	var read func(string) ([]byte, error)
 	source := ""
-	singleFile := false
 	if s.gpoCfg.ADMXPath != "" {
 		file := s.gpoCfg.ADMXPath
 		info, err := os.Stat(file)
@@ -199,7 +204,6 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 		}
 		dir := file
 		if !info.IsDir() {
-			singleFile = true
 			dir = filepath.Dir(file)
 			names = []string{filepath.Base(file)}
 		} else {
@@ -248,15 +252,40 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 		store := &smbPolicyStore{share: share, base: path.Join(domain, "Policies", "PolicyDefinitions")}
 		entries, err := store.ReadDir(".")
 		if err != nil {
-			return nil, "", fmt.Errorf("ALT ADMX missing from SYSVOL Central Store: %w", err)
+			return nil, "", fmt.Errorf("ADMX missing from SYSVOL Central Store: %w", err)
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() {
 				names = append(names, entry.Name())
 			}
 		}
+		type listing struct {
+			entries []os.FileInfo
+			err     error
+		}
+		listings := map[string]listing{".": {entries: entries}}
 		read = func(name string) ([]byte, error) {
-			actual, err := policyChild(store, path.Dir(name), path.Base(name), false)
+			parent, leaf := path.Dir(name), path.Base(name)
+			items, ok := listings[parent]
+			if !ok {
+				items.entries, items.err = store.ReadDir(parent)
+				listings[parent] = items
+			}
+			actual := ""
+			err := items.err
+			if err == nil {
+				for _, item := range items.entries {
+					if strings.EqualFold(item.Name(), leaf) {
+						if actual != "" {
+							return nil, fmt.Errorf("ambiguous template filename")
+						}
+						actual = path.Join(parent, item.Name())
+					}
+				}
+				if actual == "" {
+					err = os.ErrNotExist
+				}
+			}
 			if err != nil { // A missing optional language file is a normal fallback.
 				if errors.Is(err, os.ErrNotExist) {
 					return nil, os.ErrNotExist
@@ -277,12 +306,12 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 				return nil, "", err
 			}
 		}
-		if (!singleFile && !strings.HasPrefix(strings.ToLower(name), "basealt")) || !strings.HasSuffix(strings.ToLower(name), ".admx") {
+		if !strings.HasSuffix(strings.ToLower(name), ".admx") {
 			continue
 		}
 		files++
-		if files > 64 {
-			return nil, "", fmt.Errorf("too many ALT templates")
+		if files > 4096 {
+			return nil, "", fmt.Errorf("too many ADMX templates (maximum 4096)")
 		}
 		data, err := read(name)
 		if err != nil {
@@ -299,20 +328,23 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 			}
 		}
 		total += len(data) + len(language)
-		if total > 32<<20 {
-			return nil, "", fmt.Errorf("ALT template catalog exceeds 32 MiB")
+		if total > 128<<20 {
+			return nil, "", fmt.Errorf("ADMX template catalog exceeds 128 MiB")
 		}
 		parsed, err := policy.ParseADMX(name, data, language)
 		if err != nil {
 			return nil, "", fmt.Errorf("%s: %w", name, err)
 		}
 		defs = append(defs, parsed...)
+		if len(defs) > 60000 {
+			return nil, "", fmt.Errorf("ADMX catalog exceeds 60000 policy definitions")
+		}
 		for key, value := range policy.CategoryLabels(name, data, language) {
 			categories[key] = value
 		}
 	}
 	if len(defs) == 0 {
-		return nil, "", fmt.Errorf("no ALT policies found; install BaseALT*.admx in Central Store")
+		return nil, "", fmt.Errorf("no ADMX policies found in the configured template source")
 	}
 	seen := map[string]bool{}
 	for i := range defs {

@@ -6,6 +6,7 @@ const repo=path.resolve(__dirname,'../..'),dir=fs.mkdtempSync(path.join(os.tmpdi
 execFileSync('go',['test','./internal/web','-run','^TestWorkspaceBrowserFixtures$','-count=1'],{cwd:repo,env:{...process.env,SAMBAADM_WEB_FIXTURE_DIR:dir}});
 let role='admin',language='ru',version=0;const writes=[],errors=[];
 const settings=Array.from({length:4500},(_,i)=>({id:'setting-'+i,label:'Policy '+String(i).padStart(4,'0'),template:'Example.admx',category:i%2?'Network':'System',description:'Description '+i+' <img src=x onerror=alert(1)>',state:['not-configured','enabled','disabled'][i%3],fields:[{id:'text',label:'Value',kind:'text',default:'initial'}]}));
+settings[0].template='BaseALTSystemd.admx';
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://localhost').pathname;
  const file=pathname.startsWith('/static/')?path.join(repo,'internal/web',pathname):path.join(dir,`${role}-${pathname==='/settings'?'settings':'gpo'}.html`);
@@ -32,12 +33,14 @@ const server=http.createServer((req,res)=>{
   async function open(){await page.goto(`http://127.0.0.1:${server.address().port}/gpo`);await page.getByRole('status').filter({hasText:language==='ru'?'Данные обновлены':'Data refreshed'}).waitFor();if(await page.locator('.workspace-menu summary').count())await page.locator('.workspace-menu summary').click();await page.getByRole('button',{name:language==='ru'?'Редактор политик':'Policy editor',exact:true}).click();await page.locator('.policy-settings-table tbody tr').first().waitFor();return page.getByRole('dialog');}
   let dialog=await open();const table=dialog.locator('.policy-settings-table');
   assert.equal(await table.locator('tbody tr').count(),100,'large catalog must render a bounded page');
+  assert.equal(await table.locator('tbody tr').filter({hasText:'Policy 0000'}).locator('.policy-platform-badge').textContent(),'ALT');assert.equal(await table.locator('tbody tr').filter({hasText:'Policy 0001'}).locator('.policy-platform-badge').count(),0);
   await dialog.getByText('Найдено: 4500 / 4500',{exact:true}).waitFor();await table.getByRole('button',{name:'Policy 0000',exact:true}).waitFor();
   await dialog.locator('.policy-list-pager').getByRole('button',{name:'Далее',exact:true}).click();await table.getByRole('button',{name:'Policy 0100',exact:true}).waitFor();
   await dialog.getByRole('combobox',{name:'Состояние параметра',exact:true}).selectOption('enabled');await dialog.getByText('Найдено: 1500 / 4500',{exact:true}).waitFor();
   assert.ok(await table.locator('tbody tr td:nth-child(2)').evaluateAll(cells=>cells.every(c=>c.textContent==='Включено')));
   await dialog.getByRole('combobox',{name:'Состояние параметра',exact:true}).selectOption('');
   await table.getByRole('button',{name:'Параметр',exact:true}).click();await table.getByRole('button',{name:'Policy 4499',exact:true}).waitFor();
+  await dialog.locator('.policy-console-tree summary').filter({hasText:'BaseALTSystemd.admx'}).click();await dialog.getByRole('button',{name:'System (1)',exact:true}).click();assert.equal(await table.locator('tbody tr').count(),1,'same category in another template must not leak into this folder');await dialog.getByRole('button',{name:'Все параметры (4500)',exact:true}).click();
   await dialog.getByLabel('Поиск политик',{exact:true}).fill('Policy 0321');assert.equal(await table.locator('tbody tr').count(),1);
   await table.locator('tbody tr td:nth-child(2)').click();await dialog.locator('.policy-list-preview').getByText('Description 321 <img src=x onerror=alert(1)>',{exact:true}).waitFor();assert.equal(await dialog.locator('img').count(),0);
   await dialog.locator('.policy-list-preview').getByRole('button',{name:'Открыть параметр',exact:true}).click();

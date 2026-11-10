@@ -65,6 +65,9 @@ func DNSRecord(typ, data string) (*dnsp.Record, error) {
 	return &dnsp.Record{Type: code, DataLength: rec.DataLength, TTLSeconds: rec.TTLSeconds, Flags: 0xf0, Buffer: rec.Buffer}, nil
 }
 func (c *Client) DNSUpdate(ctx context.Context, zone, name, typ, oldData, newData string) error {
+	return c.DNSUpdateTTL(ctx, zone, name, typ, oldData, newData, nil)
+}
+func (c *Client) DNSUpdateTTL(ctx context.Context, zone, name, typ, oldData, newData string, ttl *uint32) error {
 	req := &dnsserver.UpdateRecord2Request{ServerName: c.Host, Zone: zone, NodeName: name}
 	var err error
 	if oldData != "" {
@@ -79,15 +82,32 @@ func (c *Client) DNSUpdate(ctx context.Context, zone, name, typ, oldData, newDat
 			return err
 		}
 	}
+	if ttl != nil {
+		if req.AddRecord != nil {
+			req.AddRecord.TTLSeconds = *ttl
+		}
+		if req.DeleteRecord != nil {
+			req.DeleteRecord.TTLSeconds = *ttl
+		}
+	}
 	return c.dns(ctx, func(ctx context.Context, client dnsserver.DNSServerClient) error {
 		_, err := client.UpdateRecord2(ctx, req)
 		return err
 	})
 }
 
-type DNSResult struct{ Name, Type, Data, Raw string }
+type DNSResult struct {
+	Name, Type, Data, Raw string
+	TTL                   uint32
+}
 
 func (c *Client) DNSQuery(ctx context.Context, zone, name, typ string) ([]DNSResult, error) {
+	return c.dnsQuery(ctx, zone, name, typ, false)
+}
+func (c *Client) DNSQueryExact(ctx context.Context, zone, name, typ string) ([]DNSResult, error) {
+	return c.dnsQuery(ctx, zone, name, typ, true)
+}
+func (c *Client) dnsQuery(ctx context.Context, zone, name, typ string, exact bool) ([]DNSResult, error) {
 	if name == "" {
 		name = "@"
 	}
@@ -100,8 +120,12 @@ func (c *Client) DNSQuery(ctx context.Context, zone, name, typ string) ([]DNSRes
 		}
 	}
 	out := []DNSResult{}
+	flags := uint32(0x1f)
+	if exact {
+		flags |= 0x10000
+	}
 	err := c.dns(ctx, func(ctx context.Context, client dnsserver.DNSServerClient) error {
-		resp, err := client.EnumRecords2(ctx, &dnsserver.EnumRecords2Request{ServerName: c.Host, Zone: zone, NodeName: name, RecordType: code, SelectFlag: 0x1f})
+		resp, err := client.EnumRecords2(ctx, &dnsserver.EnumRecords2Request{ServerName: c.Host, Zone: zone, NodeName: name, RecordType: code, SelectFlag: flags})
 		if err != nil {
 			return err
 		}
@@ -119,10 +143,10 @@ func (c *Client) DNSQuery(ctx context.Context, zone, name, typ string) ([]DNSRes
 					data = fmt.Sprintf("%s %d", r.Mx, r.Preference)
 				}
 				nodeName := string(node.DNSNodeName.DNSName)
-				if nodeName == "" {
+				if nodeName == "" || exact {
 					nodeName = name
 				}
-				out = append(out, DNSResult{Name: nodeName, Type: dns.TypeToString[rr.Header().Rrtype], Data: data, Raw: rr.String()})
+				out = append(out, DNSResult{Name: nodeName, Type: dns.TypeToString[rr.Header().Rrtype], Data: data, Raw: rr.String(), TTL: rr.Header().Ttl})
 			}
 		}
 		return nil

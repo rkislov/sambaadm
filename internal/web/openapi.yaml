@@ -745,6 +745,11 @@
                                     "type": "string"
                                 "newData":
                                     "type": "string"
+                                "ttl":
+                                    "type": "integer"
+                                    "minimum": 0
+                                    "maximum": 4294967295
+                                    "description": "Optional TTL in seconds; omitted preserves existing compatibility behavior."
                             "required":
                                 - "name"
                                 - "type"
@@ -779,6 +784,12 @@
                   "required": false
                   "schema":
                     "type": "string"
+                - "in": "query"
+                  "name": "exact"
+                  "description": "Return only the requested owner, excluding child records. Records include ttl in seconds."
+                  "schema":
+                    "type": "boolean"
+                    "default": false
         "post":
             "summary": "DNSRecord Add"
             "responses":
@@ -816,6 +827,11 @@
                                     "type": "string"
                                 "data":
                                     "type": "string"
+                                "ttl":
+                                    "type": "integer"
+                                    "minimum": 0
+                                    "maximum": 4294967295
+                                    "description": "Optional TTL in seconds; omitted preserves existing compatibility behavior."
                             "required":
                                 - "name"
                                 - "type"

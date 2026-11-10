@@ -6,7 +6,11 @@
     const ru=document.documentElement.lang==='ru',t=(a,b)=>ru?a:b;
     const el=(tag,cls='',text='')=>{const e=document.createElement(tag);e.className=cls;e.textContent=text;return e;};
     const button=(label,fn,cls='')=>{const b=el('button',cls,label);b.type='button';b.addEventListener('click',fn);return b;};
+    const isALT=s=>(s.template||'').toLowerCase().startsWith('basealt')||(s.key||'').toLowerCase().startsWith('software\\basealt\\');
+    const badge=()=>{const b=el('span','policy-platform-badge','ALT');b.title=t('Шаблон ALT','ALT template');return b;};
+    const collator=new Intl.Collator(ru?'ru':'en',{numeric:true});
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Только просмотр','Read only')}[s]||s);
+    const selectedCategory=options.category?JSON.parse(options.category):null;
     const layout=el('div','policy-console'),nav=el('nav','policy-console-tree'),main=el('section','policy-console-main');
     nav.setAttribute('aria-label',t('Дерево разделов политики','Policy configuration tree'));layout.append(nav,main);
     for(const [id,label] of [['Machine',t('Конфигурация компьютера','Computer Configuration')],['User',t('Конфигурация пользователя','User Configuration')]]){
@@ -19,18 +23,18 @@
       const groups=new Map();
       for(const s of settings){const template=s.template||'ALT',category=s.category||'';if(!groups.has(template))groups.set(template,new Map());const categories=groups.get(template);categories.set(category,(categories.get(category)||0)+1);}
       for(const [template,categories] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]))){
-        const folder=el('details');folder.open=state.expanded.has(template)||[...categories.keys()].some(k=>k&&k===options.category);
+        const folder=el('details');folder.open=state.expanded.has(template)||selectedCategory?.[0]===template;
         folder.append(el('summary','',template));folder.addEventListener('toggle',()=>folder.open?state.expanded.add(template):state.expanded.delete(template));templates.append(folder);
         for(const [category,count] of [...categories].sort((a,b)=>a[0].localeCompare(b[0]))){
           // Category identifiers may be namespaced ADMX references. Keep them intact.
-          const name=category||t('Общие','General'),value=category||template;
+          const name=category||t('Общие','General'),value=JSON.stringify([template,category]);
           const item=button(name+' ('+count+')',()=>onCategory(value),'policy-folder'+(value===options.category?' selected':''));item.title=template+' / '+name;item.setAttribute('aria-current',String(value===options.category));folder.append(item);
         }
       }
     }
     const editor=el('section','policy-properties');
     if(editing){main.append(editor);return {layout,editor};}
-    const heading=el('h3','policy-console-heading',options.category||t('Все параметры','All Settings'));main.append(heading);
+    const heading=el('h3','policy-console-heading',selectedCategory?(selectedCategory[0]+' / '+(selectedCategory[1]||t('Общие','General'))):t('Все параметры','All Settings'));main.append(heading);
     const tools=el('div','policy-list-tools'),filter=el('select');filter.setAttribute('aria-label',t('Состояние параметра','Setting state'));
     for(const [value,label] of [['',t('Все состояния','All states')],['not-configured',stateLabel('not-configured')],['enabled',stateLabel('enabled')],['disabled',stateLabel('disabled')],['unsupported',stateLabel('unsupported')]]){const o=el('option','',label);o.value=value;filter.append(o);}filter.value=state.status;
     const count=el('output');count.setAttribute('aria-live','polite');tools.append(filter,count);main.append(tools);
@@ -43,7 +47,7 @@
     function describe(setting){
       state.selected=setting?.id||'';for(const row of body.children)row.classList.toggle('selected',row.dataset.policy===state.selected);
       preview.replaceChildren();if(!setting){preview.append(el('p','muted',t('Выберите параметр для просмотра описания. Дважды нажмите строку или откройте название для настройки.','Select a setting to read its description. Double-click a row or open its name to configure it.')));return;}
-      preview.append(el('h4','',setting.label||setting.id),el('p','policy-state',stateLabel(setting.state)));
+      preview.append(el('h4','',setting.label||setting.id));if(isALT(setting))preview.append(badge());preview.append(el('p','policy-state',stateLabel(setting.state)));
       if(setting.description)preview.append(el('p','policy-help-text',setting.description));
       if(setting.supportedOn)preview.append(el('p','muted',t('Поддерживается: ','Supported on: ')+setting.supportedOn));
       if(setting.unsupported)preview.append(el('p','alert error',setting.unsupported));
@@ -52,13 +56,13 @@
     function renderList(){
       const items=matches.filter(s=>!state.status||(s.unsupported?'unsupported':s.state)===state.status).sort((a,b)=>{
         const value=s=>state.sort==='state'?stateLabel(s.unsupported?'unsupported':s.state):(s[state.sort]||s.id);
-        return state.direction*(String(value(a)).localeCompare(String(value(b)),ru?'ru':'en',{numeric:true})||a.id.localeCompare(b.id));
+        return state.direction*(collator.compare(String(value(a)),String(value(b)))||a.id.localeCompare(b.id));
       });
       const pageSize=100,totalPages=Math.max(1,Math.ceil(items.length/pageSize));state.page=Math.min(Math.max(0,state.page),totalPages-1);
       const start=state.page*pageSize;body.replaceChildren();count.textContent=t('Найдено: ','Found: ')+items.length+' / '+settings.length;
       for(const th of head.children)th.setAttribute('aria-sort',th.dataset.sort===state.sort?(state.direction===1?'ascending':'descending'):'none');
       for(const setting of items.slice(start,start+pageSize)){
-        const row=el('tr');row.dataset.policy=setting.id;const name=el('td'),link=button(setting.label||setting.id,()=>onOpen(setting.id),'policy-setting-link');link.title=setting.id;name.append(link);row.append(name);
+        const row=el('tr');row.dataset.policy=setting.id;const name=el('td'),link=button(setting.label||setting.id,()=>onOpen(setting.id),'policy-setting-link');link.title=setting.id;name.append(link);if(isALT(setting))name.append(badge());row.append(name);
         row.append(el('td','policy-state state-'+(setting.unsupported?'unsupported':setting.state),stateLabel(setting.unsupported?'unsupported':setting.state)),el('td','',setting.template||'ALT'),el('td','',setting.category||t('Общие','General')));
         row.addEventListener('click',e=>{if(!e.target.closest('button'))describe(setting);});row.addEventListener('dblclick',e=>{if(!e.target.closest('button'))onOpen(setting.id);});body.append(row);
       }

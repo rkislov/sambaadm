@@ -487,7 +487,16 @@ func (s *Server) handleAPIDNSZoneDelete(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleAPIDNSRecords(w http.ResponseWriter, r *http.Request) {
 	zone, _ := url.PathUnescape(chi.URLParam(r, "zone"))
-	recs, err := s.svcs.DNS.QueryRecords(r.Context(), zone, r.URL.Query().Get("name"), r.URL.Query().Get("type"))
+	query := s.svcs.DNS.QueryRecords
+	switch r.URL.Query().Get("exact") {
+	case "", "false", "0":
+	case "true", "1":
+		query = s.svcs.DNS.QueryRecordsExact
+	default:
+		writeJSON(w, 400, map[string]string{"error": "exact must be true or false"})
+		return
+	}
+	recs, err := query(r.Context(), zone, r.URL.Query().Get("name"), r.URL.Query().Get("type"))
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return

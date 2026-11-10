@@ -33,9 +33,10 @@ type HostOperation struct {
 	Input     json.RawMessage `json:"input,omitempty"`
 }
 type helperADMXCatalog struct {
-	Definitions []policy.Definition
-	Source      string
-	Encoded     []byte `json:",omitempty"`
+	Definitions  []policy.Definition
+	Source       string
+	Encoded      []byte `json:",omitempty"`
+	AllTemplates bool   `json:",omitempty"`
 }
 
 func hostInput(in any) json.RawMessage { b, _ := json.Marshal(in); return b }

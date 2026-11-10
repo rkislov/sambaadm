@@ -24,27 +24,30 @@ type DNSZone struct {
 
 // DNSRecord is a DNS resource record summary.
 type DNSRecord struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-	Data string `json:"data,omitempty"`
-	Raw  string `json:"raw,omitempty"`
+	Name string  `json:"name"`
+	Type string  `json:"type"`
+	Data string  `json:"data,omitempty"`
+	Raw  string  `json:"raw,omitempty"`
+	TTL  *uint32 `json:"ttl,omitempty"`
 }
 
 // AddDNSRecordInput creates/updates a record.
 type AddDNSRecordInput struct {
-	Zone string `json:"zone"`
-	Name string `json:"name"`
-	Type string `json:"type"` // A, AAAA, CNAME, SRV, PTR, TXT, MX, NS, ...
-	Data string `json:"data"`
+	Zone string  `json:"zone"`
+	Name string  `json:"name"`
+	Type string  `json:"type"` // A, AAAA, CNAME, SRV, PTR, TXT, MX, NS, ...
+	Data string  `json:"data"`
+	TTL  *uint32 `json:"ttl,omitempty"`
 }
 
 // UpdateDNSRecordInput replaces record data.
 type UpdateDNSRecordInput struct {
-	Zone    string `json:"zone"`
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	OldData string `json:"oldData"`
-	NewData string `json:"newData"`
+	Zone    string  `json:"zone"`
+	Name    string  `json:"name"`
+	Type    string  `json:"type"`
+	OldData string  `json:"oldData"`
+	NewData string  `json:"newData"`
+	TTL     *uint32 `json:"ttl,omitempty"`
 }
 
 // DNSService manages AD-integrated DNS over native DNS RPC and LDAP.
@@ -88,6 +91,14 @@ func (s *DNSService) DeleteZone(ctx context.Context, zone, actor, ip string) err
 
 // QueryRecords queries records in a zone through native DNS RPC.
 func (s *DNSService) QueryRecords(ctx context.Context, zone, name, typ string) ([]DNSRecord, error) {
+	return s.queryRecords(ctx, zone, name, typ, false)
+}
+
+// QueryRecordsExact excludes children so a properties form cannot target a sibling.
+func (s *DNSService) QueryRecordsExact(ctx context.Context, zone, name, typ string) ([]DNSRecord, error) {
+	return s.queryRecords(ctx, zone, name, typ, true)
+}
+func (s *DNSService) queryRecords(ctx context.Context, zone, name, typ string, exact bool) ([]DNSRecord, error) {
 
 	if name == "" {
 		name = "@"
@@ -95,13 +106,18 @@ func (s *DNSService) QueryRecords(ctx context.Context, zone, name, typ string) (
 	if typ == "" {
 		typ = "ALL"
 	}
-	records, err := s.remote.DNSQuery(ctx, zone, name, typ)
+	query := s.remote.DNSQuery
+	if exact {
+		query = s.remote.DNSQueryExact
+	}
+	records, err := query(ctx, zone, name, typ)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]DNSRecord, 0, len(records))
 	for _, r := range records {
-		out = append(out, DNSRecord{Name: r.Name, Type: r.Type, Data: r.Data, Raw: r.Raw})
+		ttl := r.TTL
+		out = append(out, DNSRecord{Name: r.Name, Type: r.Type, Data: r.Data, Raw: r.Raw, TTL: &ttl})
 	}
 	return out, nil
 }
@@ -113,7 +129,7 @@ func (s *DNSService) AddRecord(ctx context.Context, in AddDNSRecordInput, actor,
 		return err
 	}
 	target := fmt.Sprintf("%s/%s %s %s", in.Zone, in.Name, in.Type, in.Data)
-	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, "", in.Data); err != nil {
+	if err := s.remote.DNSUpdateTTL(ctx, in.Zone, in.Name, in.Type, "", in.Data, in.TTL); err != nil {
 		s.audit.Failure(actor, "dns.record.add", target, ip, err)
 		return err
 	}
@@ -131,7 +147,7 @@ func (s *DNSService) UpdateRecord(ctx context.Context, in UpdateDNSRecordInput, 
 		return fmt.Errorf("oldData is required")
 	}
 	target := fmt.Sprintf("%s/%s %s", in.Zone, in.Name, in.Type)
-	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, in.OldData, in.NewData); err != nil {
+	if err := s.remote.DNSUpdateTTL(ctx, in.Zone, in.Name, in.Type, in.OldData, in.NewData, in.TTL); err != nil {
 		s.audit.Failure(actor, "dns.record.update", target, ip, err)
 		return err
 	}
@@ -146,7 +162,7 @@ func (s *DNSService) DeleteRecord(ctx context.Context, in AddDNSRecordInput, act
 		return err
 	}
 	target := fmt.Sprintf("%s/%s %s %s", in.Zone, in.Name, in.Type, in.Data)
-	if err := s.remote.DNSUpdate(ctx, in.Zone, in.Name, in.Type, in.Data, ""); err != nil {
+	if err := s.remote.DNSUpdateTTL(ctx, in.Zone, in.Name, in.Type, in.Data, "", in.TTL); err != nil {
 		s.audit.Failure(actor, "dns.record.delete", target, ip, err)
 		return err
 	}

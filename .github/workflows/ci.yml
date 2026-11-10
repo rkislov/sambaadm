@@ -83,6 +83,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/topology.cjs
       - name: Policy console browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/policy-console.cjs
+      - name: RSAT DNS and simplified modeling contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/rsat-managers.cjs
 
   gpui-compatibility:
     runs-on: ubuntu-24.04
