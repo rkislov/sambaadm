@@ -186,11 +186,12 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		}
 		local := GPOService{gpoCfg: cfg.GPO}
 		local.gpoCfg.ADMXPath = requested
-		defs, source, e := local.loadEditorDefinitions(nil, "")
+		var issues []TemplateImportIssue
+		defs, source, e := local.loadEditorDefinitionsReport(nil, "", &issues)
 		if e != nil {
 			return nil, e
 		}
-		response, e := catalogResponse(defs, source)
+		response, e := catalogResponse(defs, source, issues...)
 		if in.Name == "binary" {
 			response.Definitions = nil
 		}
@@ -267,11 +268,12 @@ func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method 
 				return fmt.Errorf("invalid SYSVOL template catalog path")
 			}
 			local := GPOService{}
-			defs, source, e := local.loadEditorDefinitions(&sysvolShare{local: sh, ctx: ctx}, parts[0])
+			var issues []TemplateImportIssue
+			defs, source, e := local.loadEditorDefinitionsReport(&sysvolShare{local: sh, ctx: ctx}, parts[0], &issues)
 			if e != nil {
 				return e
 			}
-			response, e := catalogResponse(defs, source)
+			response, e := catalogResponse(defs, source, issues...)
 			response.Definitions = nil // Binary catalogue retains all registry encodings without duplicating the public JSON.
 			out = response
 			return e

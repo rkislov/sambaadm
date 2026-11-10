@@ -74,7 +74,7 @@ func (s *Server) handleAPITemplateImport(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	count, err := s.svcs.GPO.RefreshTemplateCache(ctx)
+	report, err := s.svcs.GPO.RefreshTemplateCacheReport(ctx)
 	if err != nil {
 		if s.audit != nil {
 			s.audit.Failure(sessionFrom(r).Username, "gpo.templates.import", "configured source", r.RemoteAddr, err)
@@ -86,5 +86,5 @@ func (s *Server) handleAPITemplateImport(w http.ResponseWriter, r *http.Request)
 		s.audit.Success(sessionFrom(r).Username, "gpo.templates.import", "configured source", r.RemoteAddr)
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"count": count, "imported": time.Now().UTC(), "maxAgeSeconds": nil, "refreshPolicy": "manual"})
+	writeJSON(w, 200, map[string]any{"count": report.Count, "issues": report.Issues, "saved": report.Saved, "imported": time.Now().UTC(), "maxAgeSeconds": nil, "refreshPolicy": "manual"})
 }

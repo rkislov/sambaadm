@@ -591,18 +591,20 @@
     "/gpo/templates/import":
         "post":
             "summary": "Import or refresh the configured supported ADMX catalogue"
-            "description": "Admin and CSRF required. Imports static definitions for the current identity, without changing GPOs. Imported templates persist without expiry and are refreshed only through this operation. Save-time validation does not replace the imported catalogue. Request has a two-minute deadline; previous cache survives a failed import."
+            "description": "Admin and CSRF required. Imports static definitions for the current identity, without changing GPOs. Imported templates persist without expiry and are refreshed only through this operation. Save-time validation does not replace the imported catalogue. Request has a two-minute deadline. Per-file read/XML errors are returned in issues and do not stop other templates. A partial valid catalogue replaces the cache; if no definitions are usable, saved is false and the previous cache is preserved. Source access, cancellation and total resource-limit failures still abort the operation."
             "parameters":
                 - {"in": "header", "name": "X-CSRF-Token", "required": true, "schema": {"type": "string"}}
             "responses":
                 "200":
-                    "description": "Imported definition count and UTC timestamp"
+                    "description": "Definition count, cache save status, per-file diagnostics and UTC completion timestamp"
                     "content":
                         "application/json":
                             "schema":
                                 "type": "object"
                                 "properties":
                                     "count": {"type": "integer"}
+                                    "saved": {"type": "boolean", "description": "False when no definitions could be imported; previous cache retained"}
+                                    "issues": {"type": "array", "items": {"type": "object", "properties": {"file": {"type": "string"}, "template": {"type": "string"}, "error": {"type": "string"}}}}
                                     "imported": {"type": "string", "format": "date-time"}
                                     "maxAgeSeconds": {"type": "integer", "nullable": true, "description": "Null means no expiry"}
                                     "refreshPolicy": {"type": "string", "enum": ["manual"]}

@@ -168,6 +168,20 @@ func (s *smbPolicyStore) SetACL(name string, data []byte) error {
 // Empty admx_path selects the domain Central Store; a local directory or
 // a single ADMX file is also supported. SYSVOL editing always stays remote.
 func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([]policy.Definition, string, error) {
+	defs, source, err := s.loadEditorDefinitionsReport(share, domain, nil)
+	if err == nil && len(defs) == 0 {
+		err = fmt.Errorf("no usable policy templates; inspect the template import report")
+	}
+	return defs, source, err
+}
+
+func (s *GPOService) loadEditorDefinitionsReport(share *sysvolShare, domain string, issues *[]TemplateImportIssue) ([]policy.Definition, string, error) {
+	if issues == nil {
+		issues = new([]TemplateImportIssue)
+	}
+	addIssue := func(file, template string, err error) {
+		*issues = append(*issues, TemplateImportIssue{File: file, Template: template, Error: err.Error()})
+	}
 	if s.helpers != nil && s.gpoCfg.ADMXPath != "" {
 		var out helperADMXCatalog
 		e := s.helpers.Call(share.ctx, s.helpers.Config.HostNode, "admx.catalog", HostOperation{Path: s.gpoCfg.ADMXPath, Name: "binary"}, &out)
@@ -177,7 +191,7 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 		if !out.AllTemplates {
 			return nil, "", fmt.Errorf("Update sambaadm-helper to v0.41.0 or newer to import all ADMX templates")
 		}
-		return decodedCatalog(out)
+		return decodedCatalog(out, issues)
 	}
 	if share != nil && share.helpers != nil && s.gpoCfg.ADMXPath == "" {
 		var out helperADMXCatalog
@@ -186,7 +200,7 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 			if !out.AllTemplates {
 				return nil, "", fmt.Errorf("Update sambaadm-helper to v0.41.0 or newer to import all ADMX templates")
 			}
-			return decodedCatalog(out)
+			return decodedCatalog(out, issues)
 		}
 		if !strings.Contains(err.Error(), "unsupported SYSVOL helper method") {
 			return nil, "", err
@@ -300,6 +314,7 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 	var defs []policy.Definition
 	files, total := 0, 0
 	categories := map[string]string{}
+	seen := map[string]bool{}
 	for _, name := range names {
 		if share != nil {
 			if err := share.ctx.Err(); err != nil {
@@ -315,25 +330,53 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 		}
 		data, err := read(name)
 		if err != nil {
-			return nil, "", err
+			addIssue(name, name, err)
+			continue
 		}
 		var language []byte
+		languageName := ""
+		languageFailed := false
 		for _, locale := range []string{"ru-RU", "en-US"} {
-			language, err = read(locale + "/" + strings.TrimSuffix(name, path.Ext(name)) + ".adml")
+			languageName = locale + "/" + strings.TrimSuffix(name, path.Ext(name)) + ".adml"
+			language, err = read(languageName)
 			if err == nil {
 				break
 			}
 			if !os.IsNotExist(err) {
-				return nil, "", err
+				addIssue(languageName, name, err)
+				languageFailed = true
+				break
 			}
 		}
 		total += len(data) + len(language)
 		if total > 128<<20 {
 			return nil, "", fmt.Errorf("ADMX template catalog exceeds 128 MiB")
 		}
+		if languageFailed {
+			continue
+		}
 		parsed, err := policy.ParseADMX(name, data, language)
 		if err != nil {
-			return nil, "", fmt.Errorf("%s: %w", name, err)
+			file := name
+			if strings.HasPrefix(err.Error(), "ADML:") {
+				file = languageName
+			}
+			addIssue(file, name, err)
+			continue
+		}
+		duplicate := ""
+		for _, d := range parsed {
+			if seen[d.Scope+"/"+d.ID] {
+				duplicate = d.Scope + "/" + d.ID
+				break
+			}
+		}
+		if duplicate != "" {
+			addIssue(name, name, fmt.Errorf("duplicate policy identity %s", duplicate))
+			continue
+		}
+		for _, d := range parsed {
+			seen[d.Scope+"/"+d.ID] = true
 		}
 		defs = append(defs, parsed...)
 		if len(defs) > 60000 {
@@ -343,20 +386,17 @@ func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([
 			categories[key] = value
 		}
 	}
-	if len(defs) == 0 {
+	if share != nil && share.ctx.Err() != nil {
+		return nil, "", share.ctx.Err()
+	}
+	if len(defs) == 0 && len(*issues) == 0 {
 		return nil, "", fmt.Errorf("no ADMX policies found in the configured template source")
 	}
-	seen := map[string]bool{}
 	for i := range defs {
 		d := &defs[i]
 		if label := categories[d.SupportedOn]; label != "" {
 			d.SupportedOn = label
 		}
-		key := d.Scope + "/" + d.ID
-		if seen[key] {
-			return nil, "", fmt.Errorf("duplicate policy identity %s", key)
-		}
-		seen[key] = true
 		if label := categories[d.Category]; label != "" {
 			d.Category = label
 		} else if label := categories[d.Template+"/"+d.Category]; label != "" {
