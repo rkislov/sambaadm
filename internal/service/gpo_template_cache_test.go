@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -92,12 +93,12 @@ func TestTemplateCacheRestartIsolationFreshnessAndPermissions(t *testing.T) {
 	}
 	key, _ := s.templateCacheKey(share, "example.com")
 	c := *s.loadTemplateCache(key)
-	c.Loaded = time.Now().Add(-2 * templateCacheAge)
+	c.Loaded = time.Now().AddDate(-10, 0, 0)
 	if e = s.storeTemplateCache(c); e != nil {
 		t.Fatal(e)
 	}
-	if _, _, e = (&GPOService{gpoCfg: cfg}).editorDefinitions(share, "example.com"); !errors.Is(e, os.ErrNotExist) {
-		t.Fatalf("expired cache accepted: %v", e)
+	if got, _, err := (&GPOService{gpoCfg: cfg}).editorDefinitions(share, "example.com"); err != nil || !reflect.DeepEqual(got, defs) {
+		t.Fatalf("old import was unexpectedly expired: %v", err)
 	}
 }
 func TestEditorLockHonorsCancellation(t *testing.T) {
@@ -132,5 +133,41 @@ func TestTemplateBulkReadDoesNotFallBackOnPermissionFailure(t *testing.T) {
 	_, _, e := s.loadEditorDefinitions(&sysvolShare{helpers: client, node: cfg.Helper.Node, ctx: ctx}, "example.com")
 	if !errors.Is(e, os.ErrPermission) || calls.Load() != 1 {
 		t.Fatalf("permission failure was masked or read was not batched: calls=%d err=%v", calls.Load(), e)
+	}
+}
+
+func TestTemplateValidationDoesNotReplacePermanentImport(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "BaseALTTest.admx")
+	if err := os.WriteFile(file, []byte(typedEditorADMX), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s := &GPOService{gpoCfg: config.GPOConfig{ADMXPath: file, ManagedEditorFile: filepath.Join(dir, "settings", "gpo-editor.json")}}
+	share := &sysvolShare{ctx: context.Background()}
+	imported, _, err := s.editorDefinitions(share, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(file, []byte(typedEditorADMX+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	live, _, err := s.editorDefinitions(&sysvolShare{ctx: context.WithValue(context.Background(), freshTemplatesKey{}, true)}, "example.com")
+	if err != nil || live[0].Digest == imported[0].Digest {
+		t.Fatal("save-time validation did not read current templates", err)
+	}
+	stillImported, _, err := s.editorDefinitions(share, "example.com")
+	if err != nil || !reflect.DeepEqual(imported, stillImported) {
+		t.Fatal("validation replaced the permanent import", err)
+	}
+	// Memory pressure may evict entries from RAM, never from persistent storage.
+	for i := 0; i < 12; i++ {
+		if err = s.storeTemplateCache(templateCatalog{Schema: 1, Key: fmt.Sprint(i), Loaded: time.Now(), Source: "fixture", Definitions: imported}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	restarted := &GPOService{gpoCfg: s.gpoCfg}
+	cached, _, err := restarted.editorDefinitions(share, "example.com")
+	if err != nil || !reflect.DeepEqual(cached, imported) {
+		t.Fatal("another import evicted persistent templates", err)
 	}
 }

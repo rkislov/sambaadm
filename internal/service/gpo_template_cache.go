@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 )
 
 const templateCacheLimit = 64 << 20
-const templateCacheAge = time.Hour
 
 // Gob preserves registry literals, enum values and boolean encodings that are
 // deliberately omitted from the public policy JSON. No credentials are stored.
@@ -102,7 +100,7 @@ func (s *GPOService) templateCacheDir() string {
 func (s *GPOService) loadTemplateCache(key string) *templateCatalog {
 	s.catalogMu.Lock()
 	defer s.catalogMu.Unlock()
-	if c := s.catalogs[key]; c != nil && time.Since(c.Loaded) >= 0 && time.Since(c.Loaded) < templateCacheAge {
+	if c := s.catalogs[key]; c != nil {
 		return c
 	}
 	file := filepath.Join(s.templateCacheDir(), key+".gob")
@@ -120,7 +118,7 @@ func (s *GPOService) loadTemplateCache(key string) *templateCatalog {
 		return nil
 	}
 	c, e := decodeTemplateCatalog(raw)
-	if e != nil || c.Key != key || time.Since(c.Loaded) < 0 || time.Since(c.Loaded) >= templateCacheAge {
+	if e != nil || c.Key != key {
 		return nil
 	}
 	s.rememberCatalog(&c)
@@ -173,34 +171,7 @@ func (s *GPOService) storeTemplateCache(c templateCatalog) error {
 	s.catalogMu.Lock()
 	s.rememberCatalog(&c)
 	s.catalogMu.Unlock()
-	// Bound persistent storage to eight imported catalogues.
-	entries, _ := os.ReadDir(dir)
-	var files []os.DirEntry
-	for _, f := range entries {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), ".gob") {
-			files = append(files, f)
-		}
-	}
-	sort.Slice(files, func(i, j int) bool {
-		a, _ := files[i].Info()
-		b, _ := files[j].Info()
-		if a == nil || b == nil {
-			return files[i].Name() < files[j].Name()
-		}
-		return a.ModTime().Before(b.ModTime())
-	})
-	remaining := len(files)
-	for _, file := range files {
-		if remaining <= 8 {
-			break
-		}
-		if file.Name() == c.Key+".gob" {
-			continue
-		}
-		if e := os.Remove(filepath.Join(dir, file.Name())); e == nil {
-			remaining--
-		}
-	}
+
 	return nil
 }
 func (s *GPOService) editorDefinitions(share *sysvolShare, domain string) ([]policy.Definition, string, error) {
@@ -220,6 +191,10 @@ func (s *GPOService) editorDefinitions(share *sysvolShare, domain string) ([]pol
 	defs, source, e := s.loadEditorDefinitions(share, domain)
 	if e != nil {
 		return nil, "", e
+	}
+	// Save-time validation reads the live source without replacing the imported catalogue.
+	if fresh {
+		return defs, source, nil
 	}
 	// Cache failure must not turn a successful read into an unavailable editor.
 	if e := s.storeTemplateCache(templateCatalog{Schema: 1, Key: key, Loaded: time.Now().UTC(), Source: source, Definitions: defs}); e != nil {

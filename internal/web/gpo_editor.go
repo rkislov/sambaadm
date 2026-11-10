@@ -86,5 +86,5 @@ func (s *Server) handleAPITemplateImport(w http.ResponseWriter, r *http.Request)
 		s.audit.Success(sessionFrom(r).Username, "gpo.templates.import", "configured source", r.RemoteAddr)
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]any{"count": count, "imported": time.Now().UTC(), "maxAgeSeconds": 3600})
+	writeJSON(w, 200, map[string]any{"count": count, "imported": time.Now().UTC(), "maxAgeSeconds": nil, "refreshPolicy": "manual"})
 }

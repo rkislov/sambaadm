@@ -591,7 +591,7 @@
     "/gpo/templates/import":
         "post":
             "summary": "Import or refresh the configured supported ADMX catalogue"
-            "description": "Admin and CSRF required. Imports static definitions for the current identity, without changing GPOs. Private persistent cache lasts one hour. Request has a two-minute deadline; previous cache survives a failed import."
+            "description": "Admin and CSRF required. Imports static definitions for the current identity, without changing GPOs. Imported templates persist without expiry and are refreshed only through this operation. Save-time validation does not replace the imported catalogue. Request has a two-minute deadline; previous cache survives a failed import."
             "parameters":
                 - {"in": "header", "name": "X-CSRF-Token", "required": true, "schema": {"type": "string"}}
             "responses":
@@ -604,7 +604,8 @@
                                 "properties":
                                     "count": {"type": "integer"}
                                     "imported": {"type": "string", "format": "date-time"}
-                                    "maxAgeSeconds": {"type": "integer"}
+                                    "maxAgeSeconds": {"type": "integer", "nullable": true, "description": "Null means no expiry"}
+                                    "refreshPolicy": {"type": "string", "enum": ["manual"]}
                 "401": {"description": "Session required"}
                 "403": {"description": "Admin role and CSRF token required"}
                 "502": {"description": "Import or local cache write failed"}
