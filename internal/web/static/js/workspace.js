@@ -67,7 +67,7 @@
  {label:t('Делегирование LDAP/SYSVOL','LDAP/SYSVOL delegation'),method:'PUT',fullDelegation:true},
  {label:t('Права объекта LDAP','LDAP object permissions'),method:'GET',delegation:true},
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
- {...view(t('Параметры ALT','ALT settings'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
+ {...view(t('Редактор политик','Policy editor'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
         view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),
         action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[dn('container')]),
         action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[dn('container')],{confirm:true}),
@@ -438,16 +438,16 @@
 
   async function openALTEditor(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
-    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики ALT из шаблонов домена. Выберите раздел и найдите нужную настройку. Применение проверяется на ALT-клиенте.','ALT policies from domain templates. Select a scope and find a setting. Verify application on the ALT client.')));
+    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Административные шаблоны ADMX/ADML. Выберите раздел и папку слева, затем откройте параметр в списке. Применение политики проверяется на клиенте.','ADMX/ADML administrative templates. Select a configuration and folder, then open a setting in the list. Verify policy application on the client.')));
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
     const toolbar=el('div','workspace-form policy-toolbar');
     const scopeSelect=el('select');scopeSelect.id='alt-scope';for(const [value,label] of [['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]]){const o=el('option','',label);o.value=value;scopeSelect.append(o);}
     const scopeLabel=el('label','',t('Раздел политики','Policy scope'));scopeLabel.htmlFor=scopeSelect.id;
     const search=el('input');search.type='search';search.id='alt-search';search.placeholder=t('Название, описание или параметр','Name, description or parameter');const searchLabel=el('label','',t('Поиск политик','Search policies'));searchLabel.htmlFor=search.id;
     const category=el('select');category.id='alt-category';const categoryLabel=el('label','',t('Категория','Category'));categoryLabel.htmlFor=category.id;
-    toolbar.append(scopeLabel,scopeSelect,searchLabel,search,categoryLabel,category);
-    const content=el('div');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
-    const path=a.path(row);let model,selectedPolicy='',loading=0;const expanded=new Set();
+    toolbar.append(scopeLabel,scopeSelect,searchLabel,search);toolbar.classList.add('policy-console-toolbar');
+    const content=el('div','policy-console-content');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const path=a.path(row);let model,selectedPolicy='',loading=0;const consoleState={expanded:new Set(),status:'',sort:'label',direction:1,page:0,selected:''};
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
     function render(){
       if(!model)return;
@@ -455,22 +455,22 @@
       if(model.controller)content.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
       if(model.templateSource)content.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
       if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
-      const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===(s.category||s.template||''))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
-      content.append(el('p','muted',t('Найдено: ','Found: ')+matches.length+' / '+model.settings.length));
-      const layout=el('div','policy-layout');const navigation=el('nav','policy-navigation directory-tree');navigation.setAttribute('aria-label',t('Дерево политик ALT','ALT policy tree'));const detail=el('section','policy-detail');layout.append(navigation,detail);content.append(layout);
-      const groups=new Map();for(const setting of matches){const template=setting.template||'ALT';if(!groups.has(template))groups.set(template,new Map());const categories=groups.get(template);const name=setting.category||t('Общие','General');if(!categories.has(name))categories.set(name,[]);categories.get(name).push(setting);}
-      for(const [template,categories] of groups){const branch=el('details');branch.open=!!needle||expanded.has(template);branch.append(el('summary','',template));branch.addEventListener('toggle',()=>branch.open?expanded.add(template):expanded.delete(template));navigation.append(branch);
-        for(const [name,settings] of categories){const key=template+'/'+name;const folder=el('details');folder.open=!!needle||expanded.has(key);folder.append(el('summary','',name+' ('+settings.length+')'));folder.addEventListener('toggle',()=>folder.open?expanded.add(key):expanded.delete(key));branch.append(folder);
-          for(const setting of settings){const item=button(setting.label,()=>{selectedPolicy=setting.id;expanded.add(template);expanded.add(key);render();content.querySelector('[aria-current=true]')?.focus();},selectedPolicy===setting.id?'selected':'');item.title=stateLabel(setting.state);item.setAttribute('aria-current',selectedPolicy===setting.id?'true':'false');folder.append(item);}
-        }
-      }
-      if(!matches.some(s=>s.id===selectedPolicy))detail.append(el('p','muted',t('Выберите политику в дереве слева. Поиск раскрывает подходящие ветви.','Select a policy in the tree. Search expands matching branches.')));
+      const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===(s.category||s.template||'ALT'))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
+      if(!matches.some(s=>s.id===selectedPolicy))selectedPolicy='';
+      const consoleView=window.sambaadmPolicyConsole({settings:model.settings,matches,scope:model.scope||scopeSelect.value,state:consoleState,category:category.value,editing:!!selectedPolicy,
+        onScope:value=>{scopeSelect.value=value;scopeSelect.dispatchEvent(new Event('change'));},
+        onCategory:value=>{category.value=value;selectedPolicy='';consoleState.page=0;render();},
+        onOpen:id=>{selectedPolicy=id;render();content.querySelector('.policy-properties input[type=radio]')?.focus();}});
+      const detail=consoleView.editor;content.append(consoleView.layout);
+      if(selectedPolicy)detail.append(button(t('К списку параметров','Back to settings'),()=>{const id=selectedPolicy;selectedPolicy='';render();content.querySelector('[data-policy="'+CSS.escape(id)+'"] button')?.focus();},'policy-back'),el('h3','',matches.find(s=>s.id===selectedPolicy)?.label||selectedPolicy));
       for(const setting of matches.filter(s=>s.id===selectedPolicy)){
-        const form=el('form','workspace-form');form.style.marginBottom='1.5rem';const label=el('label','',setting.label);const select=el('select');
+        const form=el('form','workspace-form policy-properties-form');
         const readonly=setting.state==='unsupported'||!!setting.unsupported;
-        const states=readonly?['unsupported']:['not-configured','enabled','disabled'];for(const state of states){const option=el('option','',stateLabel(state));option.value=state;select.append(option);}select.value=readonly?'unsupported':setting.state;select.disabled=!admin||readonly;select.id='alt-setting-'+model.settings.indexOf(setting);label.htmlFor=select.id;form.append(label,select);
+        const select={value:readonly?'unsupported':setting.state,id:'alt-setting-'+model.settings.indexOf(setting)};
+        const stateGroup=el('fieldset','policy-state-options');stateGroup.append(el('legend','',setting.label));
+        const states=readonly?['unsupported']:['not-configured','enabled','disabled'];for(const state of states){const input=el('input');input.type='radio';input.name='alt-state';input.value=state;input.checked=select.value===state;input.disabled=!admin||readonly;const label=el('label','',stateLabel(state));label.prepend(input);stateGroup.append(label);input.addEventListener('change',()=>{if(input.checked)select.value=state;});}form.append(stateGroup);
         if(setting.template)form.append(el('p','mono',setting.template+' · '+(setting.category||'')+' · '+(setting.supportedOn||'')));
-        if(setting.description){const detail=el('details');const text=el('p','',setting.description);text.style.whiteSpace='pre-wrap';detail.append(el('summary','',t('Описание и требования','Description and requirements')),text);form.append(detail);}
+        if(setting.description){const detail=el('details','policy-properties-help');detail.open=true;const text=el('p','',setting.description);text.style.whiteSpace='pre-wrap';detail.append(el('summary','',t('Описание и требования','Description and requirements')),text);form.append(detail);}
         if(setting.unsupported)form.append(el('p','alert error',setting.unsupported));
         const controls=[];
         for(const field of setting.fields||[]){
@@ -480,14 +480,14 @@
           else {input=el('input');input.type=field.kind==='boolean'?'checkbox':field.kind==='decimal'?'number':'text';if(field.kind==='boolean')input.checked=!!current;else input.value=current==null?'':String(current);if(field.kind==='decimal'){input.min=String(field.min);input.max=String(field.max);input.step='1';}if(field.kind==='text'&&field.maxLength)input.maxLength=field.maxLength;}
           input.id=select.id+'-field-'+controls.length;const fieldLabel=el('label','',field.label||field.id);fieldLabel.htmlFor=input.id;form.append(fieldLabel,input);controls.push({field,input});
         }
-        const updateFields=()=>{for(const {field,input} of controls){input.disabled=!admin||readonly||select.value!=='enabled';input.required=select.value==='enabled'&&(field.required||field.kind==='decimal');}};select.addEventListener('change',updateFields);updateFields();
+        const updateFields=()=>{for(const {field,input} of controls){input.disabled=!admin||readonly||select.value!=='enabled';input.required=select.value==='enabled'&&(field.required||field.kind==='decimal');}};stateGroup.addEventListener('change',updateFields);updateFields();
         if(admin&&!readonly){
           const confirmLabel=el('label','workspace-confirm',t('Подтверждаю изменение этой политики','I confirm this policy change'));const confirm=el('input');confirm.type='checkbox';confirm.required=true;confirmLabel.prepend(confirm);form.append(confirmLabel);
           const save=el('button','',t('Сохранить','Save'));save.type='submit';form.append(save);
           form.addEventListener('submit',async e=>{e.preventDefault();if(!form.reportValidity())return;
             const values={};if(select.value==='enabled')for(const {field,input} of controls){values[field.id]=field.kind==='boolean'?input.checked:field.kind==='list'?input.value.split(/\r?\n/).filter(x=>x!==''):input.value;}
             const payload={id:setting.id,state:select.value,revision:model.revision,scope:model.scope||scopeSelect.value,values};
-            dialog.querySelectorAll('button,select,input,textarea').forEach(x=>x.disabled=true);message(notice,t('Сохранение…','Saving…'));
+            dialog.querySelectorAll('button,select,input,textarea').forEach(x=>{if(!x.closest('.workspace-dialog-close'))x.disabled=true;});message(notice,t('Сохранение…','Saving…'));
             try{const result=await request(path,'PUT',payload);if(generation!==dialogGeneration)return;model=result;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
             catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);content.replaceChildren(button(t('Перезагрузить параметры','Reload settings'),()=>refresh()));}
             finally{if(generation===dialogGeneration){toolbar.querySelectorAll('input,select').forEach(x=>x.disabled=false);dialog.querySelectorAll('button').forEach(x=>x.disabled=false);}}
@@ -497,10 +497,10 @@
     }
     async function refresh(){const requestID=++loading;model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
       const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''));if(generation!==dialogGeneration||requestID!==loading)return;model=result;
-      category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
+      category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'ALT').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
       render();message(notice,'');
     }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
-    scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';refresh();});search.addEventListener('input',render);category.addEventListener('change',render);
+    scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';consoleState.page=0;consoleState.selected='';refresh();});search.addEventListener('input',()=>{consoleState.page=0;render();});category.addEventListener('change',()=>{selectedPolicy='';consoleState.page=0;render();});
     await refresh();
   }
   async function openDNSEditor(zone, initialName) {
@@ -964,20 +964,21 @@
     let serial=0;
     async function refresh(){const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
       try{const [topology,connections]=await Promise.all([request('/sites/topology'),request('/repl/connections')]);if(generation!==dialogGeneration||current!==serial)return;
-        const dcs=topology.controllers||[];message(notice,'');
+        const dcs=[...(topology.controllers||[])].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||a.dns.localeCompare(b.dns));message(notice,'');
         body.append(el('p','muted',t('Стрелки показывают направление источник → назначение. Сплошная линия — включено, пунктир — отключено. Это конфигурация AD, а не подтверждение исправности репликации.','Arrows show source → destination. Solid: enabled; dashed: disabled. AD configuration does not confirm replication health.')));
-        const map=el('div','topology-map');const width=720,height=Math.max(180,Math.ceil(dcs.length/3)*145+40);map.style.aspectRatio=width+'/'+height;
+        const map=el('div','topology-map');const columns=Math.max(1,Math.ceil(Math.sqrt((dcs.length||1)*1.3))),width=Math.max(720,columns*240),height=Math.max(180,Math.ceil(dcs.length/columns)*145+40);map.style.aspectRatio=width+'/'+height;
         const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('aria-hidden','true');map.append(svg);
         const shape=(tag,attrs)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);return n;};
         const defs=shape('defs',{}),marker=shape('marker',{id:'topology-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});marker.append(shape('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#477887'}));defs.append(marker);svg.append(defs);
-        const positions=new Map(dcs.map((dc,i)=>[dc.dns.toLowerCase(),{x:width/(Math.min(3,dcs.length-Math.floor(i/3)*3)+1)*((i%3)+1),y:80+Math.floor(i/3)*145}]));
-        const missing=[];for(const connection of connections){const from=positions.get(connection.source.toLowerCase()),to=positions.get(connection.destination.toLowerCase());if(!from||!to){missing.push(connection);continue;}const reverse=connections.some(c=>c.source.toLowerCase()===connection.destination.toLowerCase()&&c.destination.toLowerCase()===connection.source.toLowerCase());const offset=reverse?18:0,dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;const line=shape('polyline',{points:`${from.x},${from.y} ${(from.x+to.x)/2-dy/length*offset},${(from.y+to.y)/2+dx/length*offset} ${to.x},${to.y}`,fill:'none',stroke:'#477887','stroke-width':2,'stroke-dasharray':connection.enabled?'':'7 5','marker-mid':'url(#topology-arrow)'});const hint=shape('title',{});hint.textContent=connection.source+' → '+connection.destination+(connection.automatic?' (KCC)':'');line.append(hint);svg.append(line);}
+        const positions=new Map(dcs.map((dc,i)=>[dc.dns.toLowerCase(),{x:width/(Math.min(columns,dcs.length-Math.floor(i/columns)*columns)+1)*((i%columns)+1),y:80+Math.floor(i/columns)*145}]));
+        const pairs=new Set(connections.map(c=>JSON.stringify([c.source.toLowerCase(),c.destination.toLowerCase()])));
+        const missing=[];for(const connection of connections){const from=positions.get(connection.source.toLowerCase()),to=positions.get(connection.destination.toLowerCase());if(!from||!to){missing.push(connection);continue;}const reverse=pairs.has(JSON.stringify([connection.destination.toLowerCase(),connection.source.toLowerCase()]));const offset=reverse?18:0,dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;const line=shape('polyline',{points:`${from.x},${from.y} ${(from.x+to.x)/2-dy/length*offset},${(from.y+to.y)/2+dx/length*offset} ${to.x},${to.y}`,fill:'none',stroke:'#477887','stroke-width':2,'stroke-dasharray':connection.enabled?'':'7 5','marker-mid':'url(#topology-arrow)'});const hint=shape('title',{});hint.textContent=connection.source+' → '+connection.destination+(connection.automatic?' (KCC)':'');line.dataset.source=connection.source.toLowerCase();line.dataset.destination=connection.destination.toLowerCase();line.append(hint);svg.append(line);}
         const form=el('form','workspace-form');const source=el('select'),destination=el('select');source.name='source';destination.name='destination';
         for(const select of [source,destination]){select.required=true;const empty=el('option','',t('Выберите контроллер','Select controller'));empty.value='';select.append(empty);for(const dc of dcs){const option=el('option','',dc.dns+' · '+dc.site);option.value=dc.dns;select.append(option);}}
         const update=()=>{map.querySelectorAll('.topology-node').forEach(n=>{n.classList.toggle('source',n.dataset.dc===source.value);n.classList.toggle('destination',n.dataset.dc===destination.value);});destination.setCustomValidity(source.value&&source.value===destination.value?t('Выберите разные контроллеры','Choose different controllers'):'');confirm.checked=false;};
-        let dragged='';for(const dc of dcs){const point=positions.get(dc.dns.toLowerCase());const node=button(dc.name+'\n'+dc.site,()=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();},'topology-node');node.title=dc.dns;node.style.left=point.x/width*100+'%';node.style.top=point.y/height*100+'%';node.draggable=admin;node.dataset.dc=dc.dns;
+        let dragged='';for(const dc of dcs){const point=positions.get(dc.dns.toLowerCase());const node=button(dc.name+'\n'+dc.site,()=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();},'topology-node');node.title=dc.dns;node.style.left=point.x/width*100+'%';node.style.top=point.y/height*100+'%';node.draggable=admin;node.dataset.dc=dc.dns;node.dataset.site=dc.site||'';node.dataset.x=point.x;node.dataset.y=point.y;node.style.width='180px';
           node.addEventListener('dragstart',e=>{dragged=dc.dns;e.dataTransfer.setData('text/plain',dc.dns);e.dataTransfer.effectAllowed='link';});node.addEventListener('dragend',()=>{dragged='';});node.addEventListener('dragover',e=>{if(admin&&dragged&&dragged!==dc.dns){e.preventDefault();e.dataTransfer.dropEffect='link';}});node.addEventListener('drop',e=>{e.preventDefault();if(!admin||!dragged||dragged===dc.dns)return;source.value=dragged;destination.value=dc.dns;dragged='';update();form.scrollIntoView({block:'nearest'});});map.append(node);}
-        body.append(map);if(!dcs.length)body.append(el('p','muted',t('Контроллеры не найдены','No controllers found')));
+        body.append(window.sambaadmTopologyViewport(map,width,height));if(!dcs.length)body.append(el('p','muted',t('Контроллеры не найдены','No controllers found')));
         if(missing.length)body.append(el('p','alert error',t('Некоторые соединения ссылаются на отсутствующие контроллеры: ','Some connections reference missing controllers: ')+missing.length));
         const confirm=el('input');confirm.type='checkbox';confirm.required=true;
         if(admin){body.append(el('p','',t('Перетащите источник на назначение или нажмите два узла по очереди. Можно также выбрать контроллеры из списков. Связь создаётся только после подтверждения.','Drag the source onto the destination or click two nodes in order. You can also use the lists. Confirm before creating the connection.')));

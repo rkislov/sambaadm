@@ -102,3 +102,78 @@ tbody tr:hover { @apply bg-slate-50; }
 .login-advanced { @apply my-5 rounded-xl border border-slate-200 bg-slate-50 p-3; }
 .login-advanced summary { @apply cursor-pointer text-xs font-medium text-slate-500; }
 .login-advanced .session-auth-choice { @apply mb-0 mt-3; }
+
+@layer components {
+.topology-controls { @apply flex flex-wrap items-center gap-2; }
+.topology-controls input[type=search] { width:min(100%,260px); }
+.topology-controls select { width:auto;max-width:100%; }
+.topology-viewport { @apply relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50; height:480px;max-height:65vh;touch-action:none; }
+.topology-viewport .topology-map { border:0;background:transparent; }
+.topology-viewport .topology-node[hidden] { display:none; }
+.topology-viewport .topology-node.focused { outline:3px solid #0f766e;outline-offset:3px; }
+}
+
+/* Compact management console: folders, paged settings list, and properties. */
+.workspace-dialog:has(.policy-console) { width:min(1480px,96vw); }
+.policy-console { display:grid;grid-template-columns:minmax(240px,290px) minmax(0,1fr);border:1px solid var(--border);border-radius:10px;overflow:hidden;min-height:500px;background:white; }
+.policy-console-tree { border-right:1px solid var(--border);background:#f8fafc;max-height:65vh;overflow:auto;padding:10px;font-size:12px; }
+.policy-console-tree details details { margin-left:12px; }
+.policy-console-tree summary { cursor:pointer;padding:5px 0;overflow-wrap:anywhere; }
+.policy-console-tree summary::marker { color:#64748b; }
+.policy-console-tree summary>button,.policy-console-tree .policy-folder { border:0;box-shadow:none;background:transparent;color:var(--ink);font-size:12px;justify-content:start;text-align:left;display:inline-flex;padding:4px 6px;border-radius:4px;overflow-wrap:anywhere;max-width:100%; }
+.policy-console-tree .policy-folder { display:flex;width:100%;margin:3px 0; }
+.policy-console-tree .policy-folder::before { content:'';width:13px;height:10px;border:1px solid #c9a648;border-radius:2px;background:#fef3c7;flex-shrink:0; }
+.policy-console-tree button.selected { background:#dbeafe;color:#1e3a8a; }
+.policy-console-main { min-width:0;padding:0; }
+.policy-console-heading { margin:0;padding:10px 14px;background:#eef2f6;border-bottom:1px solid var(--border); }
+.policy-list-tools,.policy-list-pager { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:8px 12px;font-size:12px;border-bottom:1px solid var(--border); }
+.policy-list-tools select { width:auto;max-width:100%;padding:5px 8px;font-size:12px; }
+.policy-settings-scroll { max-height:42vh;overflow:auto; }
+.policy-settings-table { width:100%;table-layout:fixed;font-size:12px; }
+.policy-settings-table th { position:sticky;top:0;background:#f8fafc;z-index:1; }
+.policy-settings-table th,.policy-settings-table td { padding:5px 10px;overflow-wrap:anywhere;border-bottom:1px solid #e2e8f0;vertical-align:top; }
+.policy-settings-table th:first-child { width:40%; }
+.policy-settings-table th button,.policy-settings-table .policy-setting-link { padding:0;background:transparent;color:inherit;border:0;box-shadow:none;border-radius:0;text-align:left;font-size:inherit;justify-content:start; }
+.policy-settings-table th button { font-weight:600; }
+.policy-settings-table th[aria-sort=ascending] button::after { content:' ↑'; }
+.policy-settings-table th[aria-sort=descending] button::after { content:' ↓'; }
+.policy-settings-table tr.selected { background:#dbeafe; }
+.policy-settings-table tbody tr { cursor:pointer; }
+.policy-settings-table .policy-setting-link { color:#1e3a5f;text-decoration:underline;text-underline-offset:3px; }
+.policy-list-pager button { padding:4px 10px;font-size:12px; }
+.policy-list-preview { border-top:1px solid var(--border);padding:12px 16px;max-height:24vh;overflow:auto; }
+.policy-list-preview h4 { margin:0; }.policy-help-text { white-space:pre-wrap; }
+.policy-state.state-enabled { color:#166534; }.policy-state.state-disabled { color:#9a3412; }.policy-state.state-unsupported { color:#64748b; }
+.policy-properties { min-width:0;padding:16px;max-height:65vh;overflow:auto; }
+.policy-back { font-size:12px;padding:5px 10px; }
+.policy-state-options { display:grid;gap:8px;margin:0;border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0; }
+.policy-state-options label { display:flex;align-items:center;gap:8px; }
+.policy-properties-help { background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px; }
+.policy-console-toolbar.policy-toolbar { grid-template-columns:minmax(140px,1fr) minmax(200px,3fr); }
+@media(max-width:700px) {
+ .policy-console { grid-template-columns:1fr;min-height:0; }
+ .policy-console-tree { max-height:28vh;border-right:0;border-bottom:1px solid var(--border); }
+ .policy-settings-scroll { max-height:40vh; }
+ .policy-settings-table { min-width:570px; }
+ .policy-properties { max-height:none; }
+ .policy-console-toolbar.policy-toolbar { grid-template-columns:1fr; }
+ .policy-console-toolbar.policy-toolbar>:nth-child(n) { grid-area:auto; }
+}
+.policy-console-content > p.mono { display:inline-block;margin:0 1rem .5rem 0;font-size:11px; }
+.workspace-dialog .policy-state-options input[type=radio] { width:16px;height:16px;min-height:0;padding:0;flex:0 0 16px; }
+.policy-state-options label { min-width:0;overflow-wrap:anywhere; }
+.policy-console { height:min(630px,58vh);min-height:400px; }
+.policy-console-tree { max-height:none; }
+.policy-console-main { display:flex;flex-direction:column;overflow:hidden; }
+.policy-settings-scroll { flex:1;min-height:100px;max-height:none; }
+.policy-settings-table th button,.policy-settings-table .policy-setting-link { min-height:20px;line-height:20px; }
+.policy-console-tree summary>button,.policy-console-tree .policy-folder { min-height:24px; }
+.policy-list-preview { flex-shrink:0;max-height:18vh; }
+.policy-properties { flex:1;min-height:0;max-height:none; }
+@media(max-width:700px) {
+ .policy-console { height:auto;min-height:0; }
+ .policy-console-tree { max-height:28vh; }
+ .policy-settings-scroll { flex:none;max-height:40vh; }
+ .policy-settings-table .policy-setting-link { min-height:32px; }
+ .policy-properties { flex:none; }
+}
