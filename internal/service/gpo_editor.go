@@ -148,10 +148,10 @@ func gptVersion(data []byte, replace *uint32) (uint32, []byte, error) {
 	}
 	return uint32(v), encode(strings.Join(lines, "\n")), nil
 }
-func (s *GPOService) editorSnapshot(ctx context.Context, gpo string, share *sysvolShare, locked bool, scope string) (*editorSnapshot, error) {
-	if !s.gpoCfg.EditorEnabled {
-		return nil, fmt.Errorf("%w: enable gpo.editor_enabled to edit administrative templates", ErrEditorUnavailable)
-	}
+
+// readPolicySnapshot only reads LDAP, templates and SYSVOL. Editor entry points
+// check their feature flag separately; modeling can use this reader directly.
+func (s *GPOService) readPolicySnapshot(ctx context.Context, gpo string, share *sysvolShare, locked bool, scope string) (*editorSnapshot, error) {
 	if !looksLikeGUID(gpo) {
 		return nil, fmt.Errorf("GPO GUID required")
 	}
@@ -282,14 +282,18 @@ func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPo
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
 	var out *ALTPolicy
-	if !s.gpoCfg.EditorEnabled {
-		return nil, fmt.Errorf("%w: set gpo.editor_enabled: true; installed ADMX files alone do not enable the editor", ErrEditorUnavailable)
+	enabled, settingErr := s.EditorEnabled()
+	if settingErr != nil {
+		return nil, settingErr
+	}
+	if !enabled {
+		return nil, fmt.Errorf("%w: включите редактор в «Настройки → Редактор GPO»", ErrEditorUnavailable)
 	}
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
 	}
 	err := s.sysvol(ctx, s.remote, s.gpoCfg.SMBPort, func(share *sysvolShare) error {
-		snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
+		snap, e := s.readPolicySnapshot(ctx, gpo, share, false, scope)
 		if e != nil {
 			return e
 		}
@@ -338,8 +342,12 @@ func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTCh
 			s.audit.Failure(actor, "gpo.alt.set", gpo+"/"+change.Scope+"/"+change.ID, ip, err)
 		}
 	}()
-	if !s.gpoCfg.EditorEnabled {
-		return nil, fmt.Errorf("%w: set gpo.editor_enabled: true; installed ADMX files alone do not enable the editor", ErrEditorUnavailable)
+	enabled, settingErr := s.EditorEnabled()
+	if settingErr != nil {
+		return nil, settingErr
+	}
+	if !enabled {
+		return nil, fmt.Errorf("%w: включите редактор в «Настройки → Редактор GPO»", ErrEditorUnavailable)
 	}
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: configure service credentials for SMB SYSVOL access", ErrEditorUnavailable)
@@ -359,7 +367,7 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	if scope != "Machine" && scope != "User" {
 		return nil, fmt.Errorf("%w: invalid scope", policy.ErrInvalidValue)
 	}
-	snap, e := s.editorSnapshot(ctx, gpo, share, false, scope)
+	snap, e := s.readPolicySnapshot(ctx, gpo, share, false, scope)
 	if e != nil {
 		return nil, e
 	}
@@ -417,7 +425,7 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	}
 	// The snapshot might predate another editor's completed save. Recheck
 	// under the exclusive journal before touching either policy file.
-	current, e := s.editorSnapshot(ctx, gpo, share, true, scope)
+	current, e := s.readPolicySnapshot(ctx, gpo, share, true, scope)
 	if e != nil || current.revision != snap.revision {
 		cleanup := snap.root.Remove(editorJournal)
 		if e == nil {
@@ -483,7 +491,7 @@ func (s *GPOService) setALTSetting(ctx context.Context, gpo string, change ALTCh
 	}
 	s.audit.Success(actor, "gpo.alt.set", gpo+"/"+change.Scope+"/"+change.ID+"="+change.State, ip)
 	// Return fresh revision including the updated LDAP extension metadata.
-	fresh, e := s.editorSnapshot(ctx, gpo, share, false, scope)
+	fresh, e := s.readPolicySnapshot(ctx, gpo, share, false, scope)
 	if e != nil {
 		return nil, e
 	}

@@ -248,8 +248,8 @@ func (s *GPOService) Model(ctx context.Context, in GPModelInput) (*GPModelReport
 		}
 		report.Sections = append(report.Sections, GPModelSection{Scope: item.scope, Container: item.container, Links: links, Values: []GPModelValue{}, Settings: []GPModelSetting{}, Warnings: []string{}})
 	}
-	if !s.gpoCfg.EditorEnabled || s.remote == nil {
-		return nil, ErrEditorUnavailable
+	if s.remote == nil {
+		return nil, fmt.Errorf("policy modeling requires a configured SYSVOL connection")
 	}
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
@@ -279,7 +279,7 @@ func (s *GPOService) Model(ctx context.Context, in GPModelInput) (*GPModelReport
 				if _, ok := records[id]; ok {
 					continue
 				}
-				snap, e := s.editorSnapshot(ctx, l.GUID, share, false, section.Scope)
+				snap, e := s.readPolicySnapshot(ctx, l.GUID, share, false, section.Scope)
 				if e != nil {
 					l.Reason = "read-error"
 					section.Incomplete = true

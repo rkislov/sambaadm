@@ -156,6 +156,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/settings/helpers", s.enrollHelper)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsPost)
+		r.Post("/settings/gpo-editor", s.handleGPOEditorSettings)
 	})
 
 	r.Route("/api/v1", func(r chi.Router) {

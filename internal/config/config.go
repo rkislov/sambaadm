@@ -52,6 +52,7 @@ type SambaConfig struct {
 
 // GPOConfig controls remote policy editing and SYSVOL distribution.
 type GPOConfig struct {
+	ManagedEditorFile  string        `mapstructure:"-"`
 	ReplicationTimeout time.Duration `mapstructure:"replication_timeout"`
 	DelegationStateDir string        `mapstructure:"delegation_state_dir"`
 	ScriptBackupKeep   int           `mapstructure:"script_backup_keep"`
@@ -66,6 +67,7 @@ type GPOConfig struct {
 }
 
 type ServerConfig struct {
+	SettingsDir    string    `mapstructure:"settings_dir"`
 	CertificateDir string    `mapstructure:"certificate_dir"`
 	EnrollmentDir  string    `mapstructure:"enrollment_dir"`
 	SurveyDir      string    `mapstructure:"survey_dir"`
@@ -150,6 +152,10 @@ func Load(cfgFile string) (*Config, error) {
 		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
 	}
 	cfg.Source = v.ConfigFileUsed()
+	if !filepath.IsAbs(cfg.Server.SettingsDir) {
+		return nil, fmt.Errorf("server.settings_dir requires an absolute path")
+	}
+	cfg.GPO.ManagedEditorFile = filepath.Join(cfg.Server.SettingsDir, "gpo-editor.json")
 	if !filepath.IsAbs(cfg.Server.CertificateDir) {
 		return nil, fmt.Errorf("server.certificate_dir requires an absolute path")
 	}
@@ -195,6 +201,7 @@ func setDefaults(v *viper.Viper) {
 		certificateDir = filepath.Join(base, "sambaadm", "certificates")
 	}
 	v.SetDefault("server.certificate_dir", certificateDir)
+	v.SetDefault("server.settings_dir", "/var/lib/sambaadm/settings")
 	v.SetDefault("server.survey_dir", "/var/lib/sambaadm/surveys")
 	v.SetDefault("server.listen", ":8080")
 	v.SetDefault("server.metrics", true)

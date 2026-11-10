@@ -12,6 +12,7 @@
     {{if canAdmin .Role}}<section class="setup-card"><h2>Сертификаты и подключения</h2><p class="muted">LDAP контроллера, доверенные центры сертификации и HTTPS-helper.</p><a class="btn" href="/settings/certificates">Управлять сертификатами</a></section>{{end}}
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}
+    {{if canAdmin .Role}}<section class="setup-card"><h2>Редактор GPO</h2><form method="post" action="/settings/gpo-editor"><input type="hidden" name="csrf_token" value="{{.CSRF}}"><fieldset class="setup-options"><label><input type="checkbox" name="enabled" value="true" {{if .Content.EditorEnabled}}checked{{end}}><span>Включить редактор параметров GPO<small>Разрешает работу с параметрами ALT и административными шаблонами. Изменения доступны только администраторам. Состояние сохраняется после перезапуска.</small></span></label></fieldset><p class="muted">Моделирование и объяснение применения политик доступны при выключенном редакторе. Для моделирования нужны шаблоны ADMX и доступ к SYSVOL.</p><button type="submit">Сохранить настройку редактора</button></form></section>{{end}}
     <form method="post" action="/settings" class="form-card">
       {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
       <label>{{t .Lang "settings.lang"}}

@@ -304,9 +304,20 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	enabled := false
+	var err error
+	if auth.CanAdmin(sessionFrom(r).Role) {
+		enabled, err = s.cfg.GPO.EffectiveEditorEnabled()
+	}
 	pd := s.page(r, "settings.title", map[string]any{
-		"Lang": langFrom(r),
+		"Lang": langFrom(r), "EditorEnabled": enabled,
 	})
+	if err != nil {
+		pd.Error = "Не удалось прочитать настройку редактора GPO: " + err.Error()
+	}
+	if r.URL.Query().Get("gpo-editor") == "saved" {
+		pd.Flash = "Настройка редактора GPO сохранена. Моделирование доступно независимо от неё."
+	}
 	s.render(w, "settings/index.html", pd)
 }
 

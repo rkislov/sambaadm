@@ -124,7 +124,8 @@ employeeID, employeeNumber. Остальные ключи отклоняются
 ### POST /api/v1/gpo/model — моделирование ALT / Registry.pol
 
 Операция только читает данные, доступна всем авторизованным ролям; нужен
-`X-CSRF-Token`. Требуются настройки редактора ALT и доступ к SYSVOL.
+`X-CSRF-Token`. Требуются шаблоны ALT и доступ к SYSVOL. Флаг
+`gpo.editor_enabled` не требуется и не изменяется моделированием.
 
 ```json
 {

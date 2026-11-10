@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -101,6 +102,42 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("enum wire data mismatch")
+	}
+	// Read-only modeling must work with the editor disabled, without changing
+	// the policy revision/files or allowing editor writes.
+	ou, e := s.OU.Create(ctx, CreateOUInput{Name: "Model-" + fmt.Sprint(time.Now().UnixNano())}, "test", "")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { s.OU.Delete(context.Background(), ou.DN, "test", "") })
+	if e = s.GPO.Link(ctx, ou.DN, guid, "test", ""); e != nil {
+		t.Fatal(e)
+	}
+	s.GPO.gpoCfg.EditorEnabled = false
+	report, e := s.GPO.Model(ctx, GPModelInput{User: ou.DN, Computer: ou.DN, Loopback: "none", Security: "allow", WMI: "allow"})
+	if e != nil || report == nil || len(report.Sections) != 2 {
+		t.Fatalf("model with disabled editor: %+v %v", report, e)
+	}
+	modeled := false
+	for _, section := range report.Sections {
+		if section.Scope == "User" {
+			for _, setting := range section.Settings {
+				if setting.Definition.ID == id && setting.State == "enabled" {
+					modeled = true
+				}
+			}
+		}
+	}
+	if !modeled {
+		t.Fatalf("GPO values not read with editor disabled: %+v", report)
+	}
+	if _, e = s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: id, Scope: "User", State: "disabled", Revision: saved.Revision}, "test", ""); !errors.Is(e, ErrEditorUnavailable) {
+		t.Fatalf("editor write allowed while disabled: %v", e)
+	}
+	s.GPO.gpoCfg.EditorEnabled = true
+	unchanged, e := s.GPO.ALTSettingsScope(ctx, guid, "User")
+	if e != nil || unchanged.Revision != saved.Revision || unchanged.Version != saved.Version {
+		t.Fatalf("model/write rejection changed policy: %+v %v", unchanged, e)
 	}
 	invalid := map[string]json.RawMessage{}
 	for k, v := range values {

@@ -273,10 +273,19 @@
     if(!data||typeof data!=='object'){describe(data,parent);return;}
     const list=el('ul','directory-tree');for(const [name,item] of Object.entries(data)){const li=el('li');const branch=el('details');branch.append(el('summary','',name));describeTree(item,branch);li.append(branch);list.append(li);}parent.append(list);
   }
+  // Created before any async loading: every modal remains dismissible even
+  // when its request is pending or its content is longer than the viewport.
+  function resetDialog(){
+    dialog.replaceChildren();
+    const bar=el('div','workspace-dialog-close');
+    const close=button(t('Закрыть','Close'),closeOperation);
+    close.setAttribute('aria-label',t('Закрыть окно','Close dialog'));
+    bar.append(close);dialog.append(bar);
+  }
   function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
   async function openGroupMembers(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Участники группы','Group members'));title.id='operation-title';
     const notice=el('p','workspace-message'),members=el('div'),results=el('div');notice.setAttribute('aria-live','polite');
     dialog.append(title,el('p','',row.samAccountName),el('p','muted',t('Участниками могут быть пользователи, группы и компьютеры. Основная группа пользователя задаётся атрибутом primaryGroupID и не отображается в списке прямого членства.','Members may be users, groups or computers. A user’s primary group is set by primaryGroupID and is not listed as direct membership.')),notice,members);
@@ -309,7 +318,7 @@
     try{await refresh();if(generation===dialogGeneration)message(notice,'');}catch(e){if(generation===dialogGeneration){message(notice,e.message,true);members.append(button(t('Повторить','Retry'),()=>openGroupMembers(row)));}}
   }
   async function openScriptsEditor(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Сценарии групповой политики','Group policy scripts'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Команды выполняются на клиентах при обработке политики. Сохраняется выбранное событие и тип сценариев. Удаление назначения сохраняет файл в SYSVOL.','Commands run on clients during policy processing. Save updates the selected event and script type. Removing an assignment retains its SYSVOL file.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -357,7 +366,7 @@
     await refresh();
   }
   async function openScriptMaintenance(row){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();const title=el('h2','',t('Резервные копии и восстановление','Backups and recovery'));title.id='operation-title';
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Резервные копии и восстановление','Backups and recovery'));title.id='operation-title';
     const notice=el('p','workspace-message'),list=el('div'),preview=el('section');notice.setAttribute('aria-live','polite');dialog.append(title,el('p','',row.displayName||row.guid),notice,list,preview,button(t('Вернуться к сценариям','Back to scripts'),()=>openScriptsEditor(row)),button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
     const path='/gpo/'+enc(row.guid)+'/scripts';let state,working=false;const current=()=>generation===dialogGeneration;
     async function refresh(){message(notice,t('Загрузка копий…','Loading backups…'));try{const data=await request(path+'/maintenance');if(!current())return;state=data;preview.replaceChildren();render();message(notice,'');}catch(e){if(current())message(notice,e.message,true);}}
@@ -381,7 +390,7 @@
     await refresh();
   }
   async function openUserCard(a,row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     const tabs=el('div','workspace-tools');let activeTab='profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));const extendedTab=button(t('Расширенные атрибуты','Extended attributes'),()=>selectTab('extended'));tabs.append(profileTab,extendedTab,groupsTab,button(t('Перезагрузить карточку','Reload profile'),refresh),button(t('Закрыть','Close'),closeOperation));dialog.append(title,notice,tabs,body);dialog.showModal();
@@ -428,7 +437,7 @@
   }
 
   async function openALTEditor(a,row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Политики ALT из шаблонов домена. Выберите раздел и найдите нужную настройку. Применение проверяется на ALT-клиенте.','ALT policies from domain templates. Select a scope and find a setting. Verify application on the ALT client.')));
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
     const toolbar=el('div','workspace-form policy-toolbar');
@@ -497,7 +506,7 @@
   async function openDNSEditor(zone, initialName) {
     lastFocus=document.activeElement;
     const generation=++dialogGeneration;
-    dialog.replaceChildren();
+    resetDialog();
     const title=el('h2','',t('Записи DNS · ','DNS records · ')+zone.name);title.id='operation-title';
     const notice=el('p','workspace-message'), body=el('div'), editor=el('div');
     const query=el('form','workspace-form');
@@ -563,7 +572,7 @@
     if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
     if(row)dialog.append(el('p','mono',cfg.id(row)||row.dn||''));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
@@ -628,7 +637,7 @@
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
   }
   async function openRODC() {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();let serial=0;
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0;
     const title=el('h2','',t('Кэш и авторизации RODC','RODC cache and authentication'));title.id='operation-title';
     const notice=el('p','workspace-message'),controller=el('select'),body=el('section');controller.setAttribute('aria-label',t('Контроллер RODC','RODC controller'));
     const pick=el('label','',t('Контроллер RODC','RODC controller'));pick.append(controller);
@@ -691,7 +700,7 @@
   }
 
   async function openRepair(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Исправление SYSVOL','Repair SYSVOL'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div'),endpoint='/gpo/'+enc(gpoID(row))+'/repair';let serial=0;
     dialog.append(title,el('p','alert',t('Выполняйте в окне обслуживания: остановите другие редакторы GPO и синхронизацию SYSVOL. При переключении каталог GPO кратковременно недоступен. Источник выбирает администратор; LDAP не изменяется.','Use a maintenance window: stop other GPO editors and SYSVOL synchronizers. The GPO directory is briefly unavailable during cutover. The administrator chooses the source; LDAP is unchanged.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -722,7 +731,7 @@
   }
 
   async function openConsistency(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Согласованность GPO между контроллерами','GPO consistency across controllers'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,el('p','muted',t('Чтение LDAP и SYSVOL всех обнаруженных DC. Сравниваются версии, SHA-256 файлов, владельцы, группы и DACL. Проверка не запускает репликацию и ничего не исправляет. Контроллер сравнения не считается заведомо правильной копией.','Reads LDAP and SYSVOL on all discovered DCs. Compares versions, file SHA-256, owners, groups and DACLs. Does not trigger replication or repair anything. The comparison controller is not assumed to be authoritative.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -751,7 +760,7 @@
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
   async function openFullDelegation(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Делегирование GPO · LDAP и SYSVOL','GPO delegation · LDAP and SYSVOL'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div'),path='/gpo/'+enc(gpoID(row))+'/delegation/full';let serial=0;
     dialog.append(title,el('p','muted',t('Согласованная выдача прав объекту GPO и существующим файлам/каталогам SYSVOL. Исходные ACL сохраняются в закрытом журнале на сервере sambaadm. На время операции остановите другие редакторы этой GPO. Роли sambaadm не меняются.','Coordinated permissions for the GPO and existing SYSVOL files/directories. Original ACLs are stored in a private journal on the sambaadm server. Stop other editors of this GPO during the operation. Sambaadm roles are unchanged.')),notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -799,7 +808,7 @@
     await refresh();
   }
   async function openDelegation(row) {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Права объекта GPO · LDAP','GPO object permissions · LDAP'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     const path='/gpo/'+enc(gpoID(row))+'/delegation';
@@ -850,7 +859,7 @@
     const list=el('ul');for(const c of problems)list.append(el('li','',c.dn+': '+c.error));box.append(list);parent.append(box);
   }
   async function openPolicyExplain() {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Почему применяется GPO','Why a GPO applies'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,el('p','muted',t('Проверка связей и разделов по LDAP. Условный кандидат ещё не означает применение на клиенте: права, SYSVOL, WMI, сайт и loopback требуют отдельной проверки.','LDAP link and section checks. A conditional candidate does not prove client application: permissions, SYSVOL, WMI, site and loopback need separate verification.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -883,7 +892,7 @@
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
   async function openPolicyModel() {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Моделирование результирующей политики · ALT / Windows','Resultant policy modeling · ALT / Windows'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,el('p','muted',t('Сценарий читает GPO и SYSVOL без изменения каталога. Итоговые параметры ALT рассчитываются по шаблонам домена. Права безопасности, доступ к SYSVOL и результаты WMI задаются как допущения. Это прогноз; применение зависит от движка политик клиента.','The scenario reads GPOs and SYSVOL without directory changes. ALT settings use domain templates. Security, SYSVOL access and WMI outcomes are scenario assumptions. This is a prediction; application depends on the client policy engine.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -930,7 +939,7 @@
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
   async function openScope(initialDN=''){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();const title=el('h2','',t('Область действия и наследование GPO','GPO scope and inheritance'));title.id='operation-title';const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');dialog.append(title,notice,body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();let model,selected=initialDN,serial=0;
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Область действия и наследование GPO','GPO scope and inheritance'));title.id='operation-title';const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');dialog.append(title,notice,body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();let model,selected=initialDN,serial=0;
     async function refresh(){message(notice,t('Загрузка…','Loading…'));try{model=await request('/gpo/scope');if(generation!==dialogGeneration)return;if(!model.containers.some(c=>c.dn===selected))selected=model.containers.find(c=>!c.parent)?.dn;render();message(notice,'');}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}
     function render(){body.replaceChildren();const layout=el('div','policy-layout'),nav=el('nav','directory-tree policy-navigation'),panel=el('section','policy-detail');layout.append(nav,panel);body.append(layout);nav.setAttribute('aria-label',t('Домен и подразделения','Domain and OUs'));
       function branch(parent,dn){for(const c of model.containers.filter(c=>c.parent.toLowerCase()===dn.toLowerCase())){const d=el('details');d.open=true;const summary=el('summary');summary.append(button(c.name+(c.block?' ⛔':''),()=>{selected=c.dn;render();},selected===c.dn?'selected':''));d.append(summary);branch(d,c.dn);parent.append(d);}}branch(nav,'');
@@ -941,14 +950,14 @@
     }await refresh();
   }
   async function openFilter(row){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();const title=el('h2','',t('Фильтрация безопасности GPO','GPO security filtering'));title.id='operation-title';const notice=el('p','workspace-message'),body=el('div');notice.setAttribute('aria-live','polite');dialog.append(title,el('p','',t('Здесь изменяется только явное разрешение «Применять групповую политику». Чтение GPO и SYSVOL должно быть разрешено отдельно. Удаление разрешения не является запретом: доступ может оставаться через группы. Наследуемые, запрещающие и совмещённые права доступны только для просмотра.','Only explicit Apply Group Policy permissions are edited here. GPO and SYSVOL read access must also exist. Removing an allow is not a deny: groups may still grant access. Inherited, deny and combined rights are read only.')),notice,body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();const path='/gpo/'+enc(row.guid)+'/filter';let model;
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Фильтрация безопасности GPO','GPO security filtering'));title.id='operation-title';const notice=el('p','workspace-message'),body=el('div');notice.setAttribute('aria-live','polite');dialog.append(title,el('p','',t('Здесь изменяется только явное разрешение «Применять групповую политику». Чтение GPO и SYSVOL должно быть разрешено отдельно. Удаление разрешения не является запретом: доступ может оставаться через группы. Наследуемые, запрещающие и совмещённые права доступны только для просмотра.','Only explicit Apply Group Policy permissions are edited here. GPO and SYSVOL read access must also exist. Removing an allow is not a deny: groups may still grant access. Inherited, deny and combined rights are read only.')),notice,body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();const path='/gpo/'+enc(row.guid)+'/filter';let model;
     async function change(payload){dialog.querySelectorAll('button').forEach(b=>b.disabled=true);try{await request(path,'PUT',{...payload,revision:model.revision});if(generation!==dialogGeneration)return;await refresh();message(notice,t('Фильтр сохранён','Filter saved'));}catch(e){if(generation===dialogGeneration){message(notice,e.message,true);body.replaceChildren(button(t('Перезагрузить','Reload'),refresh));}}finally{if(generation===dialogGeneration)dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}}
     async function refresh(){message(notice,t('Загрузка…','Loading…'));try{const [data,groups,users,computers]=await Promise.all([request(path),admin?request('/groups'):[],admin?request('/users'):[],admin?request('/computers'):[]]);if(generation!==dialogGeneration)return;model=data;body.replaceChildren();for(const entry of model.entries){const card=el('div','scope-link');const deny=[1,6].includes(entry.type);card.append(el('strong','',entry.name||entry.sid||t('Нестандартная ACE','Nonstandard ACE')),el('p','mono',entry.sid+' · 0x'+entry.mask.toString(16)),el('p','', (deny?t('Запрет','Deny'):t('Разрешение/другая ACE','Allow/other ACE'))+' · '+(entry.apply?t('Применение GPO','Apply GPO'):t('Другие права','Other rights'))+(entry.inherited?' · '+t('Наследуется','Inherited'):'')));if(admin&&entry.editable){const form=el('form');const check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю удаление разрешения','Confirm removing this allow'));label.prepend(check);const b=el('button','danger',t('Удалить разрешение','Remove allow'));b.type='submit';form.append(label,b);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())change({remove:entry.id});});card.append(form);}body.append(card);}
       if(admin){const form=el('form','workspace-form'),select=el('select');select.setAttribute('aria-label',t('Получатель разрешения','Permission recipient'));const all=el('option','','Authenticated Users');all.value='S-1-5-11';form.append(select);select.append(all);for(const [label,list] of [[t('Группы','Groups'),groups],[t('Пользователи','Users'),users],[t('Компьютеры','Computers'),computers]]){const group=el('optgroup');group.label=label;for(const p of list){const o=el('option','',p.samAccountName);o.value=p.dn;group.append(o);}select.append(group);}const check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю предоставление права применения','Confirm granting Apply Group Policy'));label.prepend(check);const save=el('button','',t('Разрешить применение','Allow application'));save.type='submit';form.append(label,save);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())change({principal:select.value});});body.append(form);}message(notice,'');
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}await refresh();
   }
   async function openTopology(){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;dialog.replaceChildren();
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Топология репликации','Replication topology'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();

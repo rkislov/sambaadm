@@ -53,7 +53,7 @@ gpo:
   repair_backup_keep: 10
   repair_backup_max_mib: 512
   # Удалённый редактор ALT: LDAP и SMB к одному writable DC.
-  editor_enabled: false
+  editor_enabled: false # Default; an admin can override it under Settings → GPO editor.
   # Пусто: каталог BaseALT*.admx + ru-RU/*.adml в SYSVOL/<domain>/Policies/PolicyDefinitions
   # Можно явно указать локальный каталог шаблонов или один ADMX.
   admx_path: ""
