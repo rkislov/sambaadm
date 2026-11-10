@@ -167,11 +167,25 @@ func (s *smbPolicyStore) SetACL(name string, data []byte) error {
 
 // Empty admx_path selects the domain Central Store; a local directory or
 // a single ADMX file is also supported. SYSVOL editing always stays remote.
-func (s *GPOService) editorDefinitions(share *sysvolShare, domain string) ([]policy.Definition, string, error) {
+func (s *GPOService) loadEditorDefinitions(share *sysvolShare, domain string) ([]policy.Definition, string, error) {
 	if s.helpers != nil && s.gpoCfg.ADMXPath != "" {
 		var out helperADMXCatalog
-		e := s.helpers.Call(share.ctx, s.helpers.Config.HostNode, "admx.catalog", HostOperation{Path: s.gpoCfg.ADMXPath}, &out)
-		return out.Definitions, out.Source, e
+		e := s.helpers.Call(share.ctx, s.helpers.Config.HostNode, "admx.catalog", HostOperation{Path: s.gpoCfg.ADMXPath, Name: "binary"}, &out)
+		if e != nil {
+			return nil, "", e
+		}
+		return decodedCatalog(out)
+	}
+	if share != nil && share.helpers != nil && s.gpoCfg.ADMXPath == "" {
+		var out helperADMXCatalog
+		err := share.call("admx-catalog", helperFSRequest{Path: strings.ReplaceAll(path.Join(domain, "Policies", "PolicyDefinitions"), "/", `\`)}, &out)
+		if err == nil {
+			return decodedCatalog(out)
+		}
+		if !strings.Contains(err.Error(), "unsupported SYSVOL helper method") {
+			return nil, "", err
+		}
+		// Old helpers remain usable: import once through the existing bounded reads.
 	}
 	var names []string
 	var read func(string) ([]byte, error)
@@ -258,6 +272,11 @@ func (s *GPOService) editorDefinitions(share *sysvolShare, domain string) ([]pol
 	files, total := 0, 0
 	categories := map[string]string{}
 	for _, name := range names {
+		if share != nil {
+			if err := share.ctx.Err(); err != nil {
+				return nil, "", err
+			}
+		}
 		if (!singleFile && !strings.HasPrefix(strings.ToLower(name), "basealt")) || !strings.HasSuffix(strings.ToLower(name), ".admx") {
 			continue
 		}

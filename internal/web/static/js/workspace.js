@@ -131,10 +131,10 @@
     return b;
   }
   function message(node, content, error = false) { node.textContent=content;node.className='workspace-message'+(error?' error':'');node.setAttribute('role',error?'alert':'status'); }
-  async function request(path, method = 'GET', body) {
+  async function request(path, method = 'GET', body, options = {}) {
     const headers = {'Accept':'application/json'};
     if (method !== 'GET') {headers['Content-Type']='application/json';headers['X-CSRF-Token']=document.querySelector('meta[name="csrf-token"]')?.content || '';}
-    const response=await fetch(api+path,{method,headers,credentials:'same-origin',body:body === undefined ? undefined : JSON.stringify(body)});
+    const response=await fetch(api+path,{method,headers,signal:options.signal,credentials:'same-origin',body:body === undefined ? undefined : JSON.stringify(body)});
     if(response.status===401) throw new Error(t('Сессия истекла. Войдите снова.','Session expired. Sign in again.'));
     const type=response.headers.get('content-type')||'';
     if(!type.includes('application/json')) throw new Error(t('Сервер вернул неожиданный ответ. Обновите страницу.','Unexpected server response. Reload this page.'));
@@ -447,13 +447,15 @@
     const category=el('select');category.id='alt-category';const categoryLabel=el('label','',t('Категория','Category'));categoryLabel.htmlFor=category.id;
     toolbar.append(scopeLabel,scopeSelect,searchLabel,search);toolbar.classList.add('policy-console-toolbar');
     const content=el('div','policy-console-content');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
-    const path=a.path(row);let model,selectedPolicy='',loading=0;const consoleState={expanded:new Set(),status:'',sort:'label',direction:1,page:0,selected:''};
+    const path=a.path(row);let model,selectedPolicy='',loading=0,controller=null;
+    dialog.addEventListener('close',()=>controller?.abort(),{once:true});const consoleState={expanded:new Set(),status:'',sort:'label',direction:1,page:0,selected:''};
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
     function render(){
       if(!model)return;
       content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · '+(model.scope||scopeSelect.value)));
       if(model.controller)content.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
       if(model.templateSource)content.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
+      if(model.templatesImportedAt)content.append(el('p','muted',t('Локальный кэш шаблонов от ','Local template cache imported at ')+new Date(model.templatesImportedAt).toLocaleString(ru?'ru-RU':'en-GB')));
       if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
       const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===(s.category||s.template||'ALT'))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
       if(!matches.some(s=>s.id===selectedPolicy))selectedPolicy='';
@@ -495,11 +497,13 @@
         }detail.append(form);
       }
     }
-    async function refresh(){const requestID=++loading;model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
-      const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''));if(generation!==dialogGeneration||requestID!==loading)return;model=result;
+    async function refresh(){const requestID=++loading;controller?.abort();controller=new AbortController();const active=controller;
+      const started=Date.now(),timeout=setTimeout(()=>active.abort(),125000),progress=setInterval(()=>{if(generation===dialogGeneration&&requestID===loading)message(notice,t('Чтение шаблонов и GPO: ','Reading templates and GPO: ')+Math.floor((Date.now()-started)/1000)+t(' с. Первый импорт может занять больше времени.',' s. The first import may take longer.'));},5000);
+      model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
+      const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''),'GET',undefined,{signal:active.signal});if(generation!==dialogGeneration||requestID!==loading)return;model=result;
       category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const name of [...new Set(model.settings.map(s=>s.category||s.template||'ALT').filter(Boolean))].sort()){const o=el('option','',name);o.value=name;category.append(o);}
       render();message(notice,'');
-    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
+    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.name==='AbortError'||err.status===504?t('Загрузка превысила две минуты. Проверьте доступ к helper; импорт шаблонов доступен в настройках.','Loading exceeded two minutes. Check helper access; template import is available in Settings.'):err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{clearTimeout(timeout);clearInterval(progress);if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
     scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';consoleState.page=0;consoleState.selected='';refresh();});search.addEventListener('input',()=>{consoleState.page=0;render();});category.addEventListener('change',()=>{selectedPolicy='';consoleState.page=0;render();});
     await refresh();
   }

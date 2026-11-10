@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 	}
 	guid := strings.TrimPrefix(strings.SplitN(entry.DN, ",", 2)[0], "CN=")
 	s.GPO.gpoCfg.EditorEnabled = true
+	s.GPO.gpoCfg.ManagedEditorFile = filepath.Join(t.TempDir(), "settings", "gpo-editor.json")
 	s.GPO.gpoCfg.ADMXPath = ""
 	s.GPO.gpoCfg.SysvolPath = "/no-local-sysvol"
 	template := `sambaadm.test\Policies\PolicyDefinitions\BaseALTEditorIntegration.admx`
@@ -65,6 +67,13 @@ func TestIntegrationRemoteALTCatalog(t *testing.T) {
 	before, e := s.GPO.ALTSettingsScope(ctx, guid, "User")
 	if e != nil {
 		t.Fatal(e)
+	}
+	if before.TemplatesImportedAt == nil {
+		t.Fatal("template import was not persisted")
+	}
+	cached, e := s.GPO.ALTSettingsScope(ctx, guid, "User")
+	if e != nil || cached.TemplatesImportedAt == nil || !cached.TemplatesImportedAt.Equal(*before.TemplatesImportedAt) || cached.Revision != before.Revision {
+		t.Fatalf("cached snapshot changed revision or imported twice: %v", e)
 	}
 	saved, e := s.GPO.SetALTSetting(ctx, guid, ALTChange{ID: id, Scope: "User", State: "enabled", Revision: before.Revision, Values: values}, "test", "")
 	if e != nil {

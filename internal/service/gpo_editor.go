@@ -14,6 +14,7 @@ import (
 	"sambaadm/internal/policy"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var ErrPolicyConflict = errors.New("policy changed; reload before saving")
@@ -28,14 +29,15 @@ type ALTSetting struct {
 	Values map[string]any `json:"values,omitempty"`
 }
 type ALTPolicy struct {
-	Version         uint32       `json:"version"`
-	Revision        string       `json:"revision"`
-	Settings        []ALTSetting `json:"settings"`
-	Scope           string       `json:"scope"`
-	Controller      string       `json:"controller"`
-	TemplateSource  string       `json:"templateSource"`
-	MachineDisabled bool         `json:"machineDisabled"`
-	SectionDisabled bool         `json:"sectionDisabled"`
+	Version             uint32       `json:"version"`
+	Revision            string       `json:"revision"`
+	Settings            []ALTSetting `json:"settings"`
+	Scope               string       `json:"scope"`
+	Controller          string       `json:"controller"`
+	TemplateSource      string       `json:"templateSource"`
+	TemplatesImportedAt *time.Time   `json:"templatesImportedAt,omitempty"`
+	MachineDisabled     bool         `json:"machineDisabled"`
+	SectionDisabled     bool         `json:"sectionDisabled"`
 }
 type ALTChange struct {
 	ID       string                     `json:"id"`
@@ -47,6 +49,7 @@ type ALTChange struct {
 type editorSnapshot struct {
 	root                       policyStore
 	templateSource, controller string
+	templatesImportedAt        *time.Time
 	scope                      string
 	entry                      *ldap.Entry
 	pol, ini                   []byte
@@ -88,6 +91,21 @@ func readPolicyFile(root policyStore, path string) ([]byte, error) {
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("policy path must be a regular file without symlinks")
+	}
+	if info.Size() > policy.MaxFileSize {
+		return nil, fmt.Errorf("policy file exceeds size limit")
+	}
+	if remote, ok := root.(*smbPolicyStore); ok && remote.share.helpers != nil {
+		p, e := remote.checked(path, false)
+		if e != nil {
+			return nil, e
+		}
+		var b []byte
+		e = remote.share.call("read", helperFSRequest{Path: p, Size: policy.MaxFileSize}, &b)
+		if e == nil && len(b) > policy.MaxFileSize {
+			e = fmt.Errorf("policy file exceeds size limit")
+		}
+		return b, e
 	}
 	f, e := root.Open(path)
 	if e != nil {
@@ -172,7 +190,7 @@ func (s *GPOService) readPolicySnapshot(ctx context.Context, gpo string, share *
 	}
 	defs, source, e := s.editorDefinitions(share, dns)
 	if e != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEditorUnavailable, e)
+		return nil, fmt.Errorf("%w: %w", ErrEditorUnavailable, e)
 	}
 	filtered := []policy.Definition{}
 	for _, d := range defs {
@@ -246,14 +264,14 @@ func (s *GPOService) readPolicySnapshot(ctx context.Context, gpo string, share *
 	h.Write(data)
 	h.Write(encoded)
 	revision := fmt.Sprintf("%x", h.Sum(nil))
-	return &editorSnapshot{root: root, scope: scope, templateSource: source, controller: s.remote.Host, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
+	return &editorSnapshot{root: root, scope: scope, templateSource: source, templatesImportedAt: s.templateImportedAt(share, dns), controller: s.remote.Host, entry: entry, pol: data, ini: ini, exists: exists, records: records, version: version, definitions: defs, revision: revision, polPath: polPath, iniPath: iniPath}, nil
 }
 func (snap *editorSnapshot) view() *ALTPolicy {
 	scope := snap.scope
 	if scope == "" {
 		scope = "Machine"
 	}
-	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: scope, Controller: snap.controller, TemplateSource: snap.templateSource, Settings: []ALTSetting{}}
+	out := &ALTPolicy{Version: snap.version, Revision: snap.revision, Scope: scope, Controller: snap.controller, TemplateSource: snap.templateSource, TemplatesImportedAt: snap.templatesImportedAt, Settings: []ALTSetting{}}
 	flags, _ := strconv.ParseUint(snap.entry.GetAttributeValue("flags"), 10, 32)
 	out.MachineDisabled = flags&2 != 0
 	out.SectionDisabled = out.MachineDisabled
@@ -279,7 +297,11 @@ func (s *GPOService) ALTSettings(ctx context.Context, gpo string) (*ALTPolicy, e
 	return s.altSettings(ctx, gpo, "Machine")
 }
 func (s *GPOService) altSettings(ctx context.Context, gpo, scope string) (*ALTPolicy, error) {
-	s.editorMu.Lock()
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if e := s.lockEditor(ctx); e != nil {
+		return nil, e
+	}
 	defer s.editorMu.Unlock()
 	var out *ALTPolicy
 	enabled, settingErr := s.EditorEnabled()
@@ -332,6 +354,7 @@ func writePolicyFile(root policyStore, path string, data []byte) (err error) {
 	return nil
 }
 func (s *GPOService) SetALTSetting(ctx context.Context, gpo string, change ALTChange, actor, ip string) (out *ALTPolicy, err error) {
+	ctx = context.WithValue(ctx, freshTemplatesKey{}, true)
 	if change.Scope == "" {
 		change.Scope = "Machine"
 	}

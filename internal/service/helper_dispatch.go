@@ -35,6 +35,7 @@ type HostOperation struct {
 type helperADMXCatalog struct {
 	Definitions []policy.Definition
 	Source      string
+	Encoded     []byte `json:",omitempty"`
 }
 
 func hostInput(in any) json.RawMessage { b, _ := json.Marshal(in); return b }
@@ -184,8 +185,15 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		}
 		local := GPOService{gpoCfg: cfg.GPO}
 		local.gpoCfg.ADMXPath = requested
-		defs, source, e := local.editorDefinitions(nil, "")
-		return helperADMXCatalog{defs, source}, e
+		defs, source, e := local.loadEditorDefinitions(nil, "")
+		if e != nil {
+			return nil, e
+		}
+		response, e := catalogResponse(defs, source)
+		if in.Name == "binary" {
+			response.Definitions = nil
+		}
+		return response, e
 	case "topology.cleanup.reserve", "topology.cleanup.event":
 		return helperCleanupApply(ctx, cfg, method, in)
 	case "domain.backup.start", "domain.backup.status":
@@ -252,6 +260,20 @@ func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method 
 			}
 		}
 		switch method {
+		case "admx-catalog":
+			parts := strings.Split(strings.ReplaceAll(p, `\`, "/"), "/")
+			if len(parts) != 3 || !strings.EqualFold(parts[1], "Policies") || !strings.EqualFold(parts[2], "PolicyDefinitions") {
+				return fmt.Errorf("invalid SYSVOL template catalog path")
+			}
+			local := GPOService{}
+			defs, source, e := local.loadEditorDefinitions(&sysvolShare{local: sh, ctx: ctx}, parts[0])
+			if e != nil {
+				return e
+			}
+			response, e := catalogResponse(defs, source)
+			response.Definitions = nil // Binary catalogue retains all registry encodings without duplicating the public JSON.
+			out = response
+			return e
 		case "stat":
 			f, e := sh.Lstat(p)
 			if e == nil {
@@ -277,9 +299,26 @@ func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method 
 			if e != nil {
 				return e
 			}
-			b, e := io.ReadAll(io.LimitReader(f, consistencyBytes+1))
+			info, e := f.Stat()
+			if e != nil {
+				_ = f.Close()
+				return e
+			}
+			if !info.Mode().IsRegular() {
+				_ = f.Close()
+				return fmt.Errorf("SYSVOL path is not a regular file")
+			}
+			limit := int64(consistencyBytes)
+			if in.Size > 0 {
+				limit = in.Size
+			}
+			if info.Size() > limit {
+				_ = f.Close()
+				return fmt.Errorf("SYSVOL file too large")
+			}
+			b, e := io.ReadAll(io.LimitReader(f, limit+1))
 			e = errors.Join(e, f.Close())
-			if len(b) > consistencyBytes {
+			if int64(len(b)) > limit {
 				return fmt.Errorf("SYSVOL file too large")
 			}
 			out = b

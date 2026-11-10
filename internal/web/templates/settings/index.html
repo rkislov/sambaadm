@@ -4,6 +4,7 @@
 <head>
   {{template "head" .}}
   <script src="/static/js/host-admin.js" defer></script>
+<script src="/static/js/template-cache.js" defer></script>
 </head>
 <body>
   {{template "nav" .}}
@@ -13,6 +14,7 @@
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}
     {{if canAdmin .Role}}<section class="setup-card"><h2>Редактор GPO</h2><form method="post" action="/settings/gpo-editor"><input type="hidden" name="csrf_token" value="{{.CSRF}}"><fieldset class="setup-options"><label><input type="checkbox" name="enabled" value="true" {{if .Content.EditorEnabled}}checked{{end}}><span>Включить редактор параметров GPO<small>Разрешает работу с параметрами ALT и административными шаблонами. Изменения доступны только администраторам. Состояние сохраняется после перезапуска.</small></span></label></fieldset><p class="muted">Моделирование и объяснение применения политик доступны при выключенном редакторе. Для моделирования нужны шаблоны ADMX и доступ к SYSVOL.</p><button type="submit">Сохранить настройку редактора</button></form></section>{{end}}
+    {{if canAdmin .Role}}<section id="gpo-template-cache" class="setup-card"><h2>{{if eq .Lang "en"}}Local policy templates{{else}}Локальные шаблоны политик{{end}}</h2><p class="muted">{{if eq .Lang "en"}}Import the supported ADMX/ADML catalogue from the configured source to speed up editing and modeling. Cache is private to this identity and lasts one hour, including after server restarts. GPO data remains live; templates are revalidated before saving. Update the helper to enable bulk imports over one SMB connection.{{else}}Импорт поддерживаемого каталога ADMX/ADML из настроенного источника ускоряет редактор и моделирование. Кэш текущей учётной записи действует один час и сохраняется после перезапуска. Данные GPO читаются с контроллера; перед записью шаблоны проверяются заново. Для пакетного импорта через одно SMB-подключение обновите helper.{{end}}</p><noscript>Для импорта включите JavaScript / Enable JavaScript to import.</noscript></section>{{end}}
     <form method="post" action="/settings" class="form-card">
       {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
       <label>{{t .Lang "settings.lang"}}

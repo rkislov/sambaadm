@@ -170,6 +170,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/surveys", s.surveysAPI)
 		r.Post("/system/diagnostics", s.handleAPIDiagnostics)
 		r.Get("/system/metrics", s.handleAPIHostMetrics)
+		r.Post("/gpo/templates/import", s.handleAPITemplateImport)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)
 		r.Get("/groups/{name}", s.handleAPIGroupGet)
 		r.Get("/groups/{name}/members", s.handleAPIGroupMembers)

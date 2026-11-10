@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/go-chi/chi/v5"
@@ -8,6 +9,7 @@ import (
 	"sambaadm/internal/auth"
 	"sambaadm/internal/policy"
 	"sambaadm/internal/service"
+	"time"
 )
 
 func editorError(w http.ResponseWriter, err error) {
@@ -20,6 +22,9 @@ func editorError(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, service.ErrEditorUnavailable) {
 		status = http.StatusServiceUnavailable
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		status = http.StatusGatewayTimeout
 	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
@@ -56,4 +61,30 @@ func (s *Server) handleAPIGPOALTSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, result)
+}
+
+// Imports static templates only. No GPO or SYSVOL file is changed.
+func (s *Server) handleAPITemplateImport(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	if s.svcs == nil || s.svcs.GPO == nil {
+		writeJSON(w, 503, map[string]string{"error": "GPO service unavailable"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+	count, err := s.svcs.GPO.RefreshTemplateCache(ctx)
+	if err != nil {
+		if s.audit != nil {
+			s.audit.Failure(sessionFrom(r).Username, "gpo.templates.import", "configured source", r.RemoteAddr, err)
+		}
+		editorError(w, err)
+		return
+	}
+	if s.audit != nil {
+		s.audit.Success(sessionFrom(r).Username, "gpo.templates.import", "configured source", r.RemoteAddr)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, map[string]any{"count": count, "imported": time.Now().UTC(), "maxAgeSeconds": 3600})
 }

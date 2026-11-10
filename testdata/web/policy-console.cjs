@@ -8,7 +8,7 @@ let role='admin',language='ru',version=0;const writes=[],errors=[];
 const settings=Array.from({length:4500},(_,i)=>({id:'setting-'+i,label:'Policy '+String(i).padStart(4,'0'),template:'Example.admx',category:i%2?'Network':'System',description:'Description '+i+' <img src=x onerror=alert(1)>',state:['not-configured','enabled','disabled'][i%3],fields:[{id:'text',label:'Value',kind:'text',default:'initial'}]}));
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://localhost').pathname;
- const file=pathname.startsWith('/static/')?path.join(repo,'internal/web',pathname):path.join(dir,`${role}-gpo.html`);
+ const file=pathname.startsWith('/static/')?path.join(repo,'internal/web',pathname):path.join(dir,`${role}-${pathname==='/settings'?'settings':'gpo'}.html`);
  if(!fs.existsSync(file)){res.writeHead(404).end();return;}
  res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html');
  let data=fs.readFileSync(file);if(!pathname.startsWith('/static/'))data=data.toString().replace('lang="ru"','lang="'+language+'"');res.end(data);
@@ -56,6 +56,18 @@ const server=http.createServer((req,res)=>{
   await dialog.getByLabel('Поиск политик',{exact:true}).fill('Policy 0001');await dialog.getByRole('button',{name:'Policy 0001',exact:true}).click();await group.getByRole('radio').count();assert.ok(await dialog.evaluate(e=>e.scrollWidth<=e.clientWidth));assert.ok(await dialog.getByRole('radio').evaluateAll(inputs=>inputs.every(i=>i.getBoundingClientRect().width<=20)),'radio controls must not consume the label width');await page.screenshot({path:path.join(dir,'rsat-mobile-properties.png'),fullPage:true});
   role='readonly';await page.setViewportSize({width:1440,height:1000});dialog=await open();await dialog.getByRole('button',{name:'Policy 0000',exact:true}).click();assert.equal(await dialog.getByRole('button',{name:'Сохранить',exact:true}).count(),0);assert.ok(await dialog.getByRole('radio').first().isDisabled());
   language='en';dialog=await open();await dialog.getByRole('button',{name:'Computer Configuration',exact:true}).waitFor();await dialog.getByRole('columnheader',{name:'State',exact:true}).waitFor();
-  assert.deepEqual(errors,[]);console.log('PASS: RSAT layout, 4500 settings/paging/search/sort/filter/description, cancel/no write, confirmation/revision/scope/value payload, scope tree/categories, mobile, readonly, English');console.log('Screenshots:',dir);
+  // Slow helper reads time out visibly and closing the modal aborts its GET.
+  await dialog.locator('.workspace-dialog-close button').click();
+  let held;await page.route('**/api/v1/gpo/*/alt-settings',route=>{held=route;});await page.clock.install();
+  await page.getByRole('button',{name:'Policy editor',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('status').filter({hasText:'Loading'}).waitFor();
+  await page.clock.fastForward(126000);await dialog.getByRole('alert').filter({hasText:'Loading exceeded two minutes'}).waitFor();
+  assert.equal(await dialog.getByLabel('Policy scope',{exact:true}).isDisabled(),false);await held.abort().catch(()=>{});
+  await dialog.getByRole('button',{name:'Retry',exact:true}).click();await dialog.getByRole('status').filter({hasText:'Loading'}).waitFor();
+  const cancelled=page.waitForEvent('requestfailed',{predicate:req=>req.url().includes('/alt-settings')});await dialog.locator('.workspace-dialog-close button').click();await cancelled;await held.abort().catch(()=>{});
+  await page.clock.fastForward(126000);assert.equal(await page.getByRole('dialog').count(),0,'aborted read must not reopen dialog');
+  await page.clock.resume();role='admin';language='ru';await page.goto(`http://127.0.0.1:${server.address().port}/settings`);
+  await page.route('**/api/v1/gpo/templates/import',route=>{assert.equal(route.request().method(),'POST');assert.ok(route.request().headers()['x-csrf-token']);return route.fulfill({json:{count:4500}});});
+  await page.getByRole('button',{name:'Импортировать / обновить шаблоны',exact:true}).click();await page.getByText(/Шаблоны сохранены локально. Определений: 4500/).waitFor();
+  assert.deepEqual(errors,[]);console.log('PASS: RSAT layout, 4500 settings/paging/search/sort/filter/description, cancel/no write, confirmation/revision/scope/value payload, scope tree/categories, mobile, readonly, English, delayed-load timeout/cancellation, template import');console.log('Screenshots:',dir);
  }finally{await browser.close();server.close();}
 })().catch(e=>{console.error(e);server.close();process.exitCode=1;});
