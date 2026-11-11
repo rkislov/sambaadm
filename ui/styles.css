@@ -194,3 +194,19 @@ tbody tr:hover { @apply bg-slate-50; }
 .dns-record-table { font-size:12px; }.dns-record-table th button { background:transparent;border:0;box-shadow:none;padding:0;font-size:12px;min-height:24px; }
 .dns-record-table td button { padding:2px 6px;min-height:26px;font-size:12px; }
 @media(max-width:850px){.dns-console-tree { max-height:30vh; }}
+
+.sites-console-tree { @apply overflow-auto; max-height:72vh; }
+.sites-console-tree summary { @apply cursor-pointer text-sm; overflow-wrap:anywhere; }
+.sites-console-children { @apply ml-3 border-l border-slate-200 pl-2; }
+.sites-console-tree button { @apply h-auto min-h-7 max-w-full justify-start border-transparent bg-transparent px-2 py-1 text-left text-sm shadow-none transition-none; overflow-wrap:anywhere; }
+.sites-console-children > button { @apply flex; }
+.sites-console-tree button.selected { @apply bg-brand-50 text-brand-700; }
+.sites-console-tree details { @apply my-1; }
+[data-module="/sites"] .workspace-list > input { @apply my-3; }
+[data-module="/sites"] .workspace-list > .workspace-tools { @apply my-2; }
+@media(max-width:850px) { .sites-console-tree { max-height:35vh; } }
+.rsop-report input[type=search] { @apply my-3; }
+.rsop-report .workspace-tools { @apply my-3; }
+.rsop-report td summary { @apply cursor-pointer; }
+.rsop-report pre { @apply max-h-64 overflow-auto; }
+.rsop-report button[aria-pressed] { @apply transition-none; }

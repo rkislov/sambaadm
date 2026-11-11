@@ -60,7 +60,7 @@
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
-      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
+      toolbar:[{label:t('Результирующая политика','Resultant Set of Policy'),method:'GET',run:()=>openRSOP()},{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
@@ -81,9 +81,8 @@
       columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
       hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
       toolbar:[{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true},{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
-    '/sites':{title:t('Сайты','Sites'),endpoint:'/sites',id:r=>r.name,
-      columns:[['name',t('Сайт','Site')],['dn','DN']],create:action(t('Создать сайт','Create site'),'POST','/sites',[name()]),
-      toolbar:[{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true},{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Топология сайтов','Site topology'),'/sites/topology'),view(t('Контроллеры','Controllers'),'/sites/controllers'),view(t('Связи сайтов','Site links'),'/sites/links'),action(t('Создать связь сайтов','Create site link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}),view(t('Подсети','Subnets'),'/subnets'),action(t('Переназначить подсеть','Reassign subnet'),'PUT','/subnets/site',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Новый сайт','New site')],{confirm:true}),action(t('Создать подсеть','Create subnet'),'POST','/subnets',[text('subnet','Подсеть CIDR','Subnet CIDR'),text('site','Имя сайта','Site name')]),action(t('Удалить подсеть','Delete subnet'),'POST','/subnets/delete',[text('subnet','Подсеть CIDR','Subnet CIDR')],{danger:true})],actions:[remove(r=>'/sites/'+enc(r.name))]},
+    '/sites':{title:t('Сайты и службы Active Directory','Active Directory Sites and Services'),endpoint:'/sites',id:r=>r.name,
+      columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true}]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
@@ -148,7 +147,7 @@
   const status=el('p','workspace-message');status.setAttribute('aria-live','polite');root.append(status);
   if(cfg.hint)root.append(el('p','muted',cfg.hint));
   const filter=el('form','workspace-filter');const searchInput=el('input');searchInput.type='search';searchInput.placeholder=t('Поиск по списку','Search list');searchInput.setAttribute('aria-label',searchInput.placeholder);
-  filter.append(searchInput,button(t('Найти','Search'),()=>{search=searchInput.value;renderRows();}));filter.addEventListener('submit',e=>{e.preventDefault();search=searchInput.value;renderRows();});if(cfg!==configs['/dns'])root.append(filter);searchInput.addEventListener('input',()=>{search=searchInput.value;renderRows();});filter.append(el('span','muted',t('Поиск по имени, логину и атрибутам в выбранной ветви. Для всего домена выберите «Все объекты».','Search name, login and attributes in the selected branch. Select All objects to search the whole domain.')));
+  filter.append(searchInput,button(t('Найти','Search'),()=>{search=searchInput.value;renderRows();}));filter.addEventListener('submit',e=>{e.preventDefault();search=searchInput.value;renderRows();});if(cfg!==configs['/dns']&&cfg!==configs['/sites'])root.append(filter);searchInput.addEventListener('input',()=>{search=searchInput.value;renderRows();});filter.append(el('span','muted',t('Поиск по имени, логину и атрибутам в выбранной ветви. Для всего домена выберите «Все объекты».','Search name, login and attributes in the selected branch. Select All objects to search the whole domain.')));
   const content=el('div','workspace-columns');const sidebar=el('aside','workspace-tree');sidebar.setAttribute('aria-label',t('Дерево объектов','Object hierarchy'));const main=el('section','workspace-list');if(cfg===configs['/gpo'])content.classList.add('workspace-columns-single');else content.append(sidebar);content.append(main);root.append(content);
   const selection=el('p','workspace-selection');main.append(selection);
   const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>tr.append(el('th','',c[1])));tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);main.append(tableWrap);
@@ -156,6 +155,7 @@
   const dialog=el('dialog','workspace-dialog');dialog.setAttribute('aria-labelledby','operation-title');root.append(dialog);
   const choices=el('datalist');choices.id='directory-dns';root.append(choices);
   const dnsConsole=cfg===configs['/dns']?window.sambaadmDNSConsole({sidebar,main,request,admin,onOpen:(zone,name,record)=>openDNSEditor(zone,name,{record}),onCreate:(zone,name)=>zone&&openDNSEditor(zone,name,{create:true}),onDelete:zone=>zone&&openOperation(cfg.actions.find(a=>a.method==='DELETE'),zone)}):null;
+  const sitesConsole=cfg===configs['/sites']?setupSitesConsole():null;
   function allowed(a) {return a.method==='GET' || (a.support?helpdesk:admin);}
   function addAction(parent,a,row) {
     if(!allowed(a)||a.when&&!a.when(row))return;
@@ -255,6 +255,7 @@
     }
   }
   async function load() {
+    if(sitesConsole)return sitesConsole.load();
     const id=++loadID;message(status,t('Загрузка…','Loading…'));root.setAttribute('aria-busy','true');
     const results=await Promise.allSettled([request(cfg.endpoint),(cfg.directory||cfg===configs['/gpo'])?request('/directory/tree?kind='+(cfg.directory||'ou')):Promise.resolve(null)]);
     if(id!==loadID)return;root.setAttribute('aria-busy','false');
@@ -629,7 +630,7 @@
       e.preventDefault();if(!form.reportValidity())return;
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};
       inputs.forEach(([f,input])=>{if(f.multiple)body[f.key]=Array.from(input.selectedOptions,o=>o.value);else if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
-      if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,a.preset);
+      if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,typeof a.preset==='function'?a.preset(row):a.preset);
       const payload=a.encode?a.encode(body):body;
       if(a.method==='GET'&&Object.keys(body).length)path+=(path.includes('?')?'&':'?')+new URLSearchParams(body);
       submit.disabled=true;message(notice,t('Выполняется…','Working…'));output.replaceChildren();
@@ -647,6 +648,17 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
+  }
+  function openRSOP() {
+    lastFocus=document.activeElement;
+    dialogGeneration++;
+    resetDialog();
+    const title=el('h2','',t('Результирующая политика (RSoP)','Resultant Set of Policy (RSoP)'));
+    title.id='operation-title';
+    const content=el('section','rsop-report');
+    dialog.append(title,content);
+    window.sambaadmRSOP.mount(content,{t,el,button,message});
+    if(!dialog.open)dialog.showModal();
   }
   async function openRODC() {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0;
@@ -1010,6 +1022,184 @@
     }
     await refresh();
   }
+  function setupSitesConsole() {
+    sidebar.classList.add('sites-console-tree');
+    sidebar.setAttribute('aria-label',t('Сайты и службы','Sites and services'));
+    const heading=el('h2');
+    const breadcrumb=el('p','muted');
+    const commands=el('div','workspace-tools');
+    const searchBox=el('input');
+    searchBox.type='search';
+    searchBox.placeholder=t('Поиск в текущем списке','Search current list');
+    searchBox.setAttribute('aria-label',searchBox.placeholder);
+    const results=el('div');
+    main.replaceChildren(breadcrumb,heading,commands,searchBox,results);
+    let selected={kind:'sites'};
+    let data={}, errors={};
+    let generation=0;
+    const nodes=new Map();
+    const siteLabel=t('Сайт','Site');
+    const subnetLabel=t('Подсети','Subnets');
+    const serverLabel=t('Серверы','Servers');
+    const transportLabel=t('Межсайтовые транспорты','Inter-Site Transports');
+    const siteField=()=>text('site','Сайт','Site');
+    const same=(left,right)=>!!left&&!!right&&left.toLowerCase()===right.toLowerCase();
+    const siteName=dn=>data.sites?.find(site=>same(site.dn,dn))?.name||dn||t('Не назначен','Unassigned');
+    const key=({kind,site})=>JSON.stringify([kind,site?.dn]);
+    const item=(kind,site)=>({kind,site});
+    const endpoints={sites:'/sites',subnets:'/subnets',servers:'/sites/controllers',links:'/sites/links'};
+    function select(node) {
+      selected=node;
+      searchBox.value='';
+      let branch=nodes.get(key(node))?.parentElement?.closest('details');
+      while(branch){
+        branch.open=true;
+        branch=branch.parentElement.closest('details');
+      }
+      render();
+    }
+    function treeButton(label,node) {
+      const control=button(label,()=>select(node));
+      nodes.set(key(node),control);
+      return control;
+    }
+    function branch(parent,id,label,control,expanded) {
+      const details=el('details');
+      details.dataset.branch=id;
+      details.open=expanded.get(id)??(id==='sites'||id==='transports');
+      const summary=el('summary');
+      if(control){
+        control.addEventListener('click',event=>event.preventDefault());
+        summary.append(control);
+      }else summary.textContent=label;
+      const children=el('div','sites-console-children');
+      details.append(summary,children);
+      parent.append(details);
+      return children;
+    }
+    function renderTree() {
+      const expanded=new Map(Array.from(sidebar.querySelectorAll('details'),entry=>[entry.dataset.branch,entry.open]));
+      nodes.clear();
+      sidebar.replaceChildren(el('h2','',t('Сайты и службы','Sites and services')));
+      const children=branch(sidebar,'sites','',treeButton(t('Сайты','Sites'),item('sites')),expanded);
+      children.append(treeButton(subnetLabel,item('subnets')));
+      const transports=branch(children,'transports',transportLabel,null,expanded);
+      transports.append(treeButton('IP',item('links')));
+      for(const site of data.sites||[]){
+        const servers=branch(children,site.dn,'',treeButton(site.name,item('site',site)),expanded);
+        const serversButton=treeButton(serverLabel,item('servers',site));
+        serversButton.setAttribute('aria-label',site.name+' · '+serverLabel);
+        const subnetsButton=treeButton(subnetLabel,item('subnets',site));
+        subnetsButton.setAttribute('aria-label',site.name+' · '+subnetLabel);
+        servers.append(serversButton,subnetsButton);
+      }
+    }
+    function showList() {
+      results.replaceChildren();
+      const {kind,site}=selected;
+      const source=kind==='site'?'sites':kind;
+      if(errors[source]){
+        const notice=el('p');
+        message(notice,errors[source],true);
+        results.append(notice);
+        return;
+      }
+      if(!data[source]){
+        results.append(el('p','muted',t('Загрузка…','Loading…')));
+        return;
+      }
+      let items, columns, actions;
+      if(kind==='sites'){
+        items=data.sites;
+        columns=[['name',siteLabel],['dn','DN']];
+        actions=[{label:t('Открыть','Open'),method:'GET',run:row=>select(item('site',row))}];
+      }else if(kind==='site'){
+        results.append(el('p','mono',site.dn));
+        return;
+      }else if(kind==='subnets'){
+        items=data.subnets.filter(row=>!site||same(row.site,site.dn)).map(row=>({...row,siteLabel:siteName(row.site)}));
+        columns=[['name',t('Префикс CIDR','CIDR prefix')],['siteLabel',siteLabel]];
+        actions=[
+          action(t('Свойства','Properties'),'PUT','/subnets/site',[siteField()],{confirm:true,
+            prefill:row=>({site:siteName(row.site)}),preset:row=>({subnet:row.name})}),
+          action(t('Удалить','Delete'),'POST','/subnets/delete',[],{danger:true,preset:row=>({subnet:row.name})})
+        ];
+      }else if(kind==='servers'){
+        items=data.servers.filter(row=>same(row.site,site.name));
+        columns=[['name',t('Сервер','Server')],['dns','DNS']];
+        actions=[
+          action(t('Перенести в сайт','Move to site'),'POST',row=>'/sites/controllers/'+enc(row.name)+'/move',[text('site','Новый сайт','New site')],{revision:true,confirm:true}),
+          {...view(t('Проверить репликацию','Inspect replication'),'/repl/status',[text('dc','Контроллер','Controller')]),prefill:row=>({dc:row.dns})}
+        ];
+      }else{
+        items=data.links;
+        columns=[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Интервал, мин','Interval, min')]];
+        actions=[
+          action(t('Свойства','Properties'),'PUT',row=>'/sites/links/'+enc(row.name),linkFields(),{revision:true,confirm:true,prefill:row=>({sites:(row.sites||[]).join(';'),cost:row.cost,interval:row.interval})}),
+          scheduleOperation(row=>'/sites/links/'+enc(row.name)+'/schedule'),
+          {...remove(row=>'/sites/links/'+enc(row.name)),revision:true}
+        ];
+      }
+      const query=normalizeSearch(searchBox.value);
+      if(query)items=items.filter(row=>columns.some(([column])=>normalizeSearch(String(row[column]??'')).includes(query)));
+      topologyTable(results,items,columns,actions);
+    }
+    function render() {
+      const {kind,site}=selected;
+      const sites=t('Сайты','Sites');
+      for(const [id,control] of nodes){
+        const current=id===key(selected);
+        control.classList.toggle('selected',current);
+        if(current)control.setAttribute('aria-current','true');
+        else control.removeAttribute('aria-current');
+      }
+      const title={sites,site:site?.name,subnets:subnetLabel,servers:serverLabel,links:'IP'}[kind];
+      breadcrumb.textContent=[sites,...(site?[site.name]:[]),...(kind==='links'?[transportLabel]:[]),...(['sites','site'].includes(kind)?[]:[title])].join(' / ');
+      breadcrumb.hidden=kind==='sites';
+      heading.textContent=title;
+      commands.replaceChildren();
+      searchBox.hidden=kind==='site';
+      if(kind==='sites'){
+        addAction(commands,action(t('Создать сайт','New Site'),'POST','/sites',[name()]));
+      }else if(kind==='site'){
+        commands.append(button(serverLabel,()=>select(item('servers',site))),button(subnetLabel,()=>select(item('subnets',site))));
+        addAction(commands,remove(row=>'/sites/'+enc(row.name)),site);
+      }else if(kind==='subnets'){
+        addAction(commands,action(t('Создать подсеть','New Subnet'),'POST','/subnets',
+          [text('subnet','Подсеть CIDR','Subnet CIDR',{placeholder:'192.0.2.0/24'}),siteField()],{prefill:()=>({site:site?.name})}));
+      }else if(kind==='links'){
+        addAction(commands,action(t('Создать связь сайтов','New Site Link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}));
+      }
+      commands.hidden=!commands.childElementCount;
+      showList();
+    }
+    searchBox.addEventListener('input',showList);
+    renderTree();
+    render();
+    return {async load(){
+      const current=++generation;
+      message(status,t('Загрузка…','Loading…'));
+      root.setAttribute('aria-busy','true');
+      const sections=Object.entries(endpoints);
+      const responses=await Promise.allSettled(sections.map(([,endpoint])=>request(endpoint)));
+      if(current!==generation)return;
+      root.setAttribute('aria-busy','false');
+      data={};
+      errors={};
+      responses.forEach((response,index)=>{
+        const [kind]=sections[index];
+        if(response.status==='fulfilled')data[kind]=response.value||[];
+        else errors[kind]=response.reason.message;
+      });
+      if(selected.site&&data.sites){
+        const updated=data.sites.find(site=>same(site.dn,selected.site.dn));
+        selected=updated?item(selected.kind,updated):item('sites');
+      }
+      renderTree();
+      render();
+      message(status,Object.keys(errors).length?t('Часть разделов недоступна','Some sections could not be loaded'):t('Данные обновлены','Data refreshed'),Object.keys(errors).length>0);
+    }};
+  }
   function topologyTable(parent,rows,columns,actions=[]){
     const wrap=el('div','workspace-table');const table=el('table');const head=el('tr');columns.forEach(c=>head.append(el('th','',c[1])));if(actions.length)head.append(el('th','',t('Операции','Actions')));table.append(head);
     for(const row of rows){const tr=el('tr',row.modelConflict?'policy-model-conflict':'');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td');for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))td.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
@@ -1033,18 +1223,6 @@
   }
   function renderResult(result,parent,a,row,query) {
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
-    if(endpoint==='/sites/links'){
- parent.append(el('p','muted',t('Расписания Site Link заблокированы из-за ошибки KCC в Samba. Расписания отдельных соединений доступны в разделе «Репликация».','Site Link schedule writes are blocked due to a Samba KCC defect. Connection schedules are available under Replication.')));
-      topologyTable(parent,result,[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Минуты','Minutes')]],
-        [action(t('Настроить связь','Configure link'),'PUT',r=>'/sites/links/'+enc(r.name),linkFields(),{revision:true,confirm:true,prefill:r=>({sites:r.sites.join(';'),cost:r.cost,interval:r.interval})}),scheduleOperation(r=>'/sites/links/'+enc(r.name)+'/schedule'),{...remove(r=>'/sites/links/'+enc(r.name)),revision:true}]);return;
-    }
-    if(endpoint==='/sites/controllers'){
-      topologyTable(parent,result,[['name',t('Контроллер','DC')],['dns','DNS'],['site',t('Сайт','Site')]],
-        [action(t('Перенести в сайт','Move to site'),'POST',r=>'/sites/controllers/'+enc(r.name)+'/move',[text('site','Новый сайт','New site')],{revision:true,confirm:true}),{...view(t('Проверить репликацию','Inspect replication'),'/repl/status',[text('dc','Контроллер','Controller')]),prefill:r=>({dc:r.dns})}]);return;
-    }
-    if(endpoint==='/sites/topology'){
-      for(const site of result.sites){const title=el('h3','',site.name);parent.append(title);const list=el('ul');for(const dc of result.controllers.filter(dc=>dc.site===site.name))list.append(el('li','',t('Контроллер: ','DC: ')+dc.dns));for(const subnet of result.subnets.filter(sub=>(sub.site||'').toLowerCase()===site.dn.toLowerCase()))list.append(el('li','',t('Подсеть: ','Subnet: ')+subnet.name));parent.append(list);}return;
-    }
     if(endpoint==='/repl/connections'){
       parent.append(el('p','muted',t('Автоматические соединения управляются KCC: он может восстановить их после изменений. Ручные соединения используйте осознанно.','KCC manages automatic connections and may recreate them. Use manual connections deliberately.')));
       topologyTable(parent,result,[['source',t('Источник','Source')],['destination',t('Назначение','Destination')],['enabled',t('Включено','Enabled')],['automatic','KCC']],

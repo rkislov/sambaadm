@@ -26,6 +26,7 @@ directMembers=[user.dn];
 const tree={dn:base,label:'example.com',kind:'domain',children:[{dn:people,label:'People',kind:'ou',children:[{dn:user.dn,objectDN:user.dn,parentDN:people,label:'alice',kind:'user',children:[]}]}]};
 const listings={users:[user],groups:[{samAccountName:'Finance',dn:'CN=Finance,CN=Users,'+base,members:[user.dn]}],computers:[{samAccountName:'PC01$',dnsHostName:'pc01.example.com',whenCreated:'20260729092431.0Z',dn:'CN=PC01,'+people}],ou:[{name:'People',dn:people}],gpo:[{displayName:'Workstation Baseline',guid:'{abc}',dn:'CN={abc},CN=Policies,CN=System,'+base,source:'ldap'}],sites:[{name:'Branch',dn:'CN=Branch,CN=Sites,CN=Configuration,'+base},{name:'Default',dn:'CN=Default,CN=Sites,CN=Configuration,'+base}],trusts:[{domain:'partner.test',direction:'both',type:'forest'}],shares:[{name:'Finance',path:'/srv/samba/Finance'}],printers:[{name:'Printer',printerName:'queue',path:'/srv/samba/spool'}]};
 let scopeRevision='1',scopeBlock=false,scopeLinks=[],scopeConflict=false;let filterRevision='1',filterEntries=[{id:'apply-1',sid:'S-1-5-11',name:'Authenticated Users',type:5,mask:256,apply:true,editable:true,inherited:false}];
+const subnets=[{name:'192.0.2.0/24',site:listings.sites[0].dn},{name:'198.51.100.0/24'}];
 let siteLink={name:'WAN',sites:['Default','Branch'],cost:100,interval:180,revision:'11',scheduleEditable:false,schedule:Array(7).fill('00:00-24:00'),scheduleSupported:true};
 let topologyConnection={id:'manual-test',source:'dc1.example.com',destination:'dc2.example.com',enabled:true,automatic:false,revision:'21',schedule:Array(7).fill('00:00-24:00'),scheduleSupported:true};
 const controllers=[{name:'DC1',dns:'dc1.example.com',site:'Default',revision:'31'},{name:'DC2',dns:'dc2.example.com',site:'Branch',revision:'32',rodc:true}];
@@ -138,7 +139,16 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
    }
    if(endpoint==='/sites/controllers/dc2.example.com/rodc/authentications')result={controller:'dc2.example.com',source:'Samba Authentication JSON audit',status:'available',truncated:false,malformed:0,events:[{time:'2026-11-03T12:00:00Z',domain:'EXAMPLE',account:'alice <img src=x onerror=alert(1)>',client:'ipv4:192.0.2.5:1',status:'NT_STATUS_OK',service:'LDAP'},{time:'2026-11-03T12:01:00Z',account:'alice',status:'NT_STATUS_WRONG_PASSWORD'}]};
    if(endpoint==='/domain')result={dnsRoot:'example.com',netbios:'EXAMPLE',baseDN:base,domainSid:'S-1-5-21-123',functionLevel:'7'};
-   if(endpoint==='/subnets')result=[{name:'192.0.2.0/24',site:listings.sites[0].dn}];
+   if(endpoint==='/subnets'&&req.method()==='GET')result=subnets;
+   if(endpoint==='/subnets'&&req.method()==='POST'){
+     const {subnet,site}=req.postDataJSON();subnets.push({name:subnet,site:listings.sites.find(row=>row.name===site).dn});
+   }
+   if(endpoint==='/subnets/site'){
+     const {subnet,site}=req.postDataJSON();subnets.find(row=>row.name===subnet).site=listings.sites.find(row=>row.name===site).dn;
+   }
+   if(endpoint==='/subnets/delete'){
+     const {subnet}=req.postDataJSON();subnets.splice(subnets.findIndex(row=>row.name===subnet),1);
+   }
    if(endpoint.endsWith('/inventory'))result={controller:'dc1.example.com',observed:'2026-11-04T10:00:00Z',checks:[{id:'samba_version',status:'ok',detail:'Version 4.17.12'},{id:'samba_service',status:'ok',detail:'active'}]};
    if(endpoint.endsWith('/authentications')&&!endpoint.includes('/rodc/'))result={controller:'dc1.example.com',source:'Samba Authentication JSON audit',status:'partial',warning:'Audit retention is unknown',events:[{time:'2026-11-04T10:00:00Z',domain:'EXAMPLE',account:'alice <img src=x onerror=alert(1)>',client:'192.0.2.5',status:'NT_STATUS_OK',service:'LDAP'}]};
    if(endpoint==='/sites/topology/audit')result={status:'partial',objects:8,warnings:['Visibility depends on LDAP permissions'],findings:[{code:'unresolved_fromServer',severity:'review',dn:'CN=Old connection',reference:'CN=Removed DC',detail:'Missing target <img src=x onerror=alert(1)>',changed:'20000101000000.0Z'},{code:'server_computer_reference',severity:'unknown',dn:'CN=DC1',reference:'CN=Computer',detail:'Access denied'}]};
@@ -217,11 +227,71 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.setViewportSize({width:390,height:844});assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false,'typed editor mobile overflow');await page.setViewportSize({width:1440,height:1000});await close();typedMode=false;
   await page.getByRole('button',{name:'Восстановить в новую GPO',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Имя новой политики',{exact:true}).fill('Restored Policy');await dialog.getByLabel('Абсолютный каталог копии policy/{GUID} на узле helper',{exact:true}).fill('/backup/policy/{abc}');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.deepEqual(calls.find(c=>c.path==='/gpo/restore').body,{name:'Restored Policy',path:'/backup/policy/{abc}'});await close();
   await page.getByRole('button',{name:'Доставить на контроллеры',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('100% · ok',{exact:true}).waitFor();await close();await screenshot('gpo');
-  await open('sites');await page.getByRole('button',{name:'Топология сайтов',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByText('Подсеть: 192.0.2.0/24',{exact:true}).waitFor();await screenshot('site-topology');await close();
-  const links=async()=>{await page.getByRole('button',{name:'Связи сайтов',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:'Настроить связь',exact:true}).waitFor();};
-  await links();await screenshot('site-links');await page.getByRole('dialog').getByRole('button',{name:'Настроить связь',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Стоимость (1–32767)',{exact:true}).fill('250');await dialog.getByLabel('Интервал, минут (15–10080, шаг 15)',{exact:true}).fill('30');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(siteLink.cost,250);assert.equal(siteLink.interval,30);assert.deepEqual([...siteLink.sites].sort(),['Branch','Default']);await close();
-  await links();assert.equal(await page.getByRole('dialog').getByRole('button',{name:'Расписание UTC',exact:true}).count(),0);await close();
-  await page.getByRole('button',{name:'Контроллеры',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Перенести в сайт',exact:true}).nth(1).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Новый сайт',{exact:true}).selectOption('Default');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(controllers[1].site,'Default');await close();
+  await page.getByRole('button',{name:'Результирующая политика',exact:true}).click();
+  dialog=page.getByRole('dialog');
+  const rsopXML=String.raw`<?xml version="1.0" encoding="utf-16"?>
+    <Rsop xmlns="http://www.microsoft.com/GroupPolicy/Rsop" xmlns:q="http://www.microsoft.com/GroupPolicy/Settings/Registry">
+      <DataType>LoggedData</DataType><ReadTime>2026-11-11T09:00:00Z</ReadTime>
+      <ComputerResults><Name>PC01</Name><GPO><Identifier><Identifier>{abc}</Identifier><Domain>example.com</Domain></Identifier><Name>Baseline</Name><Link><AppliedOrder>1</AppliedOrder></Link></GPO>
+      <ExtensionData><Name>Registry</Name><Extension xmlns="http://www.microsoft.com/GroupPolicy/Settings"><q:Policy><GPO><Identifier>{abc}</Identifier></GPO><Precedence>1</Precedence><q:Name>Allow example</q:Name><q:State>Enabled</q:State><q:Text>&lt;script&gt;window.rsopUnsafe=true&lt;/script&gt;</q:Text></q:Policy></Extension></ExtensionData></ComputerResults>
+      <UserResults><Name>EXAMPLE\alice</Name><GPO><Name>User restrictions</Name><FilterAllowed>false</FilterAllowed></GPO></UserResults>
+    </Rsop>`;
+  const reportInput=dialog.getByLabel('XML-отчёт Windows',{exact:true});
+  await reportInput.setInputFiles({name:'result.xml',mimeType:'application/xml',buffer:Buffer.concat([Buffer.from([255,254]),Buffer.from(rsopXML,'utf16le')])});
+  await dialog.getByText('Применена',{exact:true}).waitFor();
+  const setting=dialog.getByRole('row').filter({hasText:'Allow example'});
+  await setting.getByText('Baseline',{exact:true}).waitFor();
+  await setting.getByText('Allow example',{exact:true}).click();
+  await setting.getByText(/window.rsopUnsafe/).waitFor();
+  assert.equal(await page.evaluate(()=>window.rsopUnsafe),undefined);
+  await dialog.getByRole('button',{name:'Конфигурация пользователя',exact:true}).click();
+  await dialog.getByText('Отфильтрована',{exact:true}).waitFor();
+  await screenshot('rsop-report');
+  await reportInput.setInputFiles({name:'gpo.xml',mimeType:'application/xml',buffer:Buffer.from('<GPO/>')});
+  await dialog.getByRole('alert').filter({hasText:'Выберите XML-отчёт RSoP'}).waitFor();
+  assert.equal(await dialog.getByText('User restrictions',{exact:true}).count(),0);
+  await close();
+
+  await open('sites');
+  const sitesTree=page.locator('.sites-console-tree');
+  const sitesMain=page.locator('.workspace-list');
+  const openSubnets=()=>sitesTree.getByRole('button',{name:'Подсети',exact:true}).click();
+  await openSubnets();
+  await sitesMain.getByRole('row').filter({hasText:'192.0.2.0/24'}).getByText('Branch',{exact:true}).waitFor();
+  await sitesMain.getByText('Не назначен',{exact:true}).waitFor();
+  await screenshot('site-subnets');
+  const searchSubnets=sitesMain.getByRole('searchbox');
+  await searchSubnets.fill('192.0.2');
+  assert.equal(await sitesMain.getByText('198.51.100.0/24',{exact:true}).count(),0);
+  await searchSubnets.fill('');
+  await sitesMain.getByRole('row').filter({hasText:'192.0.2.0/24'}).getByRole('button',{name:'Свойства',exact:true}).click();
+  dialog=page.getByRole('dialog');await dialog.getByLabel('Сайт',{exact:true}).selectOption('Default');
+  await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();
+  await dialog.getByText('Операция выполнена',{exact:true}).waitFor();await close();
+  await sitesMain.getByRole('row').filter({hasText:'192.0.2.0/24'}).getByText('Default',{exact:true}).waitFor();
+  assert.deepEqual(calls.find(c=>c.path==='/subnets/site').body,{subnet:'192.0.2.0/24',site:'Default'});
+  await sitesTree.getByRole('button',{name:'Branch',exact:true}).click();
+  await sitesMain.getByRole('button',{name:'Подсети',exact:true}).click();
+  await sitesMain.getByRole('button',{name:'Создать подсеть',exact:true}).click();
+  dialog=page.getByRole('dialog');await dialog.getByLabel('Подсеть CIDR',{exact:true}).fill('2001:db8::/64');
+  assert.equal(await dialog.getByLabel('Сайт',{exact:true}).inputValue(),'Branch');
+  await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();
+  await dialog.getByText('Операция выполнена',{exact:true}).waitFor();await close();
+  const ipv6=sitesMain.getByRole('row').filter({hasText:'2001:db8::/64'});
+  await ipv6.getByRole('button',{name:'Удалить',exact:true}).click();
+  dialog=page.getByRole('dialog');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();
+  await dialog.getByText('Операция выполнена',{exact:true}).waitFor();await close();await ipv6.waitFor({state:'detached'});
+  const links=()=>sitesTree.getByRole('button',{name:'IP',exact:true}).click();
+  await links();await screenshot('site-links');
+  await sitesMain.getByRole('button',{name:'Свойства',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Стоимость (1–32767)',{exact:true}).fill('250');await dialog.getByLabel('Интервал, минут (15–10080, шаг 15)',{exact:true}).fill('30');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(siteLink.cost,250);assert.equal(siteLink.interval,30);assert.deepEqual([...siteLink.sites].sort(),['Branch','Default']);await close();
+  assert.equal(await sitesMain.getByRole('button',{name:'Расписание UTC',exact:true}).count(),0);
+  await sitesTree.getByRole('button',{name:'Branch',exact:true}).click();
+  await sitesMain.getByRole('button',{name:'Серверы',exact:true}).click();
+  await sitesMain.getByRole('button',{name:'Перенести в сайт',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Новый сайт',{exact:true}).selectOption('Default');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(controllers[1].site,'Default');await close();
+  await sitesMain.getByText('Нет объектов',{exact:true}).waitFor();
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'sites must fit mobile width');
+  await page.setViewportSize({width:1440,height:1000});
   await open('repl');await page.getByRole('button',{name:'Состояние репликации',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Показать',exact:true}).click();await dialog.getByText('Успешно (0)',{exact:true}).first().waitFor();await dialog.getByText('Узел недоступен по сети (1232)',{exact:true}).waitFor();await dialog.getByText('Сервер RPC недоступен (1722)',{exact:true}).waitFor();await dialog.getByText('Неизвестная ошибка (999999)',{exact:true}).waitFor();await dialog.getByText('Naming context is being removed or is not replicated (8452)',{exact:true}).waitFor();await dialog.getByText('Нет данных',{exact:true}).waitFor();await screenshot('replication-status');await close();
   const connections=async()=>{await page.getByRole('button',{name:'Соединения репликации',exact:true}).click();await page.getByRole('dialog').getByRole('button',{name:topologyConnection.enabled?'Отключить соединение':'Включить соединение',exact:true}).waitFor();};
   await connections();await page.getByRole('dialog').getByRole('button',{name:'Отключить соединение',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(topologyConnection.enabled,false);await close();
@@ -258,7 +328,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.getByRole('button',{name:'Свойства',exact:true}).click();card=page.getByRole('dialog');await card.getByLabel('Отображаемое имя',{exact:true}).waitFor();assert.equal(await card.getByLabel('Отображаемое имя',{exact:true}).isDisabled(),true);assert.equal(await card.getByRole('button',{name:'Сохранить атрибуты',exact:true}).count(),0);await card.getByRole('button',{name:'Группы',exact:true}).click();await card.getByText('Domain Users — основная группа',{exact:true}).waitFor();assert.equal(await card.getByRole('button',{name:'Найти группы',exact:true}).count(),0);await close();
   await open('gpo');await page.getByRole('button',{name:'Сценарии',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Команда сценария 1',{exact:true}).waitFor();assert.equal(await dialog.getByRole('button',{name:'Сохранить сценарии',exact:true}).count(),0);assert.equal(await dialog.getByLabel('Команда сценария 1',{exact:true}).isDisabled(),true);assert.equal(await dialog.locator('input[type=file]').count(),0);await close();
   await open('gpo');await page.getByRole('button',{name:'Редактор политик',exact:true}).click();dialog=page.getByRole('dialog');await selectPolicy('chronyd.service');await dialog.getByRole('group',{name:'chronyd.service',exact:true}).waitFor();assert.equal(await dialog.getByRole('button',{name:'Сохранить',exact:true}).count(),0);assert.equal(await dialog.getByRole('group',{name:'chronyd.service',exact:true}).getByRole('radio').first().isDisabled(),true);await close();
-  await open('sites');await page.getByRole('button',{name:'Связи сайтов',exact:true}).click();await page.getByRole('dialog').getByText('WAN',{exact:true}).waitFor();assert.equal(await page.getByRole('dialog').getByRole('button',{name:'Настроить связь',exact:true}).count(),0);await close();
+  await open('sites');await links();await sitesMain.getByText('WAN',{exact:true}).waitFor();assert.equal(await sitesMain.getByRole('button',{name:'Свойства',exact:true}).count(),0);assert.equal(await sitesMain.getByRole('button',{name:'Создать связь сайтов',exact:true}).count(),0);
   await open('dns');await page.locator('.dns-console-tree').getByRole('button',{name:'files',exact:true}).click();await page.locator('.dns-console-main').getByText('Записи загружены',{exact:true}).waitFor();await page.locator('.dns-record-table').getByRole('button',{name:'Просмотр',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('IP-адрес',{exact:true}).waitFor();assert.equal(await dialog.getByRole('button',{name:'Сохранить',exact:true}).count(),0);assert.equal(await dialog.getByLabel('IP-адрес',{exact:true}).isDisabled(),true);await close();
   await page.setViewportSize({width:390,height:844});await open('gpo');await page.getByRole('button',{name:'Почему применяется GPO',exact:true}).click();
   await explanation.getByLabel('Пользователь или его OU',{exact:true}).selectOption(people);await explanation.getByRole('button',{name:'Объяснить применение',exact:true}).click();await explanation.getByText('Отчёт готов',{exact:true}).waitFor();assert.equal(await explanation.evaluate(e=>e.scrollWidth>e.clientWidth),false,'mobile explanation overflow');await screenshot('gpo-explanation-mobile');await close();await page.setViewportSize({width:1440,height:1000});
@@ -327,6 +397,6 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await visit(url+'/shares/new');await page.getByLabel('Название папки',{exact:true}).fill('Team');await page.locator('#share-wizard').getByLabel('Finance',{exact:true}).check();await page.getByRole('button',{name:'Рассчитать параметры',exact:true}).click();await page.getByText('Права рассчитаны. Проверьте параметры перед созданием.',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Создать папку',exact:true}).isDisabled(),true);await page.getByLabel('Подтверждаю создание с рассчитанными правами',{exact:true}).check();assert.equal(await page.getByRole('button',{name:'Создать папку',exact:true}).isDisabled(),false);await page.getByLabel('Название папки',{exact:true}).fill('Changed');assert.equal(await page.getByRole('button',{name:'Создать папку',exact:true}).isDisabled(),true);
   await visit(url+'/settings');await page.getByRole('button',{name:'Предпросмотр профиля',exact:true}).click();await page.getByText('Перед записью будет выполнен testparm и создана резервная копия.',{exact:true}).waitFor();await page.getByLabel('Подтверждаю изменение smb.conf',{exact:true}).check();await page.getByRole('button',{name:'Сохранить профиль',exact:true}).click();await page.getByText(/Резервная копия:.*smb.conf.test.bak/).waitFor();assert.equal(calls.filter(c=>c.path==='/samba/profile'&&c.method==='PUT').at(-1).body.revision,'hash1');
   await visit(url+'/diagnostics');await page.locator('#diagnostic-gpo option').filter({hasText:'Workstation Baseline'}).waitFor({state:'attached'});await page.locator('#diagnostic-gpo').selectOption('{abc}');assert.equal(await page.locator('#diagnostic-gpo').inputValue(),'{abc}');
-  assert.deepEqual(errors,[]);console.log('PASS: domain survey/JSON/partial sources/admin/RWDC audit/date filters/LDAP remnants/mobile, all 12 sections, site topology/link schedule/DC move/connections/KCC/status, user tree/profile/groups/conflicts, password/move/status, DNS browsing/update, GPO links/jobs/ALT and scripts editor/uploads/reorder/conflicts/recovery/backup removal, permission diagnostics, GPO explanation/JSON/readonly/mobile, LDAP delegation preview/grant/conflict/readonly, coordinated ACL grant/revoke/recovery/mobile, RODC policy/preload/authentication/conflict/readonly/mobile, SYSVOL repair/preview/conflict/rollback/readonly/mobile, SYSVOL consistency/incomplete/JSON/readonly/busy/mobile, RBAC, CSRF, errors, XSS text and mobile layout');
+  assert.deepEqual(errors,[]);console.log('PASS: domain survey/JSON/partial sources/admin/RWDC audit/date filters/LDAP remnants/mobile, all 12 sections, RSAT sites/subnet reassignment/IPv6/link schedule/DC move, Windows RSoP XML, connections/KCC/status, user tree/profile/groups/conflicts, password/move/status, DNS browsing/update, GPO links/jobs/ALT and scripts editor/uploads/reorder/conflicts/recovery/backup removal, permission diagnostics, GPO explanation/JSON/readonly/mobile, LDAP delegation preview/grant/conflict/readonly, coordinated ACL grant/revoke/recovery/mobile, RODC policy/preload/authentication/conflict/readonly/mobile, SYSVOL repair/preview/conflict/rollback/readonly/mobile, SYSVOL consistency/incomplete/JSON/readonly/busy/mobile, RBAC, CSRF, errors, XSS text and mobile layout');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{server.close();fs.rmSync(dir,{recursive:true,force:true});});
