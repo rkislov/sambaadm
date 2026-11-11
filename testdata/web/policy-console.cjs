@@ -69,7 +69,7 @@ const server=http.createServer((req,res)=>{
   const cancelled=page.waitForEvent('requestfailed',{predicate:req=>req.url().includes('/alt-settings')});await dialog.locator('.workspace-dialog-close button').click();await cancelled;await held.abort().catch(()=>{});
   await page.clock.fastForward(126000);assert.equal(await page.getByRole('dialog').count(),0,'aborted read must not reopen dialog');
   await page.clock.resume();role='admin';language='ru';await page.goto(`http://127.0.0.1:${server.address().port}/settings`);
-  const cacheLink=page.getByRole('navigation',{name:'В этом разделе'}).getByRole('link',{name:'Локальные шаблоны политик',exact:true});await cacheLink.click();assert.equal(await cacheLink.getAttribute('aria-current'),'location');
+  const cacheLink=page.getByRole('navigation',{name:'В этом разделе'}).getByRole('link',{name:'Локальные шаблоны политик',exact:true});await cacheLink.click();await cacheLink.and(page.locator('[aria-current=location]')).waitFor();
   let importResult={count:4500,saved:true,issues:[]};await page.route('**/api/v1/gpo/templates/import',route=>{assert.equal(route.request().method(),'POST');assert.ok(route.request().headers()['x-csrf-token']);return route.fulfill({json:importResult});});
   await page.getByRole('button',{name:'Импортировать / обновить шаблоны',exact:true}).click();await page.getByText(/Шаблоны сохранены локально. Определений: 4500/).waitFor();
   importResult={count:4490,saved:true,issues:[{file:'ru-RU/Broken.adml',template:'Broken.admx',error:'ADML: malformed XML <script>window.bad=true</script>'}]};
