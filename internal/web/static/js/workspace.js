@@ -60,7 +60,7 @@
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
-      toolbar:[{label:t('Результирующая политика','Resultant Set of Policy'),method:'GET',run:()=>openRSOP()},{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},{label:t('Моделирование политики','Policy modeling'),method:'GET',model:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
+      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
@@ -81,7 +81,7 @@
       columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
       hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
       toolbar:[{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true},{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
-    '/sites':{title:t('Сайты и службы Active Directory','Active Directory Sites and Services'),endpoint:'/sites',id:r=>r.name,
+    '/sites':{title:t('Сайты и службы','Sites and Services'),endpoint:'/sites',id:r=>r.name,
       columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true}]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
@@ -146,32 +146,71 @@
   const tools=el('div','workspace-tools');head.append(tools);root.append(head);
   const status=el('p','workspace-message');status.setAttribute('aria-live','polite');root.append(status);
   if(cfg.hint)root.append(el('p','muted',cfg.hint));
-  const filter=el('form','workspace-filter');const searchInput=el('input');searchInput.type='search';searchInput.placeholder=t('Поиск по списку','Search list');searchInput.setAttribute('aria-label',searchInput.placeholder);
-  filter.append(searchInput,button(t('Найти','Search'),()=>{search=searchInput.value;renderRows();}));filter.addEventListener('submit',e=>{e.preventDefault();search=searchInput.value;renderRows();});if(cfg!==configs['/dns']&&cfg!==configs['/sites'])root.append(filter);searchInput.addEventListener('input',()=>{search=searchInput.value;renderRows();});filter.append(el('span','muted',t('Поиск по имени, логину и атрибутам в выбранной ветви. Для всего домена выберите «Все объекты».','Search name, login and attributes in the selected branch. Select All objects to search the whole domain.')));
-  const content=el('div','workspace-columns');const sidebar=el('aside','workspace-tree');sidebar.setAttribute('aria-label',t('Дерево объектов','Object hierarchy'));const main=el('section','workspace-list');if(cfg===configs['/gpo'])content.classList.add('workspace-columns-single');else content.append(sidebar);content.append(main);root.append(content);
-  const selection=el('p','workspace-selection');main.append(selection);
-  const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>tr.append(el('th','',c[1])));tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);main.append(tableWrap);
+  const specialized=cfg===configs['/dns']||cfg===configs['/sites'];
+  const hasObjectTree=cfg!==configs['/gpo'];
+  const filter=el('form','workspace-filter');
+  const searchInput=el('input');
+  searchInput.type='search';
+  searchInput.placeholder=t('Поиск в текущем списке','Search current list');
+  searchInput.setAttribute('aria-label',searchInput.placeholder);
+  function searchRows() {
+    search=searchInput.value;
+    renderRows();
+  }
+  searchInput.addEventListener('input',searchRows);
+  filter.addEventListener('submit',event=>{event.preventDefault();searchRows();});
+  filter.append(searchInput,button(t('Найти','Search'),searchRows));
+
+  const content=el('div','workspace-columns');
+  const sidebar=el('aside','console-sidebar console-tree'+(hasObjectTree?' workspace-tree':''));
+  sidebar.setAttribute('aria-label',t('Навигация раздела','Section navigation'));
+  const objectTree=el('div');
+  if(hasObjectTree)sidebar.append(objectTree);
+  const main=el('section','workspace-list');
+  content.append(sidebar,main);
+  root.append(content);
+  const listTools=el('div','workspace-tools console-list-tools');
+  const listPanel=el('div');
+  if(!specialized)listPanel.append(listTools,filter);
+  main.append(listPanel);
+  const selection=el('p','workspace-selection');listPanel.append(selection);
+  const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>tr.append(el('th','',c[1])));tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);listPanel.append(tableWrap);
   const detail=el('section','workspace-detail');detail.setAttribute('aria-live','polite');root.append(detail);
   const dialog=el('dialog','workspace-dialog');dialog.setAttribute('aria-labelledby','operation-title');root.append(dialog);
   const choices=el('datalist');choices.id='directory-dns';root.append(choices);
-  const dnsConsole=cfg===configs['/dns']?window.sambaadmDNSConsole({sidebar,main,request,admin,onOpen:(zone,name,record)=>openDNSEditor(zone,name,{record}),onCreate:(zone,name)=>zone&&openDNSEditor(zone,name,{create:true}),onDelete:zone=>zone&&openOperation(cfg.actions.find(a=>a.method==='DELETE'),zone)}):null;
+  const dnsConsole=cfg===configs['/dns']?window.sambaadmDNSConsole({sidebar:objectTree,main,request,admin,onOpen:(zone,name,record)=>openDNSEditor(zone,name,{record}),onCreate:(zone,name)=>zone&&openDNSEditor(zone,name,{create:true}),onDelete:zone=>zone&&openOperation(cfg.actions.find(a=>a.method==='DELETE'),zone)}):null;
   const sitesConsole=cfg===configs['/sites']?setupSitesConsole():null;
+  const gpoConsole=cfg===configs['/gpo']?setupGPOConsole():null;
   function allowed(a) {return a.method==='GET' || (a.support?helpdesk:admin);}
   function addAction(parent,a,row) {
     if(!allowed(a)||a.when&&!a.when(row))return;
     // Samba LDAP fallback can return GPOs without a GUID. Do not send a fabricated identifier.
-    if(cfg===configs['/gpo'] && row && !row.guid)return;
+    if(cfg===configs['/gpo'] && row && !row.guid && !a.run)return;
     if(a.href){const link=el('a','btn',a.label);link.href=typeof a.href==='function'?a.href(row):a.href;parent.append(link);return;}
     parent.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));
   }
   tools.append(button(t('Обновить','Refresh'),()=>load()));
-  if(cfg.create){const before=tools.childElementCount;addAction(tools,cfg.create);if(tools.childElementCount>before)tools.lastElementChild.classList.add('btn-primary');}
-  const views=el('nav','workspace-views');views.setAttribute('aria-label',t('Представления раздела','Section views'));
-  const operations=el('details','workspace-menu');operations.append(el('summary','',t('Действия','Actions')));
-  const operationList=el('div','workspace-menu-list');operations.append(operationList);
-  (cfg.toolbar||[]).forEach(a=>addAction(a.method==='GET'||a.topology||a.rodc?views:operationList,a));
-  if(views.childElementCount)root.insertBefore(views,status);
-  if(operationList.childElementCount)tools.append(operations);
+  if(cfg.create){
+    const target=specialized?tools:listTools;
+    const before=target.childElementCount;
+    addAction(target,cfg.create);
+    if(target.childElementCount>before)target.lastElementChild.classList.add('btn-primary');
+  }
+  listTools.hidden=!listTools.childElementCount;
+  const views=el('div','console-tree-children');
+  const operations=el('div','console-tree-children');
+  for(const operation of cfg.toolbar||[]){
+    addAction(operation.method==='GET'||operation.topology||operation.rodc?views:operations,operation);
+  }
+  function addMenu(title,items,open) {
+    if(!items.childElementCount)return;
+    const menu=el('details',open?'console-local-menu':'console-local-menu workspace-menu');
+    menu.open=open;
+    menu.append(el('summary','',title),items);
+    sidebar.append(menu);
+  }
+  addMenu(t('Представления','Views'),views,true);
+  addMenu(t('Действия','Actions'),operations,false);
   function value(v) {if(v===true)return t('Включён','Enabled');if(v===false)return t('Отключён','Disabled');if(Array.isArray(v))return v.length;return v??'—';}
   function attributeValue(key, values) {
     key=key.toLowerCase();
@@ -216,43 +255,62 @@
     renderRows();renderTree();
   }
   function renderTree() {
-    if(cfg===configs['/gpo']||cfg===configs['/dns'])return;
-    sidebar.replaceChildren();sidebar.append(el('h2','',t('Дерево','Hierarchy')));
-    sidebar.append(button(t('Все объекты','All objects'),()=>{selectedDN='';selectedContainer='';selectedIDs=null;selectedObject='';renderRows();renderTree();}));
-    if(tree && cfg!==configs['/gpo']) {
-      const list=el('ul','directory-tree');
-      function appendNode(parent,node,depth){
-        const li=el('li');
-        if(node.children?.length){const d=el('details');d.open=depth===0||opened.has(node.dn);d.addEventListener('toggle',()=>d.open?opened.add(node.dn):opened.delete(node.dn));const summary=el('summary');const b=button(node.label,()=>chooseNode(node),selectedDN===node.dn?'selected':'');b.title=node.dn;summary.append(b);d.append(summary);const ul=el('ul');node.children.forEach(n=>appendNode(ul,n,depth+1));d.append(ul);li.append(d);}
-        else {const b=button(node.label,()=>chooseNode(node),selectedDN===node.dn?'selected':'');b.title=node.dn;li.append(b);}parent.append(li);
-      }
-      appendNode(list,tree,0);sidebar.append(list);return;
-    }
-    if(cfg.directory){sidebar.append(el('p','muted',t('Дерево недоступно. Список можно использовать отдельно.','Hierarchy unavailable. The list remains usable.')));return;}
+    if(!hasObjectTree||specialized)return;
+    const restoreFocus=objectTree.contains(document.activeElement);
+    const scrollTop=sidebar.scrollTop;
+    objectTree.replaceChildren(el('h2','',t('Объекты','Objects')));
+    const all=button(t('Все объекты','All objects'),()=>{
+      selectedDN='';selectedContainer='';selectedIDs=null;selectedObject='';
+      renderRows();renderTree();
+    });
+    markCurrent(all,!selectedDN&&!selectedObject);
+    objectTree.append(all);
     const list=el('ul','directory-tree');
-    rows.forEach(row=>{const id=cfg.id(row);const label=row.name||row.displayName||row.domain||row.role||id||'—';const li=el('li');
-      li.append(button(label,()=>{selectedObject=id;selectedDN='';selectedIDs=null;renderRows();},selectedObject===id?'selected':''));
-      if(cfg===configs['/dns']) {
-        const d=el('details');const summary=el('summary','',t('Имена записей','Record names'));const children=el('ul');d.append(summary,children);li.append(d);
-        let loaded=false,loading=false;
-        const loadNodes=async()=>{if(loaded||loading||!d.open)return;loading=true;children.replaceChildren(el('li','muted',t('Загрузка…','Loading…')));
-          try{const nodes=await request('/dns/zones/'+enc(row.name)+'/nodes');children.replaceChildren();
-            for(const name of nodes){const child=el('li');child.append(button(name,()=>openOperation({...cfg.actions[0],prefill:()=>({name,type:'ALL'})},row)));children.append(child);}
-            if(!nodes.length)children.append(el('li','muted',t('Нет записей','No records')));loaded=true;
-          }catch(e){children.replaceChildren(el('li','error',e.message));children.append(button(t('Повторить','Retry'),loadNodes));}
-          finally{loading=false;}
-        };d.addEventListener('toggle',loadNodes);
-        li.append(button(t('Запросить запись…','Query record…'),()=>openOperation(cfg.actions[0],row),'linkish'));
+    if(tree){
+      function appendNode(parent,node,depth){
+        const item=el('li');
+        const control=button(node.label,()=>chooseNode(node));
+        control.title=node.dn;
+        markCurrent(control,selectedDN===node.dn);
+        if(node.children?.length){
+          const branch=el('details');
+          branch.open=depth===0||opened.has(node.dn);
+          branch.addEventListener('toggle',()=>branch.open?opened.add(node.dn):opened.delete(node.dn));
+          control.addEventListener('click',event=>event.preventDefault());
+          const summary=el('summary');
+          summary.append(control);
+          const children=el('ul');
+          node.children.forEach(child=>appendNode(children,child,depth+1));
+          branch.append(summary,children);
+          item.append(branch);
+        }else item.append(control);
+        parent.append(item);
       }
-      if(cfg===configs['/gpo']){const branch=el('details');branch.append(el('summary','',t('Параметры политики','Policy settings')));for(const a of cfg.actions.slice(0,4))branch.append(button(a.label,()=>openOperation(a,row)));li.append(branch);}
-      list.append(li);
-    });sidebar.append(list);
-    if(cfg===configs['/gpo'] && tree){
-      sidebar.append(el('h3','',t('Ссылки домена и OU','Domain and OU links')));
-      const links=el('ul','directory-tree');
-      function linkNode(parent,node){const li=el('li');li.append(button(node.label,()=>openScope(node.dn)));if(node.children.length){const ul=el('ul');node.children.forEach(n=>linkNode(ul,n));li.append(ul);}parent.append(li);}
-      linkNode(links,tree);sidebar.append(links);
+      appendNode(list,tree,0);
+    }else if(cfg.directory){
+      objectTree.append(el('p','muted',t('Дерево недоступно. Список можно использовать отдельно.','Hierarchy unavailable. The list remains usable.')));
+    }else{
+      for(const row of rows){
+        const id=cfg.id(row);
+        const label=row.name||row.displayName||row.domain||row.role||id||'—';
+        const item=el('li');
+        const control=button(label,()=>{
+          selectedObject=id;selectedDN='';selectedIDs=null;
+          renderRows();renderTree();
+        });
+        markCurrent(control,selectedObject===id);
+        item.append(control);
+        list.append(item);
+      }
     }
+    if(list.childElementCount)objectTree.append(list);
+    sidebar.scrollTop=scrollTop;
+    if(restoreFocus)objectTree.querySelector('[aria-current]')?.focus({preventScroll:true});
+  }
+  function markCurrent(control,current) {
+    control.classList.toggle('selected',current);
+    if(current)control.setAttribute('aria-current','true');
+    else control.removeAttribute('aria-current');
   }
   async function load() {
     if(sitesConsole)return sitesConsole.load();
@@ -572,7 +630,6 @@
     if(a.run)return a.run(row);
     if(a.dnsEditor)return openDNSEditor(row,a.prefill?.(row)?.name||'@');
     if(a.explain)return openPolicyExplain();
-    if(a.model)return openPolicyModel();
     if(a.scope)return openScope();
     if(a.consistency)return openConsistency(row);
     if(a.rodc)return openRODC();
@@ -648,17 +705,6 @@
     });
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
-  }
-  function openRSOP() {
-    lastFocus=document.activeElement;
-    dialogGeneration++;
-    resetDialog();
-    const title=el('h2','',t('Результирующая политика (RSoP)','Resultant Set of Policy (RSoP)'));
-    title.id='operation-title';
-    const content=el('section','rsop-report');
-    dialog.append(title,content);
-    window.sambaadmRSOP.mount(content,{t,el,button,message});
-    if(!dialog.open)dialog.showModal();
   }
   async function openRODC() {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0;
@@ -915,14 +961,19 @@
       });
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
-  async function openPolicyModel() {
+  function policyModelOutcomes() {return [['unknown',t('Неизвестно — неполный расчёт','Unknown — incomplete calculation')],['allow',t('Предположить: разрешено / истина','Assume: allowed / true')],['deny',t('Предположить: запрещено / ложь','Assume: denied / false')]];}
+  async function openPolicyModel(previous) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
-    const title=el('h2','',t('Какие политики применятся','Which policies will apply'));title.id='operation-title';
+    const title=el('h2','',t('Моделирование групповой политики','Group Policy Modeling'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,el('p','muted',t('Выберите пользователя и/или компьютер. Расчёт ничего не изменяет в домене и показывает прогноз, а не подтверждение применения на клиенте.','Choose a user and/or computer. This read-only calculation predicts policy outcomes; it does not confirm client application.')),notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
     try {
       const [model,users,computers]=await Promise.all([request('/gpo/scope'),request('/users'),request('/computers')]);if(generation!==dialogGeneration)return;scopeWarnings(model,body);
-      const form=el('form','workspace-form policy-model-form');const controls={};let target=form;const advanced=el('details','policy-model-advanced');advanced.append(el('summary','',t('Расширенные параметры','Advanced options')));const extra=el('div','workspace-form');advanced.append(extra);
+      const form=el('form','workspace-form policy-model-form');const controls={};let target=form;
+      const scenarioName=el('input');scenarioName.maxLength=120;scenarioName.value=previous?.name||'';
+      const nameField=el('label','',t('Имя сценария','Scenario name'));
+      nameField.append(scenarioName);form.append(nameField);
+      let savedScenario=previous?.id;const advanced=el('details','policy-model-advanced');advanced.append(el('summary','',t('Расширенные параметры','Advanced options')));const extra=el('div','workspace-form');advanced.append(extra);
       function select(key,label,items){const wrapper=el('label','',label),input=el('select');input.name=key;input.setAttribute('aria-label',label);for(const [val,label] of items){const o=el('option','',label);o.value=val;input.append(o);}wrapper.append(input);target.append(wrapper);controls[key]=input;return input;}
       const containers=model.containers.map(c=>[c.dn,'OU · '+(c.name||c.dn)]);
       const empty=['',t('Не выбран','Not selected')];
@@ -932,41 +983,64 @@
       select('userOU',t('Моделировать перемещение пользователя в OU','Simulate user move to OU'),[['',t('Текущее расположение','Current location')],...containers]);
       select('computerOU',t('Моделировать перемещение компьютера в OU','Simulate computer move to OU'),[['',t('Текущее расположение','Current location')],...containers]);
       select('loopback','Loopback',[['none',t('Без loopback','No loopback')],['merge','Merge'],['replace','Replace']]);
-      const outcomes=[['unknown',t('Неизвестно — неполный расчёт','Unknown — incomplete calculation')],['allow',t('Предположить: разрешено / истина','Assume: allowed / true')],['deny',t('Предположить: запрещено / ложь','Assume: denied / false')]];
+      const outcomes=policyModelOutcomes();
       select('security',t('Безопасность и чтение SYSVOL — для всех GPO','Security and SYSVOL read — all GPOs'),outcomes);
       select('wmi',t('WMI — для всех связанных фильтров','WMI — all linked filters'),outcomes);
       const exceptions=el('details');exceptions.append(el('summary','',t('Индивидуальные допущения по GPO','Per-GPO assumptions')));const overrides=[];
       for(const p of model.policies){const card=el('div','scope-link');card.append(el('strong','',p.displayName));const pair={guid:p.guid};for(const [key,label] of [['security',t('Безопасность','Security')],['wmi','WMI']]){const wrap=el('label','',label),input=el('select');for(const [v,l] of [['',t('Общее допущение','Default assumption')],...outcomes]){const o=el('option','',l);o.value=v;input.append(o);}wrap.append(input);card.append(wrap);pair[key]=input;}exceptions.append(card);overrides.push(pair);}extra.append(exceptions);form.append(advanced);
       const assume=el('input');assume.type='checkbox';const assumeLabel=el('label','workspace-confirm',t('Для прогноза считать все условия применения выполненными (допущение)','For this prediction, assume all application conditions pass'));assumeLabel.prepend(assume);form.append(assumeLabel);assume.addEventListener('change',()=>{controls.security.value=controls.wmi.value=assume.checked?'allow':'unknown';if(assume.checked)for(const pair of overrides)pair.security.value=pair.wmi.value='';});
+      if(previous){
+        const input=previous.report.scenario;
+        for(const [key,control] of Object.entries(controls)){
+          if(Array.from(control.options).some(option=>option.value===input[key]))control.value=input[key];
+        }
+        for(const pair of overrides){
+          pair.security.value=input.securityOverrides?.[pair.guid]||'';
+          pair.wmi.value=input.wmiOverrides?.[pair.guid]||'';
+        }
+        assume.checked=controls.security.value==='allow'&&controls.wmi.value==='allow'&&overrides.every(pair=>
+          (!pair.security.value||pair.security.value==='allow')&&(!pair.wmi.value||pair.wmi.value==='allow'));
+      }
       const run=el('button','',t('Рассчитать результат','Calculate result'));run.type='submit';form.append(run);const result=el('section');result.setAttribute('aria-live','polite');body.append(form,result);
       // Any edited scenario invalidates the displayed report.
       form.addEventListener('change',e=>{result.replaceChildren();if(e.target!==assume)assume.checked=controls.security.value==='allow'&&controls.wmi.value==='allow'&&overrides.every(p=>(!p.security.value||p.security.value==='allow')&&(!p.wmi.value||p.wmi.value==='allow'));});
       form.addEventListener('submit',async event=>{
         event.preventDefault();if(!form.reportValidity())return;const input=Object.fromEntries(Object.entries(controls).map(([k,v])=>[k,v.value]));if(!input.user&&!input.computer){message(notice,t('Выберите пользователя, компьютер или OU.','Select a user, computer or OU.'),true);return;}if(input.loopback!=='none'&&(!input.user||!input.computer)){message(notice,t('Для loopback выберите и пользователя, и компьютер (либо их OU).','Loopback requires both user and computer targets (or their OUs).'),true);return;}if((input.userOU&&!input.user)||(input.computerOU&&!input.computer)){message(notice,t('Для условного перемещения сначала выберите получателя.','Select a target before simulating its move.'),true);return;}input.securityOverrides={};input.wmiOverrides={};for(const pair of overrides){if(pair.security.value)input.securityOverrides[pair.guid]=pair.security.value;if(pair.wmi.value)input.wmiOverrides[pair.guid]=pair.wmi.value;}
         run.disabled=true;result.replaceChildren();message(notice,t('Чтение SYSVOL и расчёт…','Reading SYSVOL and calculating…'));for(const c of form.elements)c.disabled=true;
-        try{const report=await request('/gpo/model','POST',input);if(generation!==dialogGeneration)return;renderReport(report);message(notice,t('Сценарий рассчитан','Scenario calculated'));}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{if(generation===dialogGeneration)for(const c of form.elements)c.disabled=false;}
+        try{const report=await request('/gpo/model','POST',input);if(generation!==dialogGeneration)return;renderPolicyModelReport(result,report);
+          savedScenario=gpoConsole.record(savedScenario,{
+            name:scenarioName.value.trim(),
+            user:input.user?controls.user.selectedOptions[0].textContent:'',
+            computer:input.computer?controls.computer.selectedOptions[0].textContent:'',
+            report
+          });
+          message(notice,t('Сценарий рассчитан','Scenario calculated'));}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{if(generation===dialogGeneration)for(const c of form.elements)c.disabled=false;}
       });
-      function renderReport(report){
-        result.replaceChildren();
-        const incomplete=report.sections.some(s=>s.incomplete),settingsCount=report.sections.reduce((n,s)=>n+s.settings.length,0),included=new Set(report.sections.flatMap(s=>(s.links||[]).filter(l=>l.reason==='applied').map(l=>l.guid||l.name)));
-        const summary=el('div','policy-model-summary');summary.append(el('h3','',incomplete?t('Нужно уточнить условия применения','Some application conditions need clarification'):t('Прогноз рассчитан','Prediction calculated')),el('p','',t('GPO в расчёте: ','GPOs included: ')+included.size+' · '+t('Настроенных параметров: ','Configured settings: ')+settingsCount));
-        if(incomplete)summary.append(el('p','muted',t('Проверьте предупреждения ниже. Неизвестные права и WMI можно задать как допущения в параметрах сценария.','Review the warnings below. Unknown access and WMI outcomes can be set as scenario assumptions.')));result.append(summary);
-        const technical=el('details');technical.append(el('summary','',t('Источник и допущения расчёта','Calculation source and assumptions')),el('p','mono',report.controller+' · '+report.generatedAt+' · '+report.templateSource));result.append(technical);
-        result.append(button(t('Скачать отчёт JSON','Download JSON report'),()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='policy-model.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
-        technical.append(el('p','muted',t('Допущения безопасности и WMI: ','Security and WMI assumptions: ')+controls.security.selectedOptions[0].text+' / '+controls.wmi.selectedOptions[0].text));
-        for(const [key,label] of [['securityOverrides',t('Безопасность','Security')],['wmiOverrides','WMI']])for(const [guid,outcome] of Object.entries(report.scenario[key]||{})){const policy=model.policies.find(p=>p.guid===guid);technical.append(el('p','muted',label+' · '+(policy?.displayName||guid)+' · '+(outcomes.find(([v])=>v===outcome)?.[1]||outcome)));}
-        const reasons={applied:t('Включена в сценарий','Included in scenario'),disabled:t('Ссылка отключена','Link disabled'),blocked:t('Заблокирована наследованием','Blocked inheritance'),missing:t('GPO отсутствует','GPO missing'),'section-disabled':t('Раздел отключён','Section disabled'),'security-denied':t('Безопасность: отказ (допущение)','Security: denied (assumed)'),'security-unknown':t('Безопасность: неизвестно','Security: unknown'),'wmi-false':t('WMI: ложь (допущение)','WMI: false (assumed)'),'wmi-unknown':t('WMI: неизвестно','WMI: unknown'),'read-error':t('Ошибка чтения','Read error'),'unknown-options':t('Неизвестные параметры ссылки','Unknown link options'),'unknown-flags':t('Неизвестные флаги GPO','Unknown GPO flags')};
-        for(const section of report.sections){const part=el('section');part.append(el('h3','',section.scope==='Machine'?t('Конфигурация компьютера','Computer configuration'):t('Конфигурация пользователя','User configuration')));const context=el('details');context.append(el('summary','',t('Расположение получателя','Target location')),el('p','mono',section.container));part.append(context);if(section.incomplete)part.append(el('p','alert error',t('Расчёт неполный: ниже показан результат только прочитанных GPO с известными условиями. Неизвестные условия, ошибки и неподдерживаемые директивы могут изменить значения и GPO-победителей.','Incomplete: only readable GPOs with known conditions contribute below. Unknown conditions, errors and unsupported directives may change values and winning GPOs.')));
-          for(const warning of section.warnings)part.append(el('p','alert error',warning));
-          const processing=el('details');processing.append(el('summary','',t('Почему выбраны эти GPO','Why these GPOs were selected')));part.append(processing);topologyTable(processing,(section.links||[]).map((l,i)=>({...l,priority:i+1,status:reasons[l.reason]||l.reason})),[['priority','№'],['name','GPO'],['source',t('Источник','Source')],['status',t('Решение','Decision')],['enforced','Enforced']]);
-          part.append(el('h4','',t('Итоговые параметры','Resulting settings')));topologyTable(part,section.settings.map(s=>({modelConflict:s.conflicts.length>0,conflict:s.conflicts.length?t('Конфликт','Conflict'):'—',label:s.label,category:s.category,state:({enabled:t('Включено','Enabled'),disabled:t('Отключено','Disabled'),unsupported:t('Не поддерживается или конфликт формата','Unsupported or conflicting format')})[s.state]||s.state,values:Object.entries(s.values||{}).map(([key,v])=>{const f=(s.fields||[]).find(f=>f.id===key);const text=f?.kind==='enum'?(f.choices?.[Number(v)]?.label??String(v)):typeof v==='boolean'?(v?t('Да','Yes'):t('Нет','No')):Array.isArray(v)?v.join(', '):String(v??'');return (f?.label||key)+': '+text;}).join('; ')||'—',sources:s.sources.map(l=>l.name).join('; ')})),[['conflict',t('Конфликты','Conflicts')],['label',t('Параметр','Setting')],['category',t('Категория','Category')],['state',t('Состояние','State')],['values',t('Значения','Values')],['sources',t('GPO-источники','Source GPOs')]]);
-          const conflicts=section.values.filter(v=>v.conflict);
-          if(conflicts.length){const box=el('details','policy-model-conflicts');box.open=false;box.append(el('summary','',t('Конфликты значений: ','Value conflicts: ')+conflicts.length),el('p','muted',t('Победитель определяется порядком GPO: принудительные ссылки, наследование и порядок ссылок (1 — выше). В loopback Merge пользовательские параметры из расположения компьютера идут перед параметрами из расположения пользователя.','The winner follows GPO precedence: enforced links, inheritance and link order (1 is highest). In loopback Merge, user settings from the computer location precede those from the user location.')));for(const v of conflicts){box.append(el('h4','mono',v.key+'\\'+v.name),el('p','',t('Победившая GPO: ','Winning GPO: ')+v.winner.name+' · '+v.winner.source+' · '+(v.winner.enforced?'Enforced · ':'')+t('порядок ссылки ','link order ')+v.winner.order));topologyTable(box,v.contributions.map((c,i)=>({gpo:c.source.name,source:c.source.source,type:c.type,value:c.deleted?t('Удаление значения','Delete value'):c.value,status:i===0?t('Победитель','Winner'):t('Перекрыта','Overridden')})),[['gpo','GPO'],['source',t('Источник','Source')],['type',t('Тип','Type')],['value',t('Значение','Value')],['status',t('Результат','Result')]]);}part.append(box);}
-          const raw=el('details');raw.append(el('summary','',t('Значения Registry.pol и конкурирующие GPO','Registry.pol values and competing GPOs')));topologyTable(raw,section.values.map(v=>({...v,modelConflict:v.conflict,conflict:v.conflict?t('Конфликт','Conflict'):'—',value:v.deleted?t('Удаление значения','Delete value'):v.value,winner:v.winner.name,precedence:v.precedence.map(l=>l.name+' · '+l.source).join(' ← ')})),[['conflict',t('Конфликты','Conflicts')],['key',t('Ключ','Key')],['name',t('Имя','Name')],['value',t('Значение','Value')],['winner',t('Победившая GPO','Winning GPO')],['precedence',t('Приоритет GPO','GPO precedence')]]);part.append(raw);result.append(part);
-        }
-        const limits=el('details');limits.append(el('summary','',t('Границы расчёта','Calculation limits')));for(const item of report.limitations)limits.append(el('p','muted',item));result.append(limits);
-      }
+
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
+  }
+  function renderPolicyModelReport(result,report){
+    const outcomes=policyModelOutcomes();
+    const labelFor=value=>outcomes.find(([key])=>key===value)?.[1]||value;
+    const policyNames=new Map(report.sections.flatMap(section=>(section.links||[]).map(link=>[link.guid,link.name])));
+    result.replaceChildren();
+    const incomplete=report.sections.some(s=>s.incomplete),settingsCount=report.sections.reduce((n,s)=>n+s.settings.length,0),included=new Set(report.sections.flatMap(s=>(s.links||[]).filter(l=>l.reason==='applied').map(l=>l.guid||l.name)));
+    const summary=el('div','policy-model-summary');summary.append(el('h3','',incomplete?t('Нужно уточнить условия применения','Some application conditions need clarification'):t('Прогноз рассчитан','Prediction calculated')),el('p','',t('GPO в расчёте: ','GPOs included: ')+included.size+' · '+t('Настроенных параметров: ','Configured settings: ')+settingsCount));
+    if(incomplete)summary.append(el('p','muted',t('Проверьте предупреждения ниже. Неизвестные права и WMI можно задать как допущения в параметрах сценария.','Review the warnings below. Unknown access and WMI outcomes can be set as scenario assumptions.')));result.append(summary);
+    const technical=el('details');technical.append(el('summary','',t('Источник и допущения расчёта','Calculation source and assumptions')),el('p','mono',report.controller+' · '+report.generatedAt+' · '+report.templateSource));result.append(technical);
+    result.append(button(t('Скачать отчёт JSON','Download JSON report'),()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='policy-model.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));
+    technical.append(el('p','muted',t('Допущения безопасности и WMI: ','Security and WMI assumptions: ')+labelFor(report.scenario.security)+' / '+labelFor(report.scenario.wmi)));
+    for(const [key,label] of [['securityOverrides',t('Безопасность','Security')],['wmiOverrides','WMI']])for(const [guid,outcome] of Object.entries(report.scenario[key]||{})){const policyName=policyNames.get(guid);technical.append(el('p','muted',label+' · '+(policyName||guid)+' · '+(outcomes.find(([v])=>v===outcome)?.[1]||outcome)));}
+    const reasons={applied:t('Включена в сценарий','Included in scenario'),disabled:t('Ссылка отключена','Link disabled'),blocked:t('Заблокирована наследованием','Blocked inheritance'),missing:t('GPO отсутствует','GPO missing'),'section-disabled':t('Раздел отключён','Section disabled'),'security-denied':t('Безопасность: отказ (допущение)','Security: denied (assumed)'),'security-unknown':t('Безопасность: неизвестно','Security: unknown'),'wmi-false':t('WMI: ложь (допущение)','WMI: false (assumed)'),'wmi-unknown':t('WMI: неизвестно','WMI: unknown'),'read-error':t('Ошибка чтения','Read error'),'unknown-options':t('Неизвестные параметры ссылки','Unknown link options'),'unknown-flags':t('Неизвестные флаги GPO','Unknown GPO flags')};
+    for(const section of report.sections){const part=el('section');part.append(el('h3','',section.scope==='Machine'?t('Конфигурация компьютера','Computer configuration'):t('Конфигурация пользователя','User configuration')));const context=el('details');context.append(el('summary','',t('Расположение получателя','Target location')),el('p','mono',section.container));part.append(context);if(section.incomplete)part.append(el('p','alert error',t('Расчёт неполный: ниже показан результат только прочитанных GPO с известными условиями. Неизвестные условия, ошибки и неподдерживаемые директивы могут изменить значения и GPO-победителей.','Incomplete: only readable GPOs with known conditions contribute below. Unknown conditions, errors and unsupported directives may change values and winning GPOs.')));
+      for(const warning of section.warnings)part.append(el('p','alert error',warning));
+      const processing=el('details');processing.append(el('summary','',t('Почему выбраны эти GPO','Why these GPOs were selected')));part.append(processing);topologyTable(processing,(section.links||[]).map((l,i)=>({...l,priority:i+1,status:reasons[l.reason]||l.reason})),[['priority','№'],['name','GPO'],['source',t('Источник','Source')],['status',t('Решение','Decision')],['enforced','Enforced']]);
+      part.append(el('h4','',t('Итоговые параметры','Resulting settings')));topologyTable(part,section.settings.map(s=>({modelConflict:s.conflicts.length>0,conflict:s.conflicts.length?t('Конфликт','Conflict'):'—',label:s.label,category:s.category,state:({enabled:t('Включено','Enabled'),disabled:t('Отключено','Disabled'),unsupported:t('Не поддерживается или конфликт формата','Unsupported or conflicting format')})[s.state]||s.state,values:Object.entries(s.values||{}).map(([key,v])=>{const f=(s.fields||[]).find(f=>f.id===key);const text=f?.kind==='enum'?(f.choices?.[Number(v)]?.label??String(v)):typeof v==='boolean'?(v?t('Да','Yes'):t('Нет','No')):Array.isArray(v)?v.join(', '):String(v??'');return (f?.label||key)+': '+text;}).join('; ')||'—',sources:s.sources.map(l=>l.name).join('; ')})),[['conflict',t('Конфликты','Conflicts')],['label',t('Параметр','Setting')],['category',t('Категория','Category')],['state',t('Состояние','State')],['values',t('Значения','Values')],['sources',t('GPO-источники','Source GPOs')]]);
+      const conflicts=section.values.filter(v=>v.conflict);
+      if(conflicts.length){const box=el('details','policy-model-conflicts');box.open=false;box.append(el('summary','',t('Конфликты значений: ','Value conflicts: ')+conflicts.length),el('p','muted',t('Победитель определяется порядком GPO: принудительные ссылки, наследование и порядок ссылок (1 — выше). В loopback Merge пользовательские параметры из расположения компьютера идут перед параметрами из расположения пользователя.','The winner follows GPO precedence: enforced links, inheritance and link order (1 is highest). In loopback Merge, user settings from the computer location precede those from the user location.')));for(const v of conflicts){box.append(el('h4','mono',v.key+'\\'+v.name),el('p','',t('Победившая GPO: ','Winning GPO: ')+v.winner.name+' · '+v.winner.source+' · '+(v.winner.enforced?'Enforced · ':'')+t('порядок ссылки ','link order ')+v.winner.order));topologyTable(box,v.contributions.map((c,i)=>({gpo:c.source.name,source:c.source.source,type:c.type,value:c.deleted?t('Удаление значения','Delete value'):c.value,status:i===0?t('Победитель','Winner'):t('Перекрыта','Overridden')})),[['gpo','GPO'],['source',t('Источник','Source')],['type',t('Тип','Type')],['value',t('Значение','Value')],['status',t('Результат','Result')]]);}part.append(box);}
+      const raw=el('details');raw.append(el('summary','',t('Значения Registry.pol и конкурирующие GPO','Registry.pol values and competing GPOs')));topologyTable(raw,section.values.map(v=>({...v,modelConflict:v.conflict,conflict:v.conflict?t('Конфликт','Conflict'):'—',value:v.deleted?t('Удаление значения','Delete value'):v.value,winner:v.winner.name,precedence:v.precedence.map(l=>l.name+' · '+l.source).join(' ← ')})),[['conflict',t('Конфликты','Conflicts')],['key',t('Ключ','Key')],['name',t('Имя','Name')],['value',t('Значение','Value')],['winner',t('Победившая GPO','Winning GPO')],['precedence',t('Приоритет GPO','GPO precedence')]]);part.append(raw);result.append(part);
+    }
+    const limits=el('details');limits.append(el('summary','',t('Границы расчёта','Calculation limits')));for(const item of report.limitations)limits.append(el('p','muted',item));result.append(limits);
   }
   async function openScope(initialDN=''){
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Область действия и наследование GPO','GPO scope and inheritance'));title.id='operation-title';const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');dialog.append(title,notice,body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();let model,selected=initialDN,serial=0;
@@ -1022,7 +1096,76 @@
     }
     await refresh();
   }
+  function setupGPOConsole() {
+    const branches=el('div','console-tree-children');
+    sidebar.append(el('h2','',t('Групповые политики','Group Policy')),branches);
+    const modeling=el('section','gpo-modeling');
+    const results=el('section','rsop-report');
+    main.append(modeling,results);
+    const modelTitle=t('Моделирование групповой политики','Group Policy Modeling');
+    const resultsTitle=t('Результаты групповой политики','Group Policy Results');
+    const rows=el('div');
+    const create=button(t('Создать сценарий','New scenario'),()=>openPolicyModel(),'btn-primary');
+    modeling.append(el('h2','',modelTitle),create,rows);
+    results.append(el('h2','',resultsTitle));
+    window.sambaadmRSOP.mount(results,{t,el,button,message});
+    const scenarios=[];
+    let serial=0;
+    const controls=new Map();
+    for(const [title,panel] of [[t('Объекты групповой политики','Group Policy Objects'),listPanel],[modelTitle,modeling],[resultsTitle,results]]){
+      const control=button(title,()=>select(panel));
+      controls.set(panel,control);
+      branches.append(control);
+    }
+    function select(panel) {
+      for(const [candidate,control] of controls){
+        candidate.hidden=candidate!==panel;
+        markCurrent(control,candidate===panel);
+      }
+    }
+    function renderScenarios() {
+      rows.replaceChildren();
+      const items=scenarios.map(scenario=>{
+        const updated=new Date(scenario.report.generatedAt);
+        return {...scenario,updated:Number.isNaN(updated.getTime())?'—':window.sambaadmFormatTime(updated)};
+      });
+      topologyTable(rows,items,[['name',t('Имя','Name')],['user',t('Пользователь','User')],['computer',t('Компьютер','Computer')],['updated',t('Последнее обновление','Last updated')]],[
+        {label:t('Открыть результат','Open result'),method:'GET',run:openScenario},
+        {label:t('Обновить расчёт','Recalculate'),method:'GET',run:openPolicyModel},
+        {label:t('Убрать из списка','Remove from list'),method:'GET',run:scenario=>{
+          const index=scenarios.findIndex(item=>item.id===scenario.id);
+          if(index>=0)scenarios.splice(index,1);
+          renderScenarios();
+          create.focus();
+        }}
+      ]);
+    }
+    function openScenario(scenario) {
+      lastFocus=document.activeElement;
+      dialogGeneration++;
+      resetDialog();
+      const title=el('h2','',scenario.name);
+      title.id='operation-title';
+      const report=el('section');
+      dialog.append(title,report);
+      renderPolicyModelReport(report,scenario.report);
+      dialog.showModal();
+    }
+    renderScenarios();
+    select(listPanel);
+    return {record(id,scenario){
+      const existing=scenarios.find(item=>item.id===id);
+      if(existing)Object.assign(existing,scenario,{name:scenario.name||existing.name});
+      else {
+        id=++serial;
+        scenarios.unshift({...scenario,id,name:scenario.name||t('Сценарий ','Scenario ')+id});
+      }
+      renderScenarios();
+      return id;
+    }};
+  }
   function setupSitesConsole() {
+    const sidebar=objectTree;
     sidebar.classList.add('sites-console-tree');
     sidebar.setAttribute('aria-label',t('Сайты и службы','Sites and services'));
     const heading=el('h2');
@@ -1148,10 +1291,7 @@
       const {kind,site}=selected;
       const sites=t('Сайты','Sites');
       for(const [id,control] of nodes){
-        const current=id===key(selected);
-        control.classList.toggle('selected',current);
-        if(current)control.setAttribute('aria-current','true');
-        else control.removeAttribute('aria-current');
+        markCurrent(control,id===key(selected));
       }
       const title={sites,site:site?.name,subnets:subnetLabel,servers:serverLabel,links:'IP'}[kind];
       breadcrumb.textContent=[sites,...(site?[site.name]:[]),...(kind==='links'?[transportLabel]:[]),...(['sites','site'].includes(kind)?[]:[title])].join(' / ');
@@ -1202,7 +1342,7 @@
   }
   function topologyTable(parent,rows,columns,actions=[]){
     const wrap=el('div','workspace-table');const table=el('table');const head=el('tr');columns.forEach(c=>head.append(el('th','',c[1])));if(actions.length)head.append(el('th','',t('Операции','Actions')));table.append(head);
-    for(const row of rows){const tr=el('tr',row.modelConflict?'policy-model-conflict':'');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td');for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))td.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
+    for(const row of rows){const tr=el('tr',row.modelConflict?'policy-model-conflict':'');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td');for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))addAction(td,a,row);}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
   }
   function replicationResult(row) {
     const raw=String(row.result??'').trim();

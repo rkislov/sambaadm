@@ -159,7 +159,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const screenshot=async name=>{if(process.env.SAMBAADM_WEB_SCREENSHOTS){fs.mkdirSync(process.env.SAMBAADM_WEB_SCREENSHOTS,{recursive:true});if(name==='rodc-authentication')await page.getByText('NT_STATUS_WRONG_PASSWORD',{exact:true}).scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.SAMBAADM_WEB_SCREENSHOTS,name+'.png'),fullPage:true});await page.screenshot({path:path.join(process.env.SAMBAADM_WEB_SCREENSHOTS,name+'-guide.png'),clip:{x:0,y:['rodc-preload','rodc-authentication','gpo-repair-cleanup'].includes(name)?440:0,width:1440,height:560}});}};
   await open('repl');let releaseDCs;const heldDCs=new Promise(resolve=>releaseDCs=resolve);const holdDCs=async route=>{await heldDCs;await route.fulfill({json:controllers});};await page.route('**/api/v1/sites/controllers',holdDCs);await page.getByRole('button',{name:'Состояние репликации',exact:true}).click();await page.getByRole('dialog').getByText('Загрузка списка объектов…',{exact:true}).waitFor();await close();assert.equal(await page.getByRole('dialog').count(),0);releaseDCs();await page.unroute('**/api/v1/sites/controllers',holdDCs);
   await open('gpo');await page.getByRole('button',{name:'Резервная копия',exact:true}).click();const backupDialog=page.getByRole('dialog'),backupPath=backupDialog.getByLabel('Абсолютный каталог на узле helper',{exact:true});await backupPath.fill('~/backup/');assert.equal(await backupPath.evaluate(i=>i.checkValidity()),false);const backupCalls=calls.length;await backupDialog.getByRole('button',{name:'Выполнить',exact:true}).click();assert.equal(calls.length,backupCalls);await backupPath.fill('/var/lib/sambaadm-helper/backups/manual');assert.equal(await backupPath.evaluate(i=>i.checkValidity()),true);await close();
-  await open('gpo');scopeBroken=true;await page.getByRole('button',{name:'Моделирование политики',exact:true}).click();const modelDialog=page.getByRole('dialog');await modelDialog.getByText(/В некоторых контейнерах повреждены/).waitFor();await modelDialog.getByLabel('Пользователь или его OU',{exact:true}).waitFor();assert.equal(await modelDialog.locator('img').count(),0);scopeBroken=false;await close();
+  await open('gpo');scopeBroken=true;await page.getByRole('button',{name:'Моделирование групповой политики',exact:true}).click();await page.getByRole('button',{name:'Создать сценарий',exact:true}).click();const modelDialog=page.getByRole('dialog');await modelDialog.getByText(/В некоторых контейнерах повреждены/).waitFor();await modelDialog.getByLabel('Пользователь или его OU',{exact:true}).waitFor();assert.equal(await modelDialog.locator('img').count(),0);scopeBroken=false;await close();
   await open('gpo');await page.getByRole('button',{name:'Почему применяется GPO',exact:true}).click();
   const explanation=page.getByRole('dialog');await explanation.getByLabel('Пользователь или его OU',{exact:true}).selectOption(people);await explanation.getByRole('button',{name:'Объяснить применение',exact:true}).click();await explanation.getByText('Отчёт готов',{exact:true}).waitFor();
   assert.equal(await explanation.getByText('Условный кандидат — требуется проверка',{exact:true}).count(),1);assert.equal(await explanation.locator('img,script').count(),0);
@@ -196,7 +196,7 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.getByRole('button',{name:'Переместить',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Подразделение или контейнер DN').fill('OU=Finance,'+base);await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.equal(calls.find(c=>c.path.endsWith('/move')).body.toOU,'OU=Finance,'+base);await close();
   await page.getByRole('button',{name:'Отключить',exact:true}).click();dialog=page.getByRole('dialog');assert.equal(await dialog.locator('input:invalid').count(),1);await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();await close();await page.getByRole('button',{name:'Включить',exact:true}).waitFor();
   failure=true;await page.getByRole('button',{name:'Включить',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByRole('alert').filter({hasText:'LDAP operation failed'}).waitFor();await close();failure=false;
-  user.displayName='Алиса Иванова';await open('users');await page.getByRole('searchbox',{name:'Поиск по списку'}).fill('  ИВАНОВА   АЛИСА ');assert.equal(await page.locator('tbody tr').filter({hasText:'Алиса Иванова'}).count(),1);await page.getByRole('searchbox',{name:'Поиск по списку'}).fill('несуществующий');await page.getByText('Объекты не найдены',{exact:true}).waitFor();await page.getByRole('searchbox',{name:'Поиск по списку'}).fill('');await page.locator('.directory-tree details').nth(1).locator('summary').click();await screenshot('users');
+  user.displayName='Алиса Иванова';await open('users');await page.getByRole('searchbox',{name:'Поиск в текущем списке'}).fill('  ИВАНОВА   АЛИСА ');assert.equal(await page.locator('tbody tr').filter({hasText:'Алиса Иванова'}).count(),1);await page.getByRole('searchbox',{name:'Поиск в текущем списке'}).fill('несуществующий');await page.getByText('Объекты не найдены',{exact:true}).waitFor();await page.getByRole('searchbox',{name:'Поиск в текущем списке'}).fill('');await page.locator('.directory-tree details').nth(1).locator('summary').click();await screenshot('users');
   const selectPolicy=async label=>{const d=page.getByRole('dialog');await d.getByLabel('Поиск политик',{exact:true}).fill(label);await d.getByRole('button',{name:label,exact:true}).click();await d.getByLabel('Поиск политик',{exact:true}).fill('');};
   await open('dns');await page.locator('.dns-console-tree').getByRole('button',{name:'files',exact:true}).click();await page.locator('.dns-console-main').getByText('Записи загружены',{exact:true}).waitFor();
   await page.locator('.dns-record-table').getByRole('button',{name:'Свойства',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('IP-адрес',{exact:true}).fill('192.0.2.21');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Сохранить',exact:true}).click();await page.getByRole('dialog').waitFor({state:'hidden'});
@@ -227,8 +227,8 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.setViewportSize({width:390,height:844});assert.equal(await dialog.evaluate(e=>e.scrollWidth>e.clientWidth),false,'typed editor mobile overflow');await page.setViewportSize({width:1440,height:1000});await close();typedMode=false;
   await page.getByRole('button',{name:'Восстановить в новую GPO',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByLabel('Имя новой политики',{exact:true}).fill('Restored Policy');await dialog.getByLabel('Абсолютный каталог копии policy/{GUID} на узле helper',{exact:true}).fill('/backup/policy/{abc}');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.deepEqual(calls.find(c=>c.path==='/gpo/restore').body,{name:'Restored Policy',path:'/backup/policy/{abc}'});await close();
   await page.getByRole('button',{name:'Доставить на контроллеры',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('checkbox').check();await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('100% · ok',{exact:true}).waitFor();await close();await screenshot('gpo');
-  await page.getByRole('button',{name:'Результирующая политика',exact:true}).click();
-  dialog=page.getByRole('dialog');
+  await page.getByRole('button',{name:'Результаты групповой политики',exact:true}).click();
+  const reportPanel=page.locator('.rsop-report');
   const rsopXML=String.raw`<?xml version="1.0" encoding="utf-16"?>
     <Rsop xmlns="http://www.microsoft.com/GroupPolicy/Rsop" xmlns:q="http://www.microsoft.com/GroupPolicy/Settings/Registry">
       <DataType>LoggedData</DataType><ReadTime>2026-11-11T09:00:00Z</ReadTime>
@@ -236,23 +236,30 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
       <ExtensionData><Name>Registry</Name><Extension xmlns="http://www.microsoft.com/GroupPolicy/Settings"><q:Policy><GPO><Identifier>{abc}</Identifier></GPO><Precedence>1</Precedence><q:Name>Allow example</q:Name><q:State>Enabled</q:State><q:Text>&lt;script&gt;window.rsopUnsafe=true&lt;/script&gt;</q:Text></q:Policy></Extension></ExtensionData></ComputerResults>
       <UserResults><Name>EXAMPLE\alice</Name><GPO><Name>User restrictions</Name><FilterAllowed>false</FilterAllowed></GPO></UserResults>
     </Rsop>`;
-  const reportInput=dialog.getByLabel('XML-отчёт Windows',{exact:true});
+  const reportInput=reportPanel.getByLabel('XML-отчёт Windows',{exact:true});
   await reportInput.setInputFiles({name:'result.xml',mimeType:'application/xml',buffer:Buffer.concat([Buffer.from([255,254]),Buffer.from(rsopXML,'utf16le')])});
-  await dialog.getByText('Применена',{exact:true}).waitFor();
-  const setting=dialog.getByRole('row').filter({hasText:'Allow example'});
+  await reportPanel.getByText('Применена',{exact:true}).waitFor();
+  const setting=reportPanel.getByRole('row').filter({hasText:'Allow example'});
   await setting.getByText('Baseline',{exact:true}).waitFor();
   await setting.getByText('Allow example',{exact:true}).click();
   await setting.getByText(/window.rsopUnsafe/).waitFor();
   assert.equal(await page.evaluate(()=>window.rsopUnsafe),undefined);
-  await dialog.getByRole('button',{name:'Конфигурация пользователя',exact:true}).click();
-  await dialog.getByText('Отфильтрована',{exact:true}).waitFor();
+  await reportPanel.getByRole('button',{name:'Конфигурация пользователя',exact:true}).click();
+  await reportPanel.getByText('Отфильтрована',{exact:true}).waitFor();
   await screenshot('rsop-report');
   await reportInput.setInputFiles({name:'gpo.xml',mimeType:'application/xml',buffer:Buffer.from('<GPO/>')});
-  await dialog.getByRole('alert').filter({hasText:'Выберите XML-отчёт RSoP'}).waitFor();
-  assert.equal(await dialog.getByText('User restrictions',{exact:true}).count(),0);
-  await close();
+  await reportPanel.getByRole('alert').filter({hasText:'Выберите XML-отчёт RSoP'}).waitFor();
+  assert.equal(await reportPanel.getByText('User restrictions',{exact:true}).count(),0);
+  await page.getByRole('button',{name:'Объекты групповой политики',exact:true}).click();
 
   await open('sites');
+  await page.getByRole('heading',{name:'Сайты и службы',exact:true,level:1}).waitFor();
+  const mainMenu=page.locator('.app-navigation');
+  await mainMenu.locator(':scope > summary').click();
+  assert.ok(await mainMenu.locator('.nav-tile-icon:visible').count()>10,'main navigation retains tiles');
+  await page.keyboard.press('Escape');
+  assert.equal(await mainMenu.evaluate(menu=>menu.open),false);
+
   const sitesTree=page.locator('.sites-console-tree');
   const sitesMain=page.locator('.workspace-list');
   const openSubnets=()=>sitesTree.getByRole('button',{name:'Подсети',exact:true}).click();
