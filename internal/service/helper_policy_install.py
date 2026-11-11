@@ -1,6 +1,7 @@
 """Build one SYSVOL policy locally, with SMB authorization and cutover."""
 import base64
 import contextlib
+import errno
 import io
 import json
 import os
@@ -26,6 +27,8 @@ FILE_ADD_SUBDIRECTORY = 0x0004
 FILE_DIRECTORY = 0x00000001
 FILE_NON_DIRECTORY = 0x00000040
 FILE_OPEN_REPARSE_POINT = 0x00200000
+POSIX_DEFAULT_ACL = "system.posix_acl_default"
+POSIX_ACCESS_ACL = "system.posix_acl_access"
 
 
 def check_directory_access(connection, relative, access):
@@ -90,6 +93,15 @@ def set_acl(path, encoded, session):
         raise ValueError("destination Samba did not preserve the policy ACL")
 
 
+def inherited_posix_acl(path):
+    try:
+        return os.getxattr(path, POSIX_DEFAULT_ACL)
+    except OSError as error:
+        if error.errno not in (errno.ENODATA, errno.EOPNOTSUPP):
+            raise
+        return None
+
+
 def install(request):
     domain, container, guid = request["Target"].split("/")
     if (not re.fullmatch(r"[a-zA-Z0-9.-]+", domain) or domain in (".", "..")
@@ -133,12 +145,15 @@ def install(request):
     original = os.lstat(target) if exists else None
     try:
         check_directory_access(connection, parent_relative, FILE_ADD_SUBDIRECTORY)
-        if exists:
+    except Exception as error:
+        raise ValueError("the domain session lacks rights to replace this SYSVOL policy (create in Policies)") from error
+    if exists:
+        try:
             check_directory_access(connection, target_relative,
                                    FILE_ADD_SUBDIRECTORY | security.SEC_STD_READ_CONTROL | security.SEC_STD_DELETE
                                    | security.SEC_STD_WRITE_DAC | security.SEC_STD_WRITE_OWNER)
-    except Exception as error:
-        raise ValueError("the domain session lacks rights to replace this SYSVOL policy") from error
+        except Exception as error:
+            raise ValueError("the domain session lacks rights to replace this SYSVOL policy (existing policy directory)") from error
 
     session_info_set_unix(session, "root", 0, 0, lp)
     stage = Path(tempfile.mkdtemp(prefix=".sambaadm-policy-", dir=parent))
@@ -146,21 +161,31 @@ def install(request):
     old = parent / (stage.name + ".old")
     old_relative = stage_relative + ".old"
     try:
+        default_acl = inherited_posix_acl(stage)
         paths = sorted(permissions, key=lambda name: name.count("/"))
         total = 0
         for name in paths:
             path = stage / name
             if name not in files:
-                path.mkdir(mode=0o700)
+                # Linux intersects the inherited ACL mask with the creation mode.
+                path.mkdir(mode=0o770 if default_acl is not None else 0o700)
                 continue
             data = base64.b64decode(files[name] or "", validate=True)
             total += len(data)
             if total > 64 << 20:
                 raise ValueError("policy snapshot exceeds file limit")
-            with path.open("xb") as stream:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                         0o660 if default_acl is not None else 0o666)
+            with os.fdopen(fd, "wb") as stream:
                 stream.write(data)
         for name in reversed(paths):
             set_acl(stage / name, permissions[name], session)
+        if default_acl is not None:
+            # mkdtemp creates the root with 0700, masking all named ACL entries.
+            # Keep it private while populating it, then restore the inherited
+            # access ACL before Samba applies the policy's NT descriptor.
+            os.setxattr(stage, POSIX_ACCESS_ACL, default_acl)
+            stage.chmod(stage.stat().st_mode & 0o770)
         set_acl(stage, request["ACL"], session)
         check_staged_policy_readable(connection, stage_relative, paths, files)
         # Finish the SMB cutover or its rollback if the caller disconnects.

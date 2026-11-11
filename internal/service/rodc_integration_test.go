@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -190,6 +192,12 @@ func TestIntegrationRODCPolicyPreloadAndAuthentication(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	localPolicy := filepath.Join("/var/lib/samba/sysvol", filepath.FromSlash(strings.ReplaceAll(path, `\`, "/")))
+	// Use a named, inherited POSIX ACL with a restrictive mask, as on
+	// provisioned SYSVOL shares that also store Windows ACLs.
+	if out, err := exec.CommandContext(ctx, "setfacl", "-m", "d:g:65534:rwx,d:m::r-x,d:o::---", filepath.Dir(localPolicy)).CombinedOutput(); err != nil {
+		t.Fatalf("configure SYSVOL POSIX ACL: %v: %s", err, out)
+	}
 	t.Cleanup(func() {
 		if e := s.RODC.helpers.Call(context.Background(), host, "sysvol.remove-tree", helperFSRequest{Path: path}, nil); e != nil {
 			t.Error(e)
@@ -219,6 +227,22 @@ func TestIntegrationRODCPolicyPreloadAndAuthentication(t *testing.T) {
 	admin := withCredentials(cfg.Bind.User, os.Getenv(cfg.Bind.PasswordEnv))
 	if e = s.RODC.helpers.Call(admin, host, "sysvol.install-policy", in, nil); e != nil {
 		t.Fatal(e)
+	}
+	for _, check := range []struct {
+		path string
+		mask os.FileMode
+	}{
+		{localPolicy, 0o050},
+		{filepath.Join(localPolicy, preferences), 0o050},
+		{filepath.Join(localPolicy, fileRel), 0o040},
+	} {
+		info, err := os.Stat(check.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm() & 0o077; got != check.mask {
+			t.Errorf("%s: effective group/other mode %03o, want %03o", check.path, got, check.mask)
+		}
 	}
 	ordinary := withCredentials(name+"@sambaadm.test", "Lab-User-Test-Pass1!")
 	snapshot.Files[fileRel] = []byte("second revision")
