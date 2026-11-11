@@ -11,6 +11,49 @@ import (
 	ldapproto "sambaadm/internal/ldap"
 )
 
+func TestIntegrationRODCReplicationStatus(t *testing.T) {
+	host := os.Getenv("SAMBAADM_IT_RODC")
+	if host == "" {
+		t.Skip("requires disposable RODC")
+	}
+	s, cfg := integrationServices(t, false)
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	check := func(t *testing.T, repl *ReplService, target string) {
+		t.Helper()
+		status, err := repl.StatusFor(ctx, target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Health != "healthy" || status.Server != host || len(status.PartitionIssues) != 0 {
+			t.Fatalf("wrong RODC status: %+v", status)
+		}
+		partitions := make(map[string]bool)
+		for _, neighbor := range status.Neighbors {
+			attempt, err := time.Parse(time.RFC3339, neighbor.LastAttempt)
+			if neighbor.Direction != "inbound" || neighbor.Partner == "" || neighbor.Result != "0" ||
+				err != nil || time.Since(attempt).Abs() >= time.Hour {
+				t.Fatalf("expected recent successful inbound replication: %+v", neighbor)
+			}
+			partitions[dnKey(neighbor.Partition)] = true
+		}
+		for _, prefix := range []string{"", "CN=Configuration,", "CN=Schema,CN=Configuration,", "DC=ForestDnsZones,", "DC=DomainDnsZones,"} {
+			if !partitions[dnKey(prefix+cfg.BaseDN)] {
+				t.Errorf("missing inbound neighbors for %s%s", prefix, cfg.BaseDN)
+			}
+		}
+	}
+	t.Run("selected RODC", func(t *testing.T) { check(t, s.Repl, host) })
+	t.Run("default RODC", func(t *testing.T) {
+		peer := s.Repl.ldap.ServicePeer("ldaps://" + host + ":636")
+		defer peer.Close()
+		remote := *s.Repl.remote
+		remote.Host = host
+		check(t, &ReplService{ldap: peer, remote: &remote}, "")
+	})
+}
+
 func TestIntegrationRODCPolicyPreloadAndAuthentication(t *testing.T) {
 	host := os.Getenv("SAMBAADM_IT_RODC")
 	if host == "" {

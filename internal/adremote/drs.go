@@ -33,23 +33,51 @@ func (c *Client) drs(ctx context.Context, fn func(context.Context, drsuapi.Drsua
 	return fn(ctx, client, bind.DRS)
 }
 func (c *Client) Neighbors(ctx context.Context) ([]*drsuapi.DSReplicationNeighbor, error) {
-	var out []*drsuapi.DSReplicationNeighbor
+	results, err := c.NeighborsByPartition(ctx, []string{""})
+	if err != nil {
+		return nil, err
+	}
+	return results[0].Neighbors, results[0].Err
+}
+
+type PartitionNeighbors struct {
+	Partition string
+	Neighbors []*drsuapi.DSReplicationNeighbor
+	Err       error
+}
+
+// NeighborsByPartition reads each naming context over one DRS bind. An empty
+// partition DN requests the server's default enumeration.
+func (c *Client) NeighborsByPartition(ctx context.Context, partitions []string) ([]PartitionNeighbors, error) {
+	out := make([]PartitionNeighbors, 0, len(partitions))
 	err := c.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {
-		resp, err := client.GetReplicationInfo(ctx, &drsuapi.GetReplicationInfoRequest{Handle: h, InVersion: 1, In: &drsuapi.MessageGetReplicationInfoRequest{Value: &drsuapi.MessageGetReplicationInfoRequest_V1{V1: &drsuapi.MessageGetReplicationInfoRequestV1{InfoType: 0}}}})
-		if err != nil {
-			return err
+		for _, partition := range partitions {
+			neighbors, err := readNeighbors(ctx, client, h, partition)
+			out = append(out, PartitionNeighbors{Partition: partition, Neighbors: neighbors, Err: err})
 		}
-		if resp.Out == nil {
-			return fmt.Errorf("empty DRS response")
-		}
-		neighbors, ok := resp.Out.GetValue().(*drsuapi.DSReplicationNeighbors)
-		if !ok {
-			return fmt.Errorf("unexpected DRS response")
-		}
-		out = neighbors.Neighbor
 		return nil
 	})
 	return out, err
+}
+
+func readNeighbors(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle, partition string) ([]*drsuapi.DSReplicationNeighbor, error) {
+	resp, err := client.GetReplicationInfo(ctx, &drsuapi.GetReplicationInfoRequest{
+		Handle: h, InVersion: 1,
+		In: &drsuapi.MessageGetReplicationInfoRequest{Value: &drsuapi.MessageGetReplicationInfoRequest_V1{
+			V1: &drsuapi.MessageGetReplicationInfoRequestV1{InfoType: 0, ObjectDN: partition},
+		}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if resp.Out == nil {
+		return nil, fmt.Errorf("empty DRS response")
+	}
+	neighbors, ok := resp.Out.GetValue().(*drsuapi.DSReplicationNeighbors)
+	if !ok || neighbors == nil {
+		return nil, fmt.Errorf("unexpected DRS response")
+	}
+	return neighbors.Neighbor, nil
 }
 func (c *Client) KCC(ctx context.Context) error {
 	return c.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {

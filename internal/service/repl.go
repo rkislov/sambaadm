@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-ldap/ldap/v3"
-	"github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 	"net/url"
-	"sambaadm/internal/adremote"
 	"strings"
 	"time"
 
+	"github.com/go-ldap/ldap/v3"
+	"github.com/oiweiwei/go-msrpc/msrpc/drsr/drsuapi/v4"
+	"github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
+
+	"sambaadm/internal/adremote"
 	"sambaadm/internal/audit"
 	ldapproto "sambaadm/internal/ldap"
 )
@@ -24,11 +26,18 @@ type ReplPartner struct {
 
 // ReplStatus is raw / parsed replication status.
 type ReplStatus struct {
-	Raw       string         `json:"raw,omitempty"`
-	Server    string         `json:"server"`
-	Health    string         `json:"health"`
-	Neighbors []ReplNeighbor `json:"neighbors"`
-	Partners  []ReplPartner  `json:"partners,omitempty"`
+	Raw             string               `json:"raw,omitempty"`
+	Server          string               `json:"server"`
+	Health          string               `json:"health"`
+	Neighbors       []ReplNeighbor       `json:"neighbors"`
+	Partners        []ReplPartner        `json:"partners,omitempty"`
+	PartitionIssues []ReplPartitionIssue `json:"partitionIssues,omitempty"`
+}
+
+// ReplPartitionIssue records a naming context with no readable neighbor data.
+type ReplPartitionIssue struct {
+	Partition string `json:"partition"`
+	Error     string `json:"error,omitempty"`
 }
 
 // ReplService manages AD replication.
@@ -129,39 +138,106 @@ func replicationResultDescription(code uint32) string {
 }
 
 func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus, error) {
-	remote, err := s.remoteFor(ctx, server)
+	remote, ntds, err := s.replicationTarget(ctx, server)
 	if err != nil {
 		return nil, err
 	}
-	neighbors, err := remote.Neighbors(ctx)
+	rodc, partitions, err := s.replicationPartitions(ctx, ntds)
 	if err != nil {
-		return nil, fmt.Errorf("replication status on %s as service account %s (ldap.bind.user; browser login does not change this account): %w", remote.Host, remote.User, err)
+		return nil, fmt.Errorf("read replication topology for %s: %w", remote.Host, err)
 	}
 	st := &ReplStatus{Server: remote.Host, Health: "no-partners", Neighbors: []ReplNeighbor{}}
-	for _, n := range neighbors {
-		item := ReplNeighbor{Direction: "inbound", Partition: n.NamingContext, Partner: n.SourceDSADN, Failures: int(n.ConsecutiveSyncFailuresCount), Result: fmt.Sprintf("%d", n.LastSyncResult), Health: "healthy", ResultDescription: replicationResultDescription(n.LastSyncResult)}
-		if n.LastSyncAttempt != nil && !n.LastSyncAttempt.IsZero() {
-			item.LastAttempt = n.LastSyncAttempt.AsTime().Format(time.RFC3339)
+	if len(partitions) > 0 {
+		results, err := remote.NeighborsByPartition(ctx, partitions)
+		if err == nil && !rodc {
+			err = results[0].Err
 		}
-		if n.LastSyncSuccess != nil && !n.LastSyncSuccess.IsZero() {
-			item.LastSuccess = n.LastSyncSuccess.AsTime().Format(time.RFC3339)
+		if err != nil {
+			return nil, fmt.Errorf("replication status on %s as service account %s (ldap.bind.user; browser login does not change this account): %w", remote.Host, remote.User, err)
 		}
-		if item.Failures > 0 || n.LastSyncResult != 0 || item.LastSuccess == "" {
-			item.Health = "degraded"
-		}
-		st.Neighbors = append(st.Neighbors, item)
-		if st.Health == "no-partners" {
-			st.Health = "healthy"
-		}
-		if item.Health == "degraded" {
-			st.Health = "degraded"
-		}
+		st.applyNeighborResults(results)
+	} else {
+		st.Health = "unverified"
 	}
 	st.Partners, err = s.Partners(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return st, nil
+}
+
+func (s *ReplService) replicationPartitions(ctx context.Context, ntds string) (bool, []string, error) {
+	if ntds == "" {
+		root, err := s.replicationRootDSE(ctx, "dsServiceName")
+		if err != nil {
+			return false, nil, err
+		}
+		ntds = root.GetEqualFoldAttributeValue("dsServiceName")
+		if ntds == "" {
+			return false, nil, fmt.Errorf("RootDSE has no dsServiceName")
+		}
+	}
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{
+		BaseDN: ntds, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=nTDSDSA)",
+		Attributes: []string{"msDS-isRODC", "msDS-hasFullReplicaNCs", "hasPartialReplicaNCs"},
+	})
+	if err != nil {
+		return false, nil, err
+	}
+	if !strings.EqualFold(entry.GetEqualFoldAttributeValue("msDS-isRODC"), "TRUE") {
+		return false, []string{""}, nil
+	}
+	// Samba's default DRS enumeration omits msDS-hasFullReplicaNCs.
+	var partitions []string
+	seen := make(map[string]bool)
+	for _, attribute := range []string{"msDS-hasFullReplicaNCs", "hasPartialReplicaNCs"} {
+		for _, dn := range entry.GetEqualFoldAttributeValues(attribute) {
+			key := dnKey(dn)
+			if key != "" && !seen[key] {
+				partitions = append(partitions, dn)
+				seen[key] = true
+			}
+		}
+	}
+	return true, partitions, nil
+}
+
+func (st *ReplStatus) applyNeighborResults(results []adremote.PartitionNeighbors) {
+	for _, result := range results {
+		if result.Partition != "" && len(result.Neighbors) == 0 {
+			issue := ReplPartitionIssue{Partition: result.Partition}
+			if result.Err != nil {
+				issue.Error = result.Err.Error()
+			}
+			st.PartitionIssues = append(st.PartitionIssues, issue)
+		}
+		for _, neighbor := range result.Neighbors {
+			st.addNeighbor(neighbor)
+		}
+	}
+	if len(st.PartitionIssues) > 0 && st.Health != "degraded" {
+		st.Health = "unverified"
+	}
+}
+
+func (st *ReplStatus) addNeighbor(n *drsuapi.DSReplicationNeighbor) {
+	item := ReplNeighbor{Direction: "inbound", Partition: n.NamingContext, Partner: n.SourceDSADN, Failures: int(n.ConsecutiveSyncFailuresCount), Result: fmt.Sprintf("%d", n.LastSyncResult), Health: "healthy", ResultDescription: replicationResultDescription(n.LastSyncResult)}
+	if n.LastSyncAttempt != nil && !n.LastSyncAttempt.IsZero() {
+		item.LastAttempt = n.LastSyncAttempt.AsTime().Format(time.RFC3339)
+	}
+	if n.LastSyncSuccess != nil && !n.LastSyncSuccess.IsZero() {
+		item.LastSuccess = n.LastSyncSuccess.AsTime().Format(time.RFC3339)
+	}
+	if item.Failures > 0 || n.LastSyncResult != 0 || item.LastSuccess == "" {
+		item.Health = "degraded"
+	}
+	st.Neighbors = append(st.Neighbors, item)
+	if st.Health == "no-partners" {
+		st.Health = "healthy"
+	}
+	if item.Health == "degraded" {
+		st.Health = "degraded"
+	}
 }
 func parseReplStatus(raw string) (*ReplStatus, error) {
 	type neighbor struct {
@@ -241,27 +317,40 @@ func (s *ReplService) DefaultDestination() string {
 }
 
 func (s *ReplService) remoteFor(ctx context.Context, server string) (*adremote.Client, error) {
+	remote, _, err := s.replicationTarget(ctx, server)
+	return remote, err
+}
+
+func (s *ReplService) replicationTarget(ctx context.Context, server string) (*adremote.Client, string, error) {
 	remote := *s.remote
-	if server == "" || server == remote.Host {
-		return &remote, nil
+	if server == "" || strings.EqualFold(server, remote.Host) {
+		return &remote, "", nil
 	}
 	dc, err := (&SiteService{ldap: s.ldap}).controller(ctx, server)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
+	root, err := s.replicationRootDSE(ctx, "dNSHostName")
+	if err != nil {
+		return nil, "", err
+	}
+	if !strings.EqualFold(dc.DNS, root.GetEqualFoldAttributeValue("dNSHostName")) {
+		remote.Host = dc.DNS
+	}
+	return &remote, dc.NTDS, nil
+}
+
+func (s *ReplService) replicationRootDSE(ctx context.Context, attribute string) (*ldap.Entry, error) {
 	conn, err := s.ldap.Conn(ctx)
 	if err != nil {
 		return nil, err
 	}
-	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dNSHostName"}, nil))
+	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{attribute}, nil))
 	if err != nil {
 		return nil, err
 	}
 	if len(root.Entries) != 1 {
 		return nil, fmt.Errorf("missing RootDSE")
 	}
-	if !strings.EqualFold(dc.DNS, root.Entries[0].GetEqualFoldAttributeValue("dNSHostName")) {
-		remote.Host = dc.DNS
-	}
-	return &remote, nil
+	return root.Entries[0], nil
 }

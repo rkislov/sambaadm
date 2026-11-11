@@ -1361,8 +1361,23 @@
         [action(t('Включить соединение','Enable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:true},confirm:true,when:r=>!r.enabled}),action(t('Отключить соединение','Disable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:false},confirm:true,when:r=>r.enabled}),scheduleOperation(r=>'/repl/connections/'+enc(r.id)),{...remove(r=>'/repl/connections/'+enc(r.id)),revision:true}]);return;
     }
     if(endpoint==='/repl/status'){
-      const health={healthy:t('Успешно','Healthy'),degraded:t('Есть ошибки','Degraded'),'no-partners':t('Нет партнёров — состояние не подтверждено','No partners — health unverified')};parent.append(el('h3','',result.server||''),el('p','',health[result.health]||t('Неизвестно','Unknown')));
-      topologyTable(parent,(result.neighbors||[]).map(row=>({...row,result:replicationResult(row)})),[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);return;
+      const health={healthy:t('Успешно','Healthy'),degraded:t('Есть ошибки','Degraded'),unverified:t('Состояние не подтверждено','Health unverified'),'no-partners':t('Нет партнёров — состояние не подтверждено','No partners — health unverified')};
+      parent.append(el('h3','',result.server||''),el('p','',health[result.health]||t('Неизвестно','Unknown')));
+      if(result.partitionIssues?.length){
+        parent.append(el('h4','',t('Разделы без подтверждённого состояния','Partitions with unverified health')));
+        const issues=el('ul');
+        for(const issue of result.partitionIssues){
+          issues.append(el('li','',issue.partition+' — '+(issue.error||t('DRS не вернул входящих соседей','DRS returned no inbound neighbors'))));
+        }
+        parent.append(issues);
+      }
+      const neighbors=(result.neighbors||[]).map(row=>({
+        ...row,
+        lastAttempt:window.sambaadmFormatTime(row.lastAttempt),
+        lastSuccess:window.sambaadmFormatTime(row.lastSuccess),
+        result:replicationResult(row)
+      }));
+      topologyTable(parent,neighbors,[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastAttempt',t('Последняя попытка','Last attempt')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);return;
     }
     if(cfg===configs['/gpo']){describeTree(result,parent);return;}
     // Keep DNS query results under the chosen zone, with explicit values for edits.
