@@ -7,7 +7,7 @@
   const t = (a, b) => ru ? a : b;
   const el = (tag, text = '') => { const n = document.createElement(tag); n.textContent = text; return n; };
   const unknown = t('Не проверено / неизвестно', 'Not checked / unknown');
-  const statusText = value => ({complete:t('Сбор завершён', 'Collection complete'),partial:t('Неполные данные', 'Partial data'),available:t('Доступно', 'Available'),unavailable:t('Недоступно', 'Unavailable'),unknown:t('Неизвестно', 'Unknown'),review:t('Требует проверки', 'Needs review'),ok:t('Проверено', 'Checked')})[value] || value;
+  const statusText = value => ({complete:t('Сбор завершён', 'Collection complete'),partial:t('Неполные данные', 'Partial data'),incomplete:t('Проверка неполная', 'Check incomplete'),available:t('Доступно', 'Available'),unavailable:t('Недоступно', 'Unavailable'),unknown:t('Неизвестно', 'Unknown'),review:t('Требует проверки', 'Needs review'),ok:t('Проверено', 'Checked')})[value] || value;
   const findingText = code => ru ? ({unresolved_fromServer:'Не найдён источник репликации',missing_fromServer:'Нет ссылки на источник репликации',connection_parent:'Не найден родитель соединения',ntds_parent:'Не найден сервер для NTDS Settings',server_without_ntds:'Сервер без NTDS Settings',server_without_computer:'Нет ссылки на учётную запись DC',server_computer_reference:'Не подтверждена учётная запись DC',site_without_servers:'Сайт без серверов',dc_computer_without_server:'Учётная запись DC без объекта сервера',unresolved_siteObject:'Не найден сайт подсети',missing_siteObject:'Подсеть без ссылки на сайт',unresolved_siteList:'Не найден сайт в связи',missing_siteList:'Связь без ссылок на сайты'})[code] || code : code;
   const formatTime = window.sambaadmFormatTime;
 
@@ -24,7 +24,7 @@
     const content = el('div'); section.append(el('h3', title), content); root.append(section); sections[id] = content;
   }
   async function request(path, body) {
-    const response = await fetch('/api/v1' + path, {method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(path.endsWith("/cleanup/apply") ? 300000 : path.endsWith("/cleanup/checks") ? 90000 : 35000), headers: {Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''}, body: body === undefined ? undefined : JSON.stringify(body)});
+    const response = await fetch('/api/v1' + path, {method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(path.endsWith("/cleanup/apply") ? 300000 : path.endsWith("/cleanup/checks") ? 90000 : path.endsWith("/consistency") ? 480000 : 35000), headers: {Accept: 'application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': document.querySelector('meta[name="csrf-token"]')?.content || ''}, body: body === undefined ? undefined : JSON.stringify(body)});
     const data = await response.json(); if (!response.ok) throw Error(data.error || 'HTTP ' + response.status); return data;
   }
   let pending = 0;
@@ -32,7 +32,7 @@
     pending++; refresh.disabled = true;
     const entry = {source: path, started: new Date().toISOString()};
     try { entry.data = await request(path, body); entry.status = 'available'; } catch (e) { entry.status = 'unavailable'; entry.error = e.message; }
-    entry.finished = new Date().toISOString(); report.sections[key] = entry; if (key === 'diagnostics') report.checks.dnsHealth = {status:entry.status,section:key}; if (key === 'sysvol') report.checks.sysvolConsistency = {status:entry.status,section:key,scope:path}; pending--; if (!pending) refresh.disabled = false; return entry;
+    entry.finished = new Date().toISOString(); report.sections[key] = entry; if (key === 'diagnostics') report.checks.dnsHealth = {status:entry.status,section:key}; if (key === 'sysvol') report.checks.sysvolConsistency = {status:entry.data?.status || entry.status,section:key,scope:path}; pending--; if (!pending) refresh.disabled = false; return entry;
   }
   function table(parent, headings, rows) {
     const wrap = el('div'); wrap.className = 'overview-table'; const table = el('table'), head = el('tr');
@@ -195,7 +195,18 @@
     if (policies.status === 'available' && Array.isArray(policies.data) && policies.data.length) {
       const label = el('label', t('GPO для проверки SYSVOL', 'GPO for SYSVOL check')), select = el('select');
       for (const p of policies.data) { const option = el('option', p.displayName || p.guid); option.value = p.guid; select.append(option); } select.setAttribute('aria-label', t('GPO для проверки SYSVOL', 'GPO for SYSVOL check')); label.append(select); diag.append(label);
-      resultPanel(diag, 'sysvol', t('Проверить согласованность SYSVOL', 'Check SYSVOL consistency'), () => '/gpo/' + encodeURIComponent(select.value) + '/consistency', {}, (box, d) => { box.append(el('p', statusText(d.status) + ' · ' + t('Полный отчёт: ', 'Complete: ') + d.complete)); table(box, ['DC', 'Status', 'LDAP', 'SYSVOL', t('Различий', 'Differences')], d.controllers.map(c => [c.dns, c.status, c.ldap, c.sysvol, c.differenceCount])); jsonDetail(box, t('Подробности проверки', 'Check details'), d); });
+      resultPanel(diag, 'sysvol', t('Проверить согласованность SYSVOL', 'Check SYSVOL consistency'), () => '/gpo/' + encodeURIComponent(select.value) + '/consistency', {}, (box, d) => {
+        box.append(el('p', statusText(d.status)));
+        if (!d.complete) box.append(el('p', t('Сравнение выполнено только по доступным данным. Совпадение на контроллерах с ошибками чтения не подтверждено.', 'Comparison uses only the data that could be read. Consistency is unconfirmed on controllers with read errors.')));
+        table(box, ['DC', t('Статус', 'Status'), 'LDAP', 'SYSVOL', t('Различий', 'Differences'), t('Ошибки чтения', 'Read errors')], d.controllers.map(c => {
+          const incomplete = c.ldap !== 'ok' || c.sysvol !== 'ok' || ['incomplete', 'unavailable', 'not-compared', 'pending', 'changing'].includes(c.status);
+          const differences = incomplete
+            ? (c.differenceCount > 0 ? c.differenceCount + t(' (по доступным данным)', ' (available data)') : t('Не подтверждено', 'Unconfirmed'))
+            : c.differenceCount;
+          return [c.dns, statusText(c.status), c.ldap, c.sysvol, differences, (c.errors || []).join(' · ') || '—'];
+        }));
+        jsonDetail(box, t('Подробности проверки', 'Check details'), d);
+      });
     } else diag.append(el('p', t('Список GPO недоступен или пуст — SYSVOL не проверен.', 'GPO list unavailable or empty — SYSVOL not checked.')));
     report.finished = new Date().toISOString(); refresh.disabled = false;
   }

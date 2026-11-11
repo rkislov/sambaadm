@@ -61,7 +61,12 @@
       hint:t('Политики хранятся отдельно от ссылок на OU. Доставка SYSVOL не подтверждает применение на клиенте.','Policies and OU links are separate. SYSVOL distribution does not confirm client application.'),
       columns:[['displayName',t('Политика','Policy')],['guid','GUID'],['source',t('Источник','Source')]],
       create:action(t('Создать GPO','Create GPO'),'POST','/gpo',[name()]),
-      toolbar:[{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
+      toolbar:[action(t('Доставить все политики на контроллеры','Distribute all policies to DCs'),'POST','/gpo/distribute',[],{
+        confirm:true,job:true,
+        help:t('Будут доставлены все политики домена, независимо от фильтра списка. Ход доставки и ошибки появятся здесь.','All policies in the domain will be distributed, regardless of the list filter. Progress and errors will appear here.'),
+        confirmLabel:t('Подтверждаю доставку всех политик домена','I confirm distribution of all domain policies'),
+        submitLabel:t('Начать доставку','Start distribution')
+      }),{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
       actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
@@ -681,10 +686,10 @@
       function showCurrent(fill){const stored=Object.entries(row.params||{}).find(([name])=>name.toLowerCase()===key.value.trim().toLowerCase());current.textContent=stored?t('Сейчас в smb.conf: ','Current smb.conf value: ')+stored[1]:t('Параметр явно не задан в этой секции; могут действовать значения по умолчанию.','Not explicitly set in this section; defaults may apply.');if(fill)valueInput.value=stored?.[1]||'';}
       key.addEventListener('change',()=>showCurrent(true));showCurrent(false);
     }
-    if(a.danger||a.confirm){const label=el('label','workspace-confirm',t('Подтверждаю операцию для выбранного объекта','I confirm this operation on the selected object'));const c=el('input');c.type='checkbox';c.required=true;label.prepend(c);form.append(label);}
+    if(a.danger||a.confirm){const label=el('label','workspace-confirm',a.confirmLabel||t('Подтверждаю операцию для выбранного объекта','I confirm this operation on the selected object'));const c=el('input');c.type='checkbox';c.required=true;label.prepend(c);form.append(label);}
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');form.append(notice);
     const output=el('div','workspace-result');
-    const controls=el('div','workspace-tools');const submit=el('button',a.danger?'danger':'',a.method==='GET'?t('Показать','Show'):t('Выполнить','Apply'));submit.type='submit';controls.append(submit,button(t('Закрыть','Close'),closeOperation));form.append(controls);dialog.append(form,output);
+    const controls=el('div','workspace-tools');const submit=el('button',a.danger?'danger':'',a.submitLabel||(a.method==='GET'?t('Показать','Show'):t('Выполнить','Apply')));submit.type='submit';controls.append(submit,button(t('Закрыть','Close'),closeOperation));form.append(controls);dialog.append(form,output);
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(!form.reportValidity())return;
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};

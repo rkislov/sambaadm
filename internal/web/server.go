@@ -297,6 +297,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/{gpo}/unlink", s.handleAPIGPOUnlink)
 		r.Post("/gpo/{gpo}/backup", s.handleAPIGPOBackup)
 		r.Post("/gpo/{gpo}/restore", s.handleAPIGPORestore)
+		r.Post("/gpo/distribute", s.handleAPIGPODistributeAll)
 		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
 		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
 

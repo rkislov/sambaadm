@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -672,8 +673,25 @@ func (s *Server) handleAPIGPODistribute(w http.ResponseWriter, r *http.Request) 
 	gpo, _ := url.PathUnescape(chi.URLParam(r, "gpo"))
 	sess := sessionFrom(r)
 	job, err := s.svcs.GPO.StartDistribute(r.Context(), gpo, sess.Username, r.RemoteAddr)
+	s.respondGPODistribute(w, r, job, err)
+}
+
+func (s *Server) handleAPIGPODistributeAll(w http.ResponseWriter, r *http.Request) {
+	if !requireRole(w, r, auth.CanAdmin) {
+		return
+	}
+	sess := sessionFrom(r)
+	job, err := s.svcs.GPO.StartDistributeAll(r.Context(), sess.Username, r.RemoteAddr)
+	s.respondGPODistribute(w, r, job, err)
+}
+
+func (s *Server) respondGPODistribute(w http.ResponseWriter, r *http.Request, job *service.DistributeJob, err error) {
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		status := http.StatusBadGateway
+		if errors.Is(err, service.ErrGPOBulkDeliveryActive) {
+			status = http.StatusConflict
+		}
+		writeJSON(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	if r.Header.Get("HX-Request") == "true" {
@@ -688,6 +706,9 @@ func (s *Server) handleAPIGPODistributeStatus(w http.ResponseWriter, r *http.Req
 	job, ok := s.svcs.GPO.GetDistributeJob(jobID)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "job not found"})
+		return
+	}
+	if job.Bulk && !requireRole(w, r, auth.CanAdmin) {
 		return
 	}
 	if r.Header.Get("HX-Request") == "true" {

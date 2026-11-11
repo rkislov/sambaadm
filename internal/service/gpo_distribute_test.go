@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"strings"
@@ -26,7 +27,9 @@ func TestDistributionAttemptsEveryTargetAfterFailures(t *testing.T) {
 				steps = append(steps, DistributeStep{ID: id, Title: id, Status: StepPending})
 			}
 			steps = append(steps, DistributeStep{ID: "done", Status: StepPending})
-			s.jobs.put(&DistributeJob{ID: "test", Status: JobRunning, Steps: steps})
+			if err := s.jobs.start(&DistributeJob{ID: "test", Status: JobRunning, Steps: steps}); err != nil {
+				t.Fatal(err)
+			}
 			var attempted []string
 			s.runTargetSteps("test", func(step DistributeStep) error {
 				job, _ := s.GetDistributeJob("test")
@@ -95,5 +98,66 @@ func TestSameHost(t *testing.T) {
 func TestBraceGUID(t *testing.T) {
 	if braceGUID("31B2F340-016D-11D2-945F-00C04FB984F9") != "{31B2F340-016D-11D2-945F-00C04FB984F9}" {
 		t.Fatal("brace")
+	}
+}
+
+func TestBulkDistributionReplicatesOnceAndContinuesAfterFailure(t *testing.T) {
+	s := &GPOService{jobs: newJobStore()}
+	plan := distributionPlan{targets: []string{"rodc1", "rwdc2", "rodc3"}, drs: true, sysvol: true}
+	policies := []GPO{{GUID: "guid1", DisplayName: "Policy One"}, {GUID: "guid2", DisplayName: "Policy Two"}}
+	job := newBulkDistributeJob("admin", plan, policies)
+	job.Steps = append(job.Steps, DistributeStep{ID: "done", Status: StepPending})
+	if err := s.jobs.start(job); err != nil {
+		t.Fatal(err)
+	}
+
+	var operations []string
+	s.runBulkDistribution(context.Background(), job.ID, plan.targets, func(dc string) error {
+		operations = append(operations, "DRS "+dc)
+		if dc == "rodc1" {
+			return errors.New("DRS denied")
+		}
+		return nil
+	}, func(guid string) (func(string) error, error) {
+		operations = append(operations, "read "+guid)
+		return func(dc string) error {
+			operations = append(operations, guid+" → "+dc)
+			if guid == "guid1" && dc == "rwdc2" {
+				return errors.New("SYSVOL denied")
+			}
+			return nil
+		}, nil
+	})
+	want := []string{"DRS rodc1", "DRS rwdc2", "DRS rodc3", "read guid1", "guid1 → rwdc2", "guid1 → rodc3", "read guid2", "guid2 → rwdc2", "guid2 → rodc3"}
+	if !reflect.DeepEqual(operations, want) {
+		t.Fatalf("operations = %v, want %v", operations, want)
+	}
+	result, _ := s.GetDistributeJob(job.ID)
+	if result.Status != JobFailed || result.Progress != 100 {
+		t.Fatalf("unexpected final status: %+v", result)
+	}
+	for _, detail := range []string{"rodc1: DRS denied", "rodc1: пропущен", "rwdc2: SYSVOL denied", "Policy One"} {
+		if !strings.Contains(result.Error, detail) {
+			t.Errorf("missing %q in %s", detail, result.Error)
+		}
+	}
+}
+
+func TestBulkDistributionExcludesOtherDeliveries(t *testing.T) {
+	store := newJobStore()
+	single := newDistributeJob("policy", "admin")
+	bulk := newBulkDistributeJob("admin", distributionPlan{}, nil)
+	if err := store.start(single); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.start(bulk); !errors.Is(err, ErrGPOBulkDeliveryActive) {
+		t.Fatalf("bulk while single pending: %v", err)
+	}
+	store.update(single.ID, func(j *DistributeJob) { j.Status = JobOK })
+	if err := store.start(bulk); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.start(newDistributeJob("policy", "admin")); !errors.Is(err, ErrGPOBulkDeliveryActive) {
+		t.Fatalf("single while bulk pending: %v", err)
 	}
 }

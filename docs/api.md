@@ -43,7 +43,8 @@
 | POST | `/gpo/{gpo}/backup` | admin | `{"path":"..."}` |
 | POST | `/gpo/{gpo}/restore` | admin | `{"path":"..."}` |
 | POST | `/gpo/{gpo}/distribute` | admin | запуск распространения на все DC |
-| GET | `/gpo/distribute/{jobID}` | read | статус job (прогресс/шаги) |
+| POST | `/gpo/distribute` | admin | доставка всех GPO домена одной задачей, 202 с идентификатором, 409 при параллельной доставке |
+| GET | `/gpo/distribute/{jobID}` | read / admin для массовой доставки | статус задачи, прогресс и шаги |
 | GET/POST | `/shares` | read/admin | список / создать шару (+ mkdir/ACL) |
 | GET/DELETE | `/shares/{name}` | read/admin | карточка / удалить (`?remove_dir=1`) |
 | GET/POST | `/shares/{name}/acl` | read/admin | POSIX ACL каталога шары |

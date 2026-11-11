@@ -24,6 +24,7 @@ from samba.samba3 import libsmb_samba_internal as libsmb, param, smbd
 ACL_INFO = security.SECINFO_OWNER | security.SECINFO_GROUP | security.SECINFO_DACL
 FILE_ADD_SUBDIRECTORY = 0x0004
 FILE_DIRECTORY = 0x00000001
+FILE_NON_DIRECTORY = 0x00000040
 FILE_OPEN_REPARSE_POINT = 0x00200000
 
 
@@ -31,6 +32,24 @@ def check_directory_access(connection, relative, access):
     handle = connection.create(relative, DesiredAccess=access, ShareAccess=7,
                                CreateDisposition=1, CreateOptions=FILE_DIRECTORY | FILE_OPEN_REPARSE_POINT)
     connection.close(handle)
+
+
+def check_staged_policy_readable(connection, stage_relative, paths, files):
+    # Reading a descriptor as root does not test whether the domain session can
+    # enumerate the directory or open its files through SYSVOL.
+    for name in ("", *paths):
+        relative = stage_relative + "\\" + name.replace("/", "\\") if name else stage_relative
+        try:
+            if name not in files:
+                check_directory_access(connection, relative, security.SEC_GENERIC_READ)
+                connection.list(relative)
+            else:
+                handle = connection.create(relative, DesiredAccess=security.SEC_GENERIC_READ,
+                                           ShareAccess=7, CreateDisposition=1,
+                                           CreateOptions=FILE_NON_DIRECTORY | FILE_OPEN_REPARSE_POINT)
+                connection.close(handle)
+        except Exception as error:
+            raise ValueError(f"SYSVOL read verification before replacement failed at {name or '.'}: {error}") from error
 
 
 def smb_connect(request, lp):
@@ -143,6 +162,7 @@ def install(request):
         for name in reversed(paths):
             set_acl(stage / name, permissions[name], session)
         set_acl(stage, request["ACL"], session)
+        check_staged_policy_readable(connection, stage_relative, paths, files)
         # Finish the SMB cutover or its rollback if the caller disconnects.
         previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM})
         try:

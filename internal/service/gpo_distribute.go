@@ -4,16 +4,18 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	smb2 "github.com/cloudsoda/go-smb2"
-	"github.com/go-ldap/ldap/v3"
 	"os"
-	"sambaadm/internal/adremote"
-	"sambaadm/internal/agent"
 	"strings"
 	"sync"
 	"time"
 
+	smb2 "github.com/cloudsoda/go-smb2"
+	"github.com/go-ldap/ldap/v3"
+
+	"sambaadm/internal/adremote"
+	"sambaadm/internal/agent"
 	ldapproto "sambaadm/internal/ldap"
 )
 
@@ -54,6 +56,7 @@ type DistributeStep struct {
 type DistributeJob struct {
 	ID        string           `json:"id"`
 	GPO       string           `json:"gpo"`
+	Bulk      bool             `json:"bulk,omitempty"`
 	GUID      string           `json:"guid,omitempty"`
 	Actor     string           `json:"actor,omitempty"`
 	Status    string           `json:"status"`
@@ -74,10 +77,19 @@ func newJobStore() *jobStore {
 	return &jobStore{jobs: make(map[string]*DistributeJob)}
 }
 
-func (s *jobStore) put(j *DistributeJob) {
+// ErrGPOBulkDeliveryActive indicates an overlap with another distribution.
+var ErrGPOBulkDeliveryActive = errors.New("массовую доставку нельзя выполнять одновременно с другой доставкой GPO")
+
+func (s *jobStore) start(j *DistributeJob) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, current := range s.jobs {
+		if (j.Bulk || current.Bulk) && (current.Status == JobPending || current.Status == JobRunning) {
+			return ErrGPOBulkDeliveryActive
+		}
+	}
 	s.jobs[j.ID] = j
-	s.mu.Unlock()
+	return nil
 }
 
 func (s *jobStore) get(id string) (*DistributeJob, bool) {
@@ -151,59 +163,45 @@ func (s *GPOService) ListDomainControllers(ctx context.Context) ([]DomainControl
 	return out, nil
 }
 
-// StartDistribute begins an async GPO distribution job and returns its ID.
-func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string) (*DistributeJob, error) {
-	if s.jobs == nil {
-		s.jobs = newJobStore()
-	}
-	guid, err := s.resolveGUID(ctx, gpo)
-	if err != nil {
-		return nil, err
-	}
+type distributionPlan struct {
+	source      string
+	targets     []string
+	drs, sysvol bool
+}
+
+func (s *GPOService) planDistribution(ctx context.Context) (distributionPlan, error) {
 	dcs, err := s.ListDomainControllers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list DCs: %w", err)
+		return distributionPlan{}, fmt.Errorf("list DCs: %w", err)
 	}
 	if len(dcs) == 0 {
-		return nil, fmt.Errorf("no domain controllers found")
+		return distributionPlan{}, fmt.Errorf("no domain controllers found")
 	}
 
 	conn, err := s.ldap.Conn(ctx)
 	if err != nil {
-		return nil, err
+		return distributionPlan{}, err
 	}
 	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dNSHostName"}, nil))
 	if err != nil {
-		return nil, err
+		return distributionPlan{}, err
 	}
 	if len(root.Entries) != 1 {
-		return nil, fmt.Errorf("missing RootDSE")
+		return distributionPlan{}, fmt.Errorf("missing RootDSE")
 	}
 	local := root.Entries[0].GetEqualFoldAttributeValue("dNSHostName")
 	if local == "" {
-		return nil, fmt.Errorf("missing source DC name")
+		return distributionPlan{}, fmt.Errorf("missing source DC name")
 	}
 	syncMode := strings.ToLower(s.gpoCfg.SyncMode)
 	if syncMode == "" {
 		syncMode = "both"
 	}
 	if syncMode != "both" && syncMode != "drs" && syncMode != "smb" && syncMode != "rsync" {
-		return nil, fmt.Errorf("unsupported GPO sync mode")
+		return distributionPlan{}, fmt.Errorf("unsupported GPO sync mode")
 	}
 
-	id := randomJobID()
-	job := &DistributeJob{
-		ID:        id,
-		GPO:       gpo,
-		GUID:      guid,
-		Actor:     actor,
-		Status:    JobPending,
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
-	}
-
-	job.Steps = append(job.Steps, DistributeStep{ID: "resolve", Title: "Чтение GPO и SYSVOL через helper", Status: StepPending})
-
+	plan := distributionPlan{source: local, drs: syncMode == "both" || syncMode == "drs", sysvol: syncMode != "drs"}
 	for _, dc := range dcs {
 		host := dc.DNS
 		if host == "" {
@@ -212,16 +210,36 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		if sameHost(host, local) {
 			continue
 		}
-		if syncMode == "drs" || syncMode == "both" {
-			job.Steps = append(job.Steps, DistributeStep{
-				ID:     "drs-" + host,
-				Title:  "Репликация AD (DRS) → " + host,
-				Detail: "MS-DRSR RPC",
-				DC:     host,
-				Status: StepPending,
-			})
+		plan.targets = append(plan.targets, host)
+	}
+	return plan, nil
+}
+
+func drsDistributionStep(host string) DistributeStep {
+	return DistributeStep{
+		ID: "drs-" + host, Title: "Репликация AD (DRS) → " + host,
+		Detail: "MS-DRSR RPC", DC: host, Status: StepPending,
+	}
+}
+
+// StartDistribute begins an async GPO distribution job and returns its ID.
+func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string) (*DistributeJob, error) {
+	guid, err := s.resolveGUID(ctx, gpo)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.planDistribution(ctx)
+	if err != nil {
+		return nil, err
+	}
+	job := newDistributeJob(gpo, actor)
+	job.GUID = guid
+	job.Steps = append(job.Steps, DistributeStep{ID: "resolve", Title: "Чтение GPO и SYSVOL через helper", Status: StepPending})
+	for _, host := range plan.targets {
+		if plan.drs {
+			job.Steps = append(job.Steps, drsDistributionStep(host))
 		}
-		if syncMode == "rsync" || syncMode == "smb" || syncMode == "both" {
+		if plan.sysvol {
 			job.Steps = append(job.Steps, DistributeStep{
 				ID:     "rsync-" + host,
 				Title:  "Копирование SYSVOL через helper → " + host,
@@ -232,16 +250,80 @@ func (s *GPOService) StartDistribute(ctx context.Context, gpo, actor, ip string)
 		}
 	}
 
-	job.Steps = append(job.Steps, DistributeStep{
-		ID: "done", Title: "Итог распространения", Status: StepPending,
+	return s.launchDistribution(ctx, job, "gpo.distribute.start", ip, func(ctx context.Context) {
+		s.runDistribute(ctx, job.ID, plan.source)
 	})
+}
 
-	s.jobs.put(job)
-	s.audit.Success(actor, "gpo.distribute.start", gpo, ip)
+// StartDistributeAll uses the full LDAP catalog, independent of the UI filter.
+func (s *GPOService) StartDistributeAll(ctx context.Context, actor, ip string) (*DistributeJob, error) {
+	plan, err := s.planDistribution(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(plan.targets) == 0 {
+		return nil, fmt.Errorf("нет других контроллеров для доставки GPO")
+	}
+	policies, err := s.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list GPOs: %w", err)
+	}
+	if len(policies) == 0 {
+		return nil, fmt.Errorf("в домене не найдено политик для доставки")
+	}
+	job := newBulkDistributeJob(actor, plan, policies)
+	return s.launchDistribution(ctx, job, "gpo.distribute.all.start", ip, func(parent context.Context) {
+		ctx, cancel := context.WithTimeout(parent, 30*time.Minute)
+		defer cancel()
+		repl := &ReplService{ldap: s.ldap, audit: s.audit, remote: s.remote}
+		s.runBulkDistribution(ctx, job.ID, plan.targets, func(host string) error {
+			return repl.Sync(ctx, host, plan.source, s.ldap.BaseDN(), actor, ip)
+		}, func(guid string) (func(string) error, error) {
+			snapshot, path, err := s.readPolicyForDelivery(ctx, guid)
+			if err != nil {
+				return nil, err
+			}
+			return func(host string) error { return s.deliverPolicy(ctx, host, path, snapshot) }, nil
+		})
+	})
+}
 
-	go s.runDistribute(ldapproto.CarryTLSProfile(agent.CarryCredentials(context.Background(), ctx), ctx), id, local)
+func newBulkDistributeJob(actor string, plan distributionPlan, policies []GPO) *DistributeJob {
+	job := newDistributeJob("Все групповые политики", actor)
+	job.Bulk = true
+	if plan.drs {
+		for _, host := range plan.targets {
+			job.Steps = append(job.Steps, drsDistributionStep(host))
+		}
+	}
+	if plan.sysvol {
+		for i, policy := range policies {
+			label := policy.DisplayName
+			if label == "" {
+				label = policy.GUID
+			}
+			job.Steps = append(job.Steps, DistributeStep{
+				ID: fmt.Sprintf("policy-%d", i), Title: "Копирование SYSVOL: " + label,
+				Detail: policy.GUID, Status: StepPending,
+			})
+		}
+	}
+	return job
+}
 
-	out, _ := s.jobs.get(id)
+func newDistributeJob(gpo, actor string) *DistributeJob {
+	now := time.Now().UTC()
+	return &DistributeJob{ID: randomJobID(), GPO: gpo, Actor: actor, Status: JobPending, CreatedAt: now, UpdatedAt: now}
+}
+
+func (s *GPOService) launchDistribution(ctx context.Context, job *DistributeJob, action, ip string, run func(context.Context)) (*DistributeJob, error) {
+	job.Steps = append(job.Steps, DistributeStep{ID: "done", Title: "Итог распространения", Status: StepPending})
+	if err := s.jobs.start(job); err != nil {
+		return nil, err
+	}
+	s.audit.Success(job.Actor, action, job.GPO, ip)
+	go run(ldapproto.CarryTLSProfile(agent.CarryCredentials(context.Background(), ctx), ctx))
+	out, _ := s.jobs.get(job.ID)
 	return out, nil
 }
 
@@ -274,14 +356,9 @@ func (s *GPOService) runDistribute(parent context.Context, jobID, local string) 
 	var snapshot policyBackup
 	var remotePath string
 	if err := s.runStep(jobID, "resolve", func() error {
-		var entry *ldap.Entry
-		var e error
-		snapshot, entry, e = s.captureNativeBackup(ctx, job.GUID)
-		if e != nil {
-			return e
-		}
-		remotePath, e = s.policyPath(ctx, entry)
-		return e
+		var err error
+		snapshot, remotePath, err = s.readPolicyForDelivery(ctx, job.GUID)
+		return err
 	}); err != nil {
 		fail(err.Error())
 		s.markRemainingSkipped(jobID)
@@ -292,18 +369,78 @@ func (s *GPOService) runDistribute(parent context.Context, jobID, local string) 
 		if strings.HasPrefix(step.ID, "drs-") {
 			return repl.Sync(ctx, step.DC, local, s.ldap.BaseDN(), job.Actor, "")
 		}
-		remote := *s.remote
-		remote.Host = step.DC
-		return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error {
-			if _, present, err := agent.OperationCredentials(ctx); err != nil {
-				return err
-			} else if present {
-				return share.helpers.Call(ctx, share.node, "sysvol.install-policy", policyInstallRequest{
-					Target: remotePath, ACL: snapshot.ACL, Files: snapshot.Files, Permissions: snapshot.Permissions,
-				}, nil)
+		return s.deliverPolicy(ctx, step.DC, remotePath, snapshot)
+	})
+}
+
+func (s *GPOService) readPolicyForDelivery(ctx context.Context, guid string) (policyBackup, string, error) {
+	if !looksLikeGUID(guid) {
+		return policyBackup{}, "", fmt.Errorf("invalid policy GUID: %q", guid)
+	}
+	snapshot, entry, err := s.captureNativeBackup(ctx, guid)
+	if err != nil {
+		return policyBackup{}, "", err
+	}
+	path, err := s.policyPath(ctx, entry)
+	return snapshot, path, err
+}
+
+func (s *GPOService) deliverPolicy(ctx context.Context, host, path string, snapshot policyBackup) error {
+	remote := *s.remote
+	remote.Host = host
+	return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error {
+		if _, present, err := agent.OperationCredentials(ctx); err != nil {
+			return err
+		} else if present {
+			return share.helpers.Call(ctx, share.node, "sysvol.install-policy", policyInstallRequest{
+				Target: path, ACL: snapshot.ACL, Files: snapshot.Files, Permissions: snapshot.Permissions,
+			}, nil)
+		}
+		return installPolicySnapshot(share, path, snapshot)
+	})
+}
+
+func (s *GPOService) runBulkDistribution(ctx context.Context, jobID string, targets []string, replicate func(string) error, preparePolicy func(string) (func(string) error, error)) {
+	s.jobs.update(jobID, func(j *DistributeJob) { j.Status = JobRunning })
+	failedDRS := make(map[string]bool)
+	s.runTargetSteps(jobID, func(step DistributeStep) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if step.DC != "" {
+			err := replicate(step.DC)
+			failedDRS[step.DC] = err != nil
+			return err
+		}
+		if len(targets) == 0 {
+			return fmt.Errorf("нет контроллеров для копирования SYSVOL")
+		}
+		var copyPolicy func(string) error
+		var failures []string
+		for _, host := range targets {
+			if err := ctx.Err(); err != nil {
+				failures = append(failures, fmt.Sprintf("%s и оставшиеся контроллеры: %v", host, err))
+				break
 			}
-			return installPolicySnapshot(share, remotePath, snapshot)
-		})
+			if failedDRS[host] {
+				failures = append(failures, host+": пропущен из-за ошибки DRS")
+				continue
+			}
+			if copyPolicy == nil {
+				var err error
+				copyPolicy, err = preparePolicy(step.Detail)
+				if err != nil {
+					return fmt.Errorf("чтение исходной политики: %w", err)
+				}
+			}
+			if err := copyPolicy(host); err != nil {
+				failures = append(failures, host+": "+err.Error())
+			}
+		}
+		if len(failures) > 0 {
+			return errors.New(strings.Join(failures, "; "))
+		}
+		return nil
 	})
 }
 
