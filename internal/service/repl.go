@@ -28,6 +28,7 @@ type ReplPartner struct {
 type ReplStatus struct {
 	Raw             string               `json:"raw,omitempty"`
 	Server          string               `json:"server"`
+	Controller      string               `json:"controller,omitempty"`
 	Health          string               `json:"health"`
 	Neighbors       []ReplNeighbor       `json:"neighbors"`
 	Partners        []ReplPartner        `json:"partners,omitempty"`
@@ -142,6 +143,16 @@ func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus
 	if err != nil {
 		return nil, err
 	}
+	if ntds == "" {
+		root, err := s.replicationRootDSE(ctx, "dsServiceName")
+		if err != nil {
+			return nil, fmt.Errorf("read replication topology for %s: %w", remote.Host, err)
+		}
+		ntds = root.GetEqualFoldAttributeValue("dsServiceName")
+		if ntds == "" {
+			return nil, fmt.Errorf("read replication topology for %s: RootDSE has no dsServiceName", remote.Host)
+		}
+	}
 	rodc, partitions, err := s.replicationPartitions(ctx, ntds)
 	if err != nil {
 		return nil, fmt.Errorf("read replication topology for %s: %w", remote.Host, err)
@@ -163,20 +174,16 @@ func (s *ReplService) StatusFor(ctx context.Context, server string) (*ReplStatus
 	if err != nil {
 		return nil, err
 	}
+	for _, partner := range st.Partners {
+		if dnKey(partner.DN) == dnKey(ntds) {
+			st.Controller = partner.Name
+			break
+		}
+	}
 	return st, nil
 }
 
 func (s *ReplService) replicationPartitions(ctx context.Context, ntds string) (bool, []string, error) {
-	if ntds == "" {
-		root, err := s.replicationRootDSE(ctx, "dsServiceName")
-		if err != nil {
-			return false, nil, err
-		}
-		ntds = root.GetEqualFoldAttributeValue("dsServiceName")
-		if ntds == "" {
-			return false, nil, fmt.Errorf("RootDSE has no dsServiceName")
-		}
-	}
 	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{
 		BaseDN: ntds, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=nTDSDSA)",
 		Attributes: []string{"msDS-isRODC", "msDS-hasFullReplicaNCs", "hasPartialReplicaNCs"},

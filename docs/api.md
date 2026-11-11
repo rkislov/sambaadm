@@ -55,7 +55,7 @@
 
 ## Топология и репликация v0.11.0
 
-Чтение доступно всем аутентифицированным ролям: `GET /sites/topology`, `/sites/controllers`, `/sites/links`, `/repl/connections`, `/repl/status?dc=dc2.example.com`. Последний запрос возвращает `server`, `health` и `neighbors`. Каждый сосед содержит `direction`, `partner`, `partition`, `lastAttempt`, `lastSuccess`, `failures`, `result`, `health`. Для RODC запрос проверяет входящих соседей по каждому разделу. Если раздел не вернул соседей или запрос по нему завершился ошибкой, ответ включает `partitionIssues` с полем `partition` и, при ошибке, полем `error`. Статус `unverified` означает, что данных для подтверждения состояния RODC недостаточно. Известные ошибки репликации дают статус `degraded`. Для RWDC сохраняются статусы `healthy`, `degraded` и `no-partners`.
+Чтение доступно всем аутентифицированным ролям: `GET /sites/topology`, `/sites/controllers`, `/sites/links`, `/repl/connections`, `/repl/status?dc=dc2.example.com`. Последний запрос возвращает `server`, `health` и `neighbors`. Поле `controller` содержит DNS-имя контроллера из AD, если его удалось сопоставить. Каждый сосед содержит `direction`, `partner`, `partition`, `lastAttempt`, `lastSuccess`, `failures`, `result`, `health`. Для RODC запрос проверяет входящих соседей по каждому разделу. Если раздел не вернул соседей или запрос по нему завершился ошибкой, ответ включает `partitionIssues` с полем `partition` и, при ошибке, полем `error`. Статус `unverified` означает, что данных для подтверждения состояния RODC недостаточно. Известные ошибки репликации дают статус `degraded`. Для RWDC сохраняются статусы `healthy`, `degraded` и `no-partners`.
 
 Изменения требуют admin и CSRF:
 

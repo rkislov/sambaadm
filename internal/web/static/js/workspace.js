@@ -17,6 +17,7 @@
   const ou = (key = 'ou') => text(key, 'Подразделение или контейнер DN', 'OU or container DN', {optional: true, list: 'directory-dns'});
   const description = () => text('description', 'Описание', 'Description', {optional: true});
   const action = (label, method, path, fields = [], options = {}) => ({label, method, path, fields, ...options});
+  const controllerAuthAction = action(t('Авторизации контроллеров','Controller authentications'),'GET',null,[],{controllerAuth:true,adminOnly:true});
   const view = (label, path, fields = []) => action(label, 'GET', path, fields);
   const remove = (path, fields = []) => action(t('Удалить', 'Delete'), 'DELETE', path, fields, {danger: true});
   const move = path => action(t('Переместить', 'Move'), 'POST', path, [ou('toOU')].map(f => ({...f, optional: false})));
@@ -80,9 +81,9 @@
     '/repl':{title:t('Репликация','Replication'),endpoint:'/repl/partners',id:r=>r.dn,
       columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
       hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
-      toolbar:[{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true},{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
+      toolbar:[{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction,{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
     '/sites':{title:t('Сайты и службы','Sites and Services'),endpoint:'/sites',id:r=>r.name,
-      columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},{label:t('Кэш и авторизации RODC','RODC cache and authentication'),method:'PUT',rodc:true}]},
+      columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
@@ -181,7 +182,7 @@
   const dnsConsole=cfg===configs['/dns']?window.sambaadmDNSConsole({sidebar:objectTree,main,request,admin,onOpen:(zone,name,record)=>openDNSEditor(zone,name,{record}),onCreate:(zone,name)=>zone&&openDNSEditor(zone,name,{create:true}),onDelete:zone=>zone&&openOperation(cfg.actions.find(a=>a.method==='DELETE'),zone)}):null;
   const sitesConsole=cfg===configs['/sites']?setupSitesConsole():null;
   const gpoConsole=cfg===configs['/gpo']?setupGPOConsole():null;
-  function allowed(a) {return a.method==='GET' || (a.support?helpdesk:admin);}
+  function allowed(a) {return a.adminOnly?admin:a.method==='GET' || (a.support?helpdesk:admin);}
   function addAction(parent,a,row) {
     if(!allowed(a)||a.when&&!a.when(row))return;
     // Samba LDAP fallback can return GPOs without a GUID. Do not send a fabricated identifier.
@@ -633,6 +634,7 @@
     if(a.scope)return openScope();
     if(a.consistency)return openConsistency(row);
     if(a.rodc)return openRODC();
+    if(a.controllerAuth)return openControllerAuth();
     if(a.repair)return openRepair(row);
     if(a.fullDelegation)return openFullDelegation(row);
     if(a.delegation)return openDelegation(row);
@@ -706,9 +708,140 @@
     if(!dialog.open)dialog.showModal();(inputs[0]?.[1]||submit).focus();
     if(a.method==='GET'&&!a.fields.length)form.requestSubmit();
   }
+  async function openControllerAuth() {
+    lastFocus=document.activeElement;
+    const generation=++dialogGeneration;
+    resetDialog();
+    const title=el('h2','',controllerAuthAction.label);
+    title.id='operation-title';
+    const body=el('section');
+    dialog.append(title,body,button(t('Закрыть','Close'),closeOperation));
+    dialog.showModal();
+    const pending=el('p','muted',t('Загрузка контроллеров…','Loading controllers…'));
+    body.append(pending);
+    try{
+      const controllers=await request('/sites/controllers');
+      if(generation!==dialogGeneration)return;
+      const targets=controllers.filter(dc=>dc.dns);
+      if(!targets.length){
+        message(pending,t('Контроллеры в каталоге не найдены','No controllers found in the directory'));
+        return;
+      }
+      pending.remove();
+      showControllerAuth(body,targets);
+    }catch(err){if(generation===dialogGeneration)message(pending,err.message,true);}
+  }
+
+  function showControllerAuth(parent,controllers,{auto=false}={}) {
+    const generation=dialogGeneration;
+    const form=el('form','workspace-form'),output=el('section');
+    output.setAttribute('aria-live','polite');
+    const picker=el('select'),account=el('input'),after=el('input');
+    account.maxLength=256;
+    account.autocomplete='off';
+    after.type='datetime-local';
+    const addField=(label,input)=>{
+      const wrapper=el('label','',label);
+      input.setAttribute('aria-label',label);
+      wrapper.append(input);
+      form.append(wrapper);
+    };
+    if(!auto){
+      for(const dc of controllers){
+        const option=el('option','',dc.dns+' · '+(dc.rodc?'RODC':'RWDC'));
+        option.value=dc.dns;
+        picker.append(option);
+      }
+      if(controllers.length>1){
+        const option=el('option','',t('Все контроллеры по учётной записи','All controllers by account'));
+        option.value='*';
+        picker.append(option);
+      }
+      addField(t('Контроллер журнала','Audit controller'),picker);
+      picker.addEventListener('change',()=>{
+        account.required=picker.value==='*';
+        output.replaceChildren();
+      });
+    }
+    addField(t('Фильтр учётной записи','Account filter'),account);
+    addField(t('Авторизации начиная с','Authentication since'),after);
+    const read=el('button','',t('Показать журнал авторизаций','Show authentication audit'));
+    read.type='submit';
+    form.append(read);
+    if(auto)parent.append(el('p','',controllers[0].dns));
+    parent.append(el('p','muted',t('В таблице указан контроллер, который записал событие Samba. Успешная аутентификация может относиться к сетевой службе или Kerberos и сама по себе не подтверждает интерактивный вход.','The table identifies the controller that recorded the Samba event. Successful authentication can be for a network service or Kerberos and does not by itself establish an interactive sign-in.')),form,output);
+
+    form.addEventListener('submit',async event=>{
+      event.preventDefault();
+      if(read.disabled||!form.reportValidity())return;
+      const login=account.value.trim();
+      if(picker.value==='*'&&!login){
+        message(output,t('Укажите учётную запись для поиска по всем контроллерам','Enter an account to search all controllers'),true);
+        account.focus();
+        return;
+      }
+      const targets=auto||picker.value==='*'?controllers:controllers.filter(dc=>dc.dns===picker.value);
+      const query=new URLSearchParams();
+      if(login)query.set('account',login);
+      if(after.value)query.set('after',new Date(after.value).toISOString());
+      const suffix=query.size?'?'+query:'';
+      const active=()=>generation===dialogGeneration&&output.isConnected;
+      read.disabled=true;
+      picker.disabled=true;
+      const pending=el('p','',t('Чтение журналов…','Reading audit logs…'));
+      output.replaceChildren(pending);
+      const reports=new Array(targets.length);
+      let next=0;
+      async function worker(){
+        while(active()&&next<targets.length){
+          const index=next++,controller=targets[index].dns;
+          try{
+            const report=await request('/sites/controllers/'+enc(controller)+'/authentications'+suffix,'GET',undefined,{signal:AbortSignal.timeout(35000)});
+            reports[index]={...report,controller};
+          }catch(err){reports[index]={controller,status:'unavailable',error:err.message};}
+        }
+      }
+      try{
+        await Promise.all(Array.from({length:Math.min(4,targets.length)},worker));
+        if(active())renderControllerAuth(output,reports);
+      }finally{
+        if(active()){read.disabled=false;picker.disabled=false;}
+      }
+    });
+    if(auto)form.requestSubmit();
+  }
+
+  function renderControllerAuth(output,reports) {
+    output.replaceChildren();
+    const states={available:t('Доступен','Available'),partial:t('Неполные данные','Partial data'),unavailable:t('Недоступен','Unavailable')};
+    const coverage=reports.map(report=>({
+      controller:report.controller,
+      state:states[report.status]||states.unavailable,
+      count:report.status==='unavailable'?'—':(report.events||[]).length,
+      detail:report.error||(report.status==='unavailable'?t('Проверьте JSON-аудит Samba и helper.auth_log на этом контроллере.','Check Samba JSON auditing and helper.auth_log on this controller.'):'')
+    }));
+    output.append(el('h4','',t('Журналы контроллеров','Controller audit sources')),
+      el('p','muted',t('Выборка ограничена сохранённым журналом каждого контроллера.','Results are limited to the retained audit log on each controller.')));
+    topologyTable(output,coverage,[['controller',t('Контроллер','Controller')],['state',t('Журнал','Audit log')],['count',t('События в выборке','Events returned')],['detail',t('Подробности','Details')]]);
+    const events=reports.flatMap(report=>(report.events||[]).map(event=>({...event,controller:report.controller})));
+    events.sort((a,b)=>new Date(b.time)-new Date(a.time));
+    if(!events.length){
+      output.append(el('p','muted',t('В доступных журналах нет событий по этому запросу.','No events match this query in the available logs.')));
+      return;
+    }
+    if(events.length>500)output.append(el('p','muted',t('Показаны 500 последних событий из выборки.','Showing the 500 most recent events returned.')));
+    const rows=events.slice(0,500).map(event=>({
+      ...event,time:window.sambaadmFormatTime(event.time),
+      account:[event.domain,event.account].filter(Boolean).join('\\'),
+      client:[event.workstation,event.client].filter(Boolean).join(' · '),
+      service:[event.service,event.authentication].filter(Boolean).join(' · ')
+    }));
+    topologyTable(output,rows,[['time',t('Время','Time')],['account',t('Учётная запись','Account')],['controller',t('Контроллер','Controller')],['client',t('Клиент','Client')],['status',t('Результат','Result')],['service',t('Служба и протокол','Service and protocol')]]);
+  }
+
   async function openRODC() {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0;
-    const title=el('h2','',t('Кэш и авторизации RODC','RODC cache and authentication'));title.id='operation-title';
+    const title=el('h2','',t('Кэш RODC','RODC cache'));title.id='operation-title';
     const notice=el('p','workspace-message'),controller=el('select'),body=el('section');controller.setAttribute('aria-label',t('Контроллер RODC','RODC controller'));
     const pick=el('label','',t('Контроллер RODC','RODC controller'));pick.append(controller);
     dialog.append(title,el('p','alert',t('Назначения относятся только к выбранному RODC. Запрет имеет приоритет над разрешением. Удаление разрешения и запрет не стирают уже закэшированный пароль.','Assignments apply only to the selected RODC. Deny takes precedence. Removing permission or denying caching does not erase an already cached password.')),pick,notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
@@ -740,15 +873,7 @@
         const preload=el('form','workspace-form'),accounts=el('select');accounts.multiple=true;accounts.size=6;accounts.required=true;accounts.setAttribute('aria-label',t('Учётные записи для заполнения кэша','Accounts to preload'));const al=el('label','',t('Выберите пользователей и компьютеры для заполнения кэша','Select users and computers to preload'));al.append(accounts);
         const pre=el('button','',t('Предпросмотр заполнения кэша','Preview cache preload'));pre.type='submit';pre.disabled=!model.preloadAvailable;preload.append(al,pre);preload.addEventListener('change',()=>result.replaceChildren());preload.addEventListener('submit',e=>{e.preventDefault();if(preload.reportValidity())preview({operation:'preload',accounts:Array.from(accounts.selectedOptions,o=>o.value)});});body.append(el('h3','',t('Принудительное заполнение кэша','Preload cache')),preload);
         if(!model.preloadAvailable)body.append(el('p','alert',t('Для этого RODC не настроен helper заполнения кэша. Настройте helpers.nodes на сервере sambaadm и установите helper на RODC.','No preload helper configured for this RODC. Configure helpers.nodes on sambaadm and install the helper on the RODC.')));
-        const logs=el('section'),filters=el('form','workspace-form'),after=el('input'),account=el('input');after.type='datetime-local';after.setAttribute('aria-label',t('Авторизации начиная с','Authentication since'));account.setAttribute('aria-label',t('Фильтр учётной записи','Account filter'));account.placeholder=t('Учётная запись','Account');const la=el('label','',t('Авторизации начиная с','Authentication since'));la.append(after);const read=el('button','',t('Показать журнал авторизаций','Show authentication audit'));read.type='submit';filters.append(la,account,read);body.append(el('h3','',t('Журнал авторизаций выбранного RODC','Selected RODC authentication audit')),filters,logs,result);
-        filters.addEventListener('submit',async e=>{e.preventDefault();if(!filters.reportValidity())return;logs.replaceChildren();read.disabled=true;
-          try{const q=new URLSearchParams({account:account.value});if(after.value)q.set('after',new Date(after.value).toISOString());const report=await request(endpoint+'/authentications?'+q);if(!active(current))return;
-            logs.append(el('p','',report.controller+' · '+report.source+' · '+report.status),el('p','muted',t('Показаны события из настроенного JSON-аудита Samba для этого DC. История ограничена сохранённым журналом; успешная аутентификация не означает интерактивный вход или наличие пароля в кэше.','Events are from the configured Samba JSON audit for this DC. History is limited by log retention; successful authentication does not prove interactive logon or a cached password.')));
-            if(report.status==='unavailable')logs.append(el('p','alert',t('Источник аудита не настроен или недоступен. Настройте helper.auth_log и сбор auth_json_audit с выбранного RODC.','Audit source is unconfigured or unavailable. Configure helper.auth_log and collect auth_json_audit from this RODC.')));
-            if(report.truncated||report.malformed)logs.append(el('p','alert',t('Неполные данные; пропущенных некорректных записей: ','Partial data; malformed records skipped: ')+report.malformed));
-            topologyTable(logs,report.events.map(event=>({...event,time:window.sambaadmFormatTime(event.time)})),[['time',t('Время','Time')],['domain',t('Домен','Domain')],['account',t('Учётная запись','Account')],['client',t('Клиент','Client')],['status',t('Результат','Result')],['service',t('Служба','Service')]]);
-          }catch(err){if(active(current))message(notice,err.message,true);}finally{if(active(current))read.disabled=false;}
-        });
+        body.append(result);
         message(notice,t('Данные RODC загружены','RODC data loaded'));
         const lookups=await Promise.allSettled([request('/users'),request('/computers'),request('/groups')]);if(!active(current))return;
         for(let i=0;i<lookups.length;i++){const lookup=lookups[i];if(lookup.status!=='fulfilled'){body.append(el('p','muted',t('Не удалось загрузить один из списков выбора; назначение доступно по DN.','One selection list could not be loaded; assignment remains available by DN.')));continue;}for(const p of lookup.value){if(!p.dn)continue;const o=el('option','',p.samAccountName||p.name||p.dn);o.value=p.dn;options.append(o);if(i<2){const a=o.cloneNode(true);accounts.append(a);}}}
@@ -1377,7 +1502,14 @@
         lastSuccess:window.sambaadmFormatTime(row.lastSuccess),
         result:replicationResult(row)
       }));
-      topologyTable(parent,neighbors,[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastAttempt',t('Последняя попытка','Last attempt')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);return;
+      topologyTable(parent,neighbors,[['direction',t('Направление','Direction')],['partner',t('Партнёр','Partner')],['partition',t('Раздел','Partition')],['failures',t('Ошибки подряд','Consecutive failures')],['lastAttempt',t('Последняя попытка','Last attempt')],['lastSuccess',t('Последний успех','Last success')],['result',t('Последний результат','Last result')]]);
+      if(admin&&result.controller){
+        const audit=el('section');
+        audit.append(el('h4','',t('Авторизации контроллера','Controller authentications')));
+        parent.append(audit);
+        showControllerAuth(audit,[{dns:result.controller}],{auto:true});
+      }
+      return;
     }
     if(cfg===configs['/gpo']){describeTree(result,parent);return;}
     // Keep DNS query results under the chosen zone, with explicit values for edits.

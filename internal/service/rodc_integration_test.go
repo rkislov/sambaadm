@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"sambaadm/internal/agent"
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 )
@@ -174,5 +177,62 @@ func TestIntegrationRODCPolicyPreloadAndAuthentication(t *testing.T) {
 	var data []byte
 	if e = s.RODC.helpers.Call(ctx, host, "sysvol.read", helperFSRequest{Path: file}, &data); e != nil || string(data) != "RODC helper copy" {
 		t.Fatal(string(data), e)
+	}
+
+	// The RODC receives a policy with nested files through the signed helper.
+	// A regular domain user can authenticate but cannot install the same policy.
+	const policy = "31B2F340-016D-11D2-945F-00C04FB984F9"
+	snapshot, entry, e := s.GPO.captureNativeBackup(ctx, policy)
+	if e != nil {
+		t.Fatal(e)
+	}
+	path, e := s.GPO.policyPath(ctx, entry)
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() {
+		if e := s.RODC.helpers.Call(context.Background(), host, "sysvol.remove-tree", helperFSRequest{Path: path}, nil); e != nil {
+			t.Error(e)
+		}
+	})
+	var machine string
+	for name := range snapshot.Permissions {
+		if strings.EqualFold(name, "Machine") {
+			machine = name
+			break
+		}
+	}
+	if machine == "" {
+		t.Fatal("source policy has no Machine ACL")
+	}
+	preferences := machine + "/Preferences"
+	fileRel := preferences + "/sambaadm-integration.txt"
+	snapshot.Permissions[preferences] = snapshot.Permissions[machine]
+	snapshot.Permissions[fileRel] = snapshot.Permissions["GPT.INI"]
+	snapshot.Files[fileRel] = []byte("first revision")
+	in := policyInstallRequest{Target: path, ACL: snapshot.ACL, Files: snapshot.Files, Permissions: snapshot.Permissions}
+	withCredentials := func(user, password string) context.Context {
+		return agent.WithCredentials(ctx, func() (agent.Credentials, error) {
+			return agent.Credentials{Username: user, Password: password}, nil
+		})
+	}
+	admin := withCredentials(cfg.Bind.User, os.Getenv(cfg.Bind.PasswordEnv))
+	if e = s.RODC.helpers.Call(admin, host, "sysvol.install-policy", in, nil); e != nil {
+		t.Fatal(e)
+	}
+	ordinary := withCredentials(name+"@sambaadm.test", "Lab-User-Test-Pass1!")
+	snapshot.Files[fileRel] = []byte("second revision")
+	if e = s.RODC.helpers.Call(ordinary, host, "sysvol.install-policy", in, nil); e == nil || !strings.Contains(e.Error(), "lacks rights") {
+		t.Fatalf("ordinary domain user was not rejected by the write-access check: %v", e)
+	}
+	nested := helperFSRequest{Path: path + `\` + strings.ReplaceAll(fileRel, "/", `\`)}
+	if e = s.RODC.helpers.Call(admin, host, "sysvol.read", nested, &data); e != nil || !bytes.Equal(data, []byte("first revision")) {
+		t.Fatalf("unauthorized request changed the policy: %q, %v", data, e)
+	}
+	if e = s.RODC.helpers.Call(admin, host, "sysvol.install-policy", in, nil); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.RODC.helpers.Call(admin, host, "sysvol.read", nested, &data); e != nil || !bytes.Equal(data, []byte("second revision")) {
+		t.Fatalf("policy replacement did not install the nested file: %q, %v", data, e)
 	}
 }

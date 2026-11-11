@@ -294,7 +294,16 @@ func (s *GPOService) runDistribute(parent context.Context, jobID, local string) 
 		}
 		remote := *s.remote
 		remote.Host = step.DC
-		return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error { return installPolicySnapshot(share, remotePath, snapshot) })
+		return s.sysvol(ctx, &remote, 445, func(share *sysvolShare) error {
+			if _, present, err := agent.OperationCredentials(ctx); err != nil {
+				return err
+			} else if present {
+				return share.helpers.Call(ctx, share.node, "sysvol.install-policy", policyInstallRequest{
+					Target: remotePath, ACL: snapshot.ACL, Files: snapshot.Files, Permissions: snapshot.Permissions,
+				}, nil)
+			}
+			return installPolicySnapshot(share, remotePath, snapshot)
+		})
 	})
 }
 

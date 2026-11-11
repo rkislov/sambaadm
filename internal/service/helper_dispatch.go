@@ -230,6 +230,9 @@ func helperSYSVOLPath(prefix, value string) (string, error) {
 	return strings.ReplaceAll(value, "/", `\`), nil
 }
 func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method string, raw json.RawMessage) (out any, err error) {
+	if method == "install-policy" {
+		return nil, runLocalPolicyInstall(ctx, cfg, s.Shares.ConfigPath(), raw)
+	}
 	var in helperFSRequest
 	if e := decodeHost(raw, &in); e != nil {
 		return nil, e
