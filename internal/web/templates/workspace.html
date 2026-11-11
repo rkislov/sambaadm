@@ -1,5 +1,5 @@
 {{define "workspace.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}{{if eq .Content.Module "/gpo"}}<script src="/static/js/rsop-report.js" defer></script>{{end}}<script src="/static/js/workspace.js" defer></script></head>
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}{{if eq .Content.Module "/gpo"}}<script src="/static/js/rsop-report.js" defer></script><script src="/static/js/consistency-report.js" defer></script>{{end}}<script src="/static/js/workspace.js" defer></script></head>
 <body>{{template "nav" .}}
 <main class="container workspace" id="workspace" data-module="{{.Content.Module}}" data-role="{{.Role}}" data-base-dn="{{.Content.BaseDN}}">
  <noscript><p>Для управления объектами включите JavaScript / Enable JavaScript to manage objects.</p></noscript>

@@ -78,6 +78,8 @@ type ConsistencyDC struct {
 	checked         bool
 }
 type ConsistencyReport struct {
+	LDAPDN         string          `json:"ldapDN"`
+	SYSVOLPath     string          `json:"sysvolPath"`
 	GPO            string          `json:"gpo"`
 	Started        time.Time       `json:"started"`
 	Finished       time.Time       `json:"finished"`
@@ -482,6 +484,7 @@ func (s *GPOService) CheckConsistency(ctx context.Context, guid string, in Consi
 	defer stopScan()
 	report := &ConsistencyReport{
 		GPO: braceGUID(guid), Started: started, Reference: reference,
+		LDAPDN: entry.DN, SYSVOLPath: base,
 		Controllers: make([]ConsistencyDC, len(controllers)),
 		Limitations: []string{
 			"read-only; no replication or repair",
