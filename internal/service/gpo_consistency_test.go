@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func consistencyTestDC(name string) ConsistencyDC {
@@ -160,6 +161,27 @@ func TestConsistencyTargetsAndDifferenceLimit(t *testing.T) {
 	}
 	if _, e = s.CheckConsistency(context.Background(), strings.Repeat("x", 40), ConsistencyInput{}); e == nil {
 		t.Fatal("invalid GUID")
+	}
+}
+
+func TestConsistencyScanBudgetForLargeDomain(t *testing.T) {
+	for _, tc := range []struct {
+		controllers int
+		want        time.Duration
+	}{
+		{1, 15 * time.Second},
+		{5, 30 * time.Second},
+		{100, 6*time.Minute + 15*time.Second},
+	} {
+		budget, err := consistencyScanBudget(tc.controllers)
+		if err != nil || budget != tc.want {
+			t.Errorf("%d controllers: budget %v, error %v; want %v", tc.controllers, budget, err, tc.want)
+		}
+	}
+	for _, count := range []int{0, 101} {
+		if _, err := consistencyScanBudget(count); err == nil {
+			t.Errorf("accepted %d controllers", count)
+		}
 	}
 }
 

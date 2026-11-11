@@ -28,6 +28,21 @@ const consistencyObjects = 2048
 const consistencyBytes = 64 << 20
 const consistencyDiffs = 500
 
+const (
+	consistencyMaxControllers = 100
+	consistencyParallelism    = 4
+	consistencySetupTimeout   = 45 * time.Second
+	consistencyProbeTimeout   = 15 * time.Second
+)
+
+func consistencyScanBudget(controllerCount int) (time.Duration, error) {
+	if controllerCount < 1 || controllerCount > consistencyMaxControllers {
+		return 0, topologyBad(fmt.Sprintf("consistency check requires 1..%d discovered controllers", consistencyMaxControllers))
+	}
+	batches := (controllerCount + consistencyParallelism - 1) / consistencyParallelism
+	return time.Duration(batches) * consistencyProbeTimeout, nil
+}
+
 type ConsistencyInput struct {
 	Reference string `json:"reference,omitempty"`
 }
@@ -415,14 +430,16 @@ func (s *GPOService) CheckConsistency(ctx context.Context, guid string, in Consi
 	if s.remote == nil {
 		return nil, fmt.Errorf("SYSVOL service credentials required")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	controllers, err := (&SiteService{ldap: s.ldap}).Controllers(ctx)
+	started := time.Now().UTC()
+	setupCtx, stopSetup := context.WithTimeout(ctx, consistencySetupTimeout)
+	defer stopSetup()
+	controllers, err := (&SiteService{ldap: s.ldap}).Controllers(setupCtx)
 	if err != nil {
 		return nil, err
 	}
-	if len(controllers) == 0 || len(controllers) > 32 {
-		return nil, topologyBad("consistency check requires 1..32 discovered controllers")
+	scanBudget, err := consistencyScanBudget(len(controllers))
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(controllers, func(i, j int) bool { return controllers[i].DNS < controllers[j].DNS })
 	reference := ""
@@ -440,15 +457,15 @@ func (s *GPOService) CheckConsistency(ctx context.Context, guid string, in Consi
 	if in.Reference != "" && reference == "" {
 		return nil, topologyBad("reference must be a discovered controller")
 	}
-	entry, err := s.policyEntry(ctx, guid)
+	entry, err := s.policyEntry(setupCtx, guid)
 	if err != nil {
 		return nil, err
 	}
-	base, err := s.policyPath(ctx, entry)
+	base, err := s.policyPath(setupCtx, entry)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := s.ldap.Conn(ctx)
+	conn, err := s.ldap.Conn(setupCtx)
 	if err != nil {
 		return nil, err
 	}
@@ -460,8 +477,23 @@ func (s *GPOService) CheckConsistency(ctx context.Context, guid string, in Consi
 		return nil, fmt.Errorf("missing RootDSE")
 	}
 	primary := root.Entries[0].GetEqualFoldAttributeValue("dNSHostName")
-	report := &ConsistencyReport{GPO: braceGUID(guid), Started: time.Now().UTC(), Reference: reference, Controllers: make([]ConsistencyDC, len(controllers)), Limitations: []string{"read-only; no replication or repair", "reference is a comparison baseline, not an authoritative copy", "non-atomic snapshot; two reads detect many but not all concurrent changes", "owner/group/ordered DACL compared; SACL and effective access not evaluated", "root .sambaadm-* metadata excluded; pending journal reported separately", "limits: 32 DCs, 2048 objects and 64 MiB per pass/DC, 45-second context budget; connection timeouts may extend elapsed time"}}
-	sem := make(chan struct{}, 4)
+	stopSetup()
+	scanCtx, stopScan := context.WithTimeout(ctx, scanBudget)
+	defer stopScan()
+	report := &ConsistencyReport{
+		GPO: braceGUID(guid), Started: started, Reference: reference,
+		Controllers: make([]ConsistencyDC, len(controllers)),
+		Limitations: []string{
+			"read-only; no replication or repair",
+			"reference is a comparison baseline, not an authoritative copy",
+			"non-atomic snapshot; two reads detect many but not all concurrent changes",
+			"owner/group/ordered DACL compared; SACL and effective access not evaluated",
+			"root .sambaadm-* metadata excluded; pending journal reported separately",
+			fmt.Sprintf("limits: %d DCs, %d objects and %d MiB per pass/DC; up to %d parallel DCs, %s per DC, %s setup budget and %s scan budget for %d DCs; connection timeouts may extend elapsed time",
+				consistencyMaxControllers, consistencyObjects, consistencyBytes>>20, consistencyParallelism, consistencyProbeTimeout, consistencySetupTimeout, scanBudget, len(controllers)),
+		},
+	}
+	sem := make(chan struct{}, consistencyParallelism)
 	var wg sync.WaitGroup
 	for i, dc := range controllers {
 		wg.Add(1)
@@ -470,11 +502,11 @@ func (s *GPOService) CheckConsistency(ctx context.Context, guid string, in Consi
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
-			case <-ctx.Done():
-				report.Controllers[i] = ConsistencyDC{Name: dc.Name, DNS: dc.DNS, Status: "incomplete", LDAP: "not-checked", SYSVOL: "not-checked", Files: []ConsistencyFile{}, Errors: []string{ctx.Err().Error()}, Differences: []ConsistencyDifference{}}
+			case <-scanCtx.Done():
+				report.Controllers[i] = ConsistencyDC{Name: dc.Name, DNS: dc.DNS, Status: "incomplete", LDAP: "not-checked", SYSVOL: "not-checked", Files: []ConsistencyFile{}, Errors: []string{scanCtx.Err().Error()}, Differences: []ConsistencyDifference{}}
 				return
 			}
-			probeCtx, stop := context.WithTimeout(ctx, 15*time.Second)
+			probeCtx, stop := context.WithTimeout(scanCtx, consistencyProbeTimeout)
 			defer stop()
 			report.Controllers[i] = s.probeConsistency(probeCtx, guid, base, dc, primary)
 		}(i, dc)

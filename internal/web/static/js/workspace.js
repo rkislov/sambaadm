@@ -813,8 +813,11 @@
       const statuses={consistent:t('Совпадает','Matches'),reference:t('Копия для сравнения','Comparison copy'),different:t('Есть расхождения','Differences found'),incomplete:t('Проверка неполная','Check incomplete'),unavailable:t('Недоступно','Unavailable'),changing:t('Изменилось во время чтения','Changed during read'),pending:t('Незавершённая запись','Pending write'),'single-controller':t('Один DC — сравнение между контроллерами невозможно','Single DC — cross-controller comparison unavailable'),'not-compared':t('Нет доступной копии для сравнения','No available comparison copy'),ok:t('Прочитано','Read'),missing:t('Отсутствует','Missing'),error:t('Ошибка чтения','Read error'),'not-checked':t('Не проверено','Not checked')};
       const kinds={'local-version':t('LDAP и GPT.INI на одном DC','LDAP vs GPT.INI on one DC'),'ldap-version':t('Версия LDAP','LDAP version'),'gpt-version':t('Версия GPT.INI','GPT.INI version'),'ldap-acl':t('Права объекта LDAP','LDAP object permissions'),'ldap-metadata':t('Метаданные LDAP','LDAP metadata'),content:t('Содержимое файла','File content'),'sysvol-acl':t('Права SYSVOL','SYSVOL permissions'),missing:t('Нет на этом DC','Missing on this DC'),extra:t('Дополнительный путь','Additional path'),type:t('Тип объекта','Object type'),'path-case':t('Регистр имени пути','Path name case')};
       const version=v=>v===undefined||v===null?'—':v+' (M: '+(v&65535)+', U: '+(v>>>16)+')';
-      form.addEventListener('submit',async event=>{event.preventDefault();run.disabled=true;select.disabled=true;result.replaceChildren();message(notice,t('Проверка контроллеров… Обычно до 45 секунд.','Checking controllers… Usually up to 45 seconds.'));
-        try{const report=await request('/gpo/'+enc(gpoID(row))+'/consistency','POST',{reference:select.value});if(generation!==dialogGeneration)return;
+      form.addEventListener('submit',async event=>{event.preventDefault();run.disabled=true;select.disabled=true;result.replaceChildren();message(notice,t('Проверка контроллеров… В большом домене это может занять несколько минут.','Checking controllers… This may take several minutes in a large domain.'));
+        const controller=new AbortController();
+        const cancel=()=>controller.abort();
+        dialog.addEventListener('close',cancel,{once:true});
+        try{const report=await request('/gpo/'+enc(gpoID(row))+'/consistency','POST',{reference:select.value},{signal:controller.signal});if(generation!==dialogGeneration)return;
           result.append(el('h3',report.status==='consistent'?'':'alert',statuses[report.status]||report.status),el('p','mono',window.sambaadmFormatTime(report.started)+' → '+window.sambaadmFormatTime(report.finished)),el('p','',t('Сравнение с: ','Compared with: ')+(report.reference||'—')));
           if(!report.complete)result.append(el('p','alert error',t('Не все копии проверены. Совпадение доступных DC не подтверждает согласованность всего домена.','Not all copies were checked. Matching accessible DCs does not establish domain-wide consistency.')));
           if(report.hasDifferences)result.append(el('p','alert error',t('Обнаружены подтверждённые расхождения в прочитанных данных.','Differences were found in the data read.')));
@@ -825,7 +828,7 @@
             if(dc.differenceCount>dc.differences.length)details.append(el('p','muted',t('Список различий сокращён; полный манифест файлов доступен в JSON.','Difference list truncated; the full file manifest is included in JSON.')));result.append(details);
           }
           result.append(el('p','muted',t('Это не атомарный снимок и не проверка применения GPO на клиенте. SACL и эффективный доступ не вычисляются. Служебные .sambaadm-* в корне исключены; журнал незавершённой записи учитывается отдельно.','This is not an atomic snapshot or proof of client-side application. SACL and effective access are not evaluated. Root .sambaadm-* metadata is excluded; a pending write journal is reported separately.')));message(notice,t('Отчёт готов','Report ready'));
-        }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{if(generation===dialogGeneration){run.disabled=false;select.disabled=false;}}
+        }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}finally{dialog.removeEventListener('close',cancel);if(generation===dialogGeneration){run.disabled=false;select.disabled=false;}}
       });
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}
   }
