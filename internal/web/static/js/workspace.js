@@ -1233,8 +1233,8 @@
           const cancel=button(t('Отменить перенос','Cancel move'),()=>pending.replaceChildren());
           pending.append(save,cancel);save.focus();
         }
-        const {view,map,unmapped}=window.sambaadmTopologyDiagram({...topology,controllers:dcs,connections:connections||[],links:linksResult.links||[]},{
-          t,el,button,layout,exportError:linksResult.error?t('Межсайтовые связи недоступны','Site links are unavailable'):'',
+        const {view,map,unmapped}=window.sambaadmTopologyDiagram({...topology,controllers:dcs,connections:connections||[],links:linksResult.value||[],domain,trusts,trustError},{
+          t,el,button,layout,exportWarnings:problems,
           onSiteDrop:admin?stageMove:null,
           onConnectDrop:admin?(a,b)=>{source.value=a.dns;destination.value=b.dns;update();form.scrollIntoView({block:'nearest'});}:null,
           onSelect:dc=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();}
