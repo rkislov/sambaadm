@@ -86,16 +86,38 @@
       return root;
     }
     let root=sheet('ad-topology',t('Топология AD','AD topology'));
+    let offsetY=0;
     function vertex(id,parent,value,box,style,tooltip=''){
       const wrapper=tooltip?append(root,'object',{id,label:value,tooltip}):root;
       const attrs=tooltip?{}:{id,value};
       const cell=append(wrapper,'mxCell',{...attrs,parent,vertex:1,style:'html=0;whiteSpace=wrap;'+style});
-      append(cell,'mxGeometry',{x:Math.round(box.x),y:Math.round(box.y),width:box.width,height:box.height,as:'geometry'});
+      append(cell,'mxGeometry',{x:Math.round(box.x),y:Math.round(box.y+(parent===1?offsetY:0)),width:box.width,height:box.height,as:'geometry'});
     }
     function edge(id,from,to,value,style,waypoint){
       const cell=append(root,'mxCell',{id,parent:1,source:from.id,target:to.id,value,edge:1,style:'html=0;labelBackgroundColor=#ffffff;'+style});
       const geometry=append(cell,'mxGeometry',{relative:1,as:'geometry'});
-      if(waypoint)append(append(geometry,'Array',{as:'points'}),'mxPoint',{x:Math.round(waypoint.x),y:Math.round(waypoint.y)});
+      if(waypoint)append(append(geometry,'Array',{as:'points'}),'mxPoint',{x:Math.round(waypoint.x),y:Math.round(waypoint.y+offsetY)});
+    }
+    function drawTrusts(prefix){
+      const heading=trusts.title+'\n'+trusts.legend;
+      vertex(prefix+'trust-heading',1,heading,{x:36,y:24,width:780,height:48},
+        'strokeColor=none;fillColor=none;align=left;fontStyle=1;fontColor=#24564f;');
+      const shape='rounded=1;strokeColor=#28625b;fontStyle=1;';
+      const local={id:prefix+'trust-local',x:36,y:88+Math.max(0,trusts.rows.length-1)*50,width:230,height:62};
+      vertex(local.id,1,trusts.local,local,shape+'fillColor=#dcefea;');
+      for(const [index,trust] of trusts.rows.entries()){
+        const partner={id:prefix+'trust-partner-'+index,x:560,y:88+index*100,width:230,height:62};
+        vertex(partner.id,1,trust.partner,partner,shape+'fillColor=#f1f8f7;');
+        const arrows='startArrow='+(trust.left?'block':'none')+';endArrow='+(trust.right?'block':'none')+';';
+        edge(prefix+'trust-edge-'+index,local,partner,trust.label,
+          'strokeColor=#28625b;strokeWidth=2;startFill=1;endFill=1;'+arrows+(!trust.left&&!trust.right?'dashed=1;':''));
+      }
+      if(trusts.status)vertex(prefix+'trust-status',1,trusts.status,{x:306,y:86,width:480,height:68},
+        'rounded=1;fillColor=#fff4dd;strokeColor=#a36318;align=left;spacing=12;');
+    }
+    if(trusts.rows.length){
+      drawTrusts('overview-');
+      offsetY=150+(trusts.rows.length-1)*100;
     }
     for(const site of sites){
       vertex(site.id,1,site.label,site,'rounded=1;container=1;recursiveResize=0;verticalAlign=top;align=left;spacingLeft=14;spacingTop=10;fontStyle=1;fillColor=#eaf1f8;strokeColor=#91a8bc;');
@@ -119,20 +141,9 @@
       const bottom=Math.max(0,...sites.map(s=>s.y+s.height),...links.map(l=>l.y+l.height));
       vertex('unmapped',1,value,{x:40,y:bottom+44,width:480,height:40+unmapped.length*20},'rounded=1;fillColor=#fff4dd;strokeColor=#a36318;align=left;spacing=12;');
     }
+    offsetY=0;
     root=sheet('domain-trusts',trusts.title);
-    vertex('trust-heading',1,trusts.legend,{x:36,y:24,width:780,height:48},'strokeColor=none;fillColor=none;align=left;');
-    const trustShape='rounded=1;strokeColor=#28625b;fontStyle=1;';
-    const local={id:'trust-local',x:36,y:88+Math.max(0,trusts.rows.length-1)*50,width:230,height:62};
-    vertex(local.id,1,trusts.local,local,trustShape+'fillColor=#dcefea;');
-    for(const [index,trust] of trusts.rows.entries()){
-      const partner={id:'trust-partner-'+index,x:560,y:88+index*100,width:230,height:62};
-      vertex(partner.id,1,trust.partner,partner,trustShape+'fillColor=#f1f8f7;');
-      const arrows='startArrow='+(trust.left?'block':'none')+';endArrow='+(trust.right?'block':'none')+';';
-      edge('trust-edge-'+index,local,partner,trust.label,
-        'strokeColor=#28625b;strokeWidth=2;startFill=1;endFill=1;'+arrows+(!trust.left&&!trust.right?'dashed=1;':''));
-    }
-    if(trusts.status)vertex('trust-status',1,trusts.status,{x:306,y:86,width:480,height:68},
-      'rounded=1;fillColor=#fff4dd;strokeColor=#a36318;align=left;spacing=12;');
+    drawTrusts('');
     const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(xml)],{type:'application/xml;charset=utf-8'}));
     const anchor=document.createElement('a');
     anchor.href=url;anchor.download='ad-topology.drawio';document.body.append(anchor);anchor.click();anchor.remove();
@@ -384,6 +395,6 @@
       item.element.addEventListener('click',()=>onSelect(item.dc));
     }
     viewport.classList.add('topology-editor-viewport');
-    return {view,map,unmapped};
+    return {view,map,unmapped,trustDetails:trusts.rows};
   };
 })();

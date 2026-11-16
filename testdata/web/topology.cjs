@@ -28,14 +28,23 @@ function domain(count){
    const req=route.request(),endpoint=new URL(req.url()).pathname.replace('/api/v1','');
    if(req.method()!=='GET'){
     mutations.push({endpoint,method:req.method(),payload:req.postDataJSON()});
-    if(endpoint==='/sites/controllers/dc0.example.com/move')controllers[0].site=req.postDataJSON().site;
+    const payload=req.postDataJSON();
+    if(endpoint==='/sites/controllers/dc0.example.com/move')controllers[0].site=payload.site;
+    if(endpoint==='/trusts')trusts.push({domain:payload.domain,rawDirection:'3',scope:payload.type});
+    if(endpoint==='/trusts/new.example.net')trusts=trusts.filter(row=>row.domain!=='new.example.net');
+    if(endpoint==='/repl/connections')connections.push({...payload,id:'manual',revision:'2',enabled:true});
+    if(endpoint==='/repl/connections/manual')connections=connections.filter(row=>row.id!=='manual');
+    if(endpoint==='/sites/links')siteLinks.push({...payload,revision:'3'});
+    if(endpoint==='/sites/links/New-WAN')siteLinks=siteLinks.filter(row=>row.name!=='New-WAN');
+    await route.fulfill({json:{status:'ok'}});
+    return;
    }
    if(endpoint==='/trusts'&&trustUnavailable){
     await route.fulfill({status:502,json:{error:'LDAP unavailable'}});
     return;
    }
    await route.fulfill({json:{'/sites/topology':{controllers,sites,subnets},'/sites/links':siteLinks,
-    '/repl/connections':connections,'/domain':{dnsRoot:'example.com'},'/trusts':trusts}[endpoint]??[]});
+    '/repl/connections':connections,'/sites':sites,'/domain':{dnsRoot:'example.com'},'/trusts':trusts}[endpoint]??[]});
   });
   const open=async()=>{
    await page.goto(`http://127.0.0.1:${server.address().port}/repl`);
@@ -160,7 +169,11 @@ function domain(count){
   assert.ok(site&&dc&&dc.parent===site.id);
   assert.ok(model.some(c=>c.parent===site.id&&c.label?.includes('10.0.0.0/24')));
   assert.ok(Math.abs(+site.geometry.x + +dc.geometry.x + 90-repositioned.x)<=1);
-  assert.ok(Math.abs(+site.geometry.y + +dc.geometry.y + 31-repositioned.y)<=1);
+  const overviewPartners=model.filter(c=>c.sheet==='ad-topology'&&c.id?.startsWith('overview-trust-partner-'));
+  const overviewBottom=Math.max(...overviewPartners.map(c=>+c.geometry.y + +c.geometry.height));
+  assert.equal(overviewPartners.length,4);
+  assert.ok(+site.geometry.y>overviewBottom,'trusts should appear above the sites');
+  assert.ok(Math.abs(+site.geometry.y + +dc.geometry.y - overviewBottom + 31-repositioned.y)<=1);
   const link=model.find(c=>c.value?.startsWith('WAN <core> & backup'));
   assert.equal(model.filter(c=>c.source===link.id).length,3);
   assert.ok(model.some(c=>c.source===dc.id&&c.target&&c.style.includes('endArrow=block')));
@@ -170,7 +183,11 @@ function domain(count){
   for(const [partner,start,end] of [['both','block','block'],['in','block','none'],['out','none','block'],['off','none','none']]){
    const target=trustCells.find(c=>c.value===partner+'.example.net');
    const edge=trustCells.find(c=>c.source==='trust-local'&&c.target===target.id);
-   assert.ok(edge.style.includes('startArrow='+start+';')&&edge.style.includes('endArrow='+end+';'));
+   const overviewTarget=overviewPartners.find(c=>c.value===target.value);
+   const overviewEdge=model.find(c=>c.source==='overview-trust-local'&&c.target===overviewTarget.id);
+   for(const wire of [edge,overviewEdge]){
+    assert.ok(wire.style.includes('startArrow='+start+';')&&wire.style.includes('endArrow='+end+';'));
+   }
   }
 
   await dialog.getByRole('searchbox').fill('');
@@ -188,6 +205,74 @@ function domain(count){
   trustUnavailable=true;await refresh();
   await dialog.locator('.topology-trusts').getByText('Доверительные отношения недоступны · LDAP unavailable',{exact:true}).waitFor();
   assert.equal(await dialog.locator('.topology-node').count(),8);
+  trustUnavailable=false;
+  const openMenu=async()=>{
+   await page.goto(`http://127.0.0.1:${server.address().port}/repl`);
+   if(await page.locator('.workspace-menu summary').count())await page.locator('.workspace-menu summary').click();
+   await page.getByRole('button',{name:'Связи',exact:true}).click();
+   const modal=page.getByRole('dialog');
+   await modal.getByRole('heading',{name:'Связи топологии'}).waitFor();
+   return modal;
+  };
+  dialog=await openMenu();
+  const selector=dialog.getByRole('combobox',{name:'Вид связей'});
+  const operation=dialog.getByRole('button',{name:'Выполнить',exact:true});
+  const confirmOperation=dialog.getByLabel('Подтверждаю операцию для выбранного объекта');
+  const send=async item=>{
+   const before=mutations.length;
+   await operation.click();assert.equal(mutations.length,before,'confirmation is required');
+   await confirmOperation.check();
+   await operation.click();
+   await dialog.getByText('Операция выполнена',{exact:true}).waitFor();
+   assert.deepEqual(mutations.at(-1),item);
+  };
+  await dialog.getByRole('button',{name:'Создать доверие',exact:true}).click();
+  await dialog.getByLabel('Домен',{exact:true}).fill('new.example.net');
+  await dialog.getByLabel('NetBIOS удалённого домена').fill('NEW');
+  await dialog.getByLabel('SID удалённого домена').fill('S-1-5-21-111-222-333');
+  await dialog.getByLabel('Направление',{exact:true}).selectOption('both');
+  await dialog.getByLabel('Тип',{exact:true}).selectOption('external');
+  await dialog.getByLabel('Новый пароль',{exact:true}).fill('Fixture-only');
+  await dialog.getByLabel('Повторите пароль').fill('Fixture-only');
+  await send({endpoint:'/trusts',method:'POST',payload:{domain:'new.example.net',netbios:'NEW',sid:'S-1-5-21-111-222-333',direction:'both',type:'external',password:'Fixture-only'}});
+  const trustRow=dialog.getByRole('row').filter({hasText:'new.example.net'});
+  await trustRow.getByRole('button',{name:'Удалить',exact:true}).click();
+  await dialog.getByRole('button',{name:'Вернуться к связям'}).click();
+  await trustRow.waitFor();
+  await trustRow.getByRole('button',{name:'Удалить',exact:true}).click();
+  await dialog.getByText('new.example.net',{exact:true}).waitFor();
+  await send({endpoint:'/trusts/new.example.net',method:'DELETE',payload:{}});
+  await trustRow.waitFor({state:'detached'});
+
+  await selector.selectOption('replication');
+  await dialog.getByRole('button',{name:'Создать соединение',exact:true}).click();
+  await dialog.getByLabel('Источник',{exact:true}).selectOption('dc0.example.com');
+  await dialog.getByLabel('Назначение',{exact:true}).selectOption('dc3.example.com');
+  await send({endpoint:'/repl/connections',method:'POST',payload:{source:'dc0.example.com',destination:'dc3.example.com'}});
+  assert.equal(await selector.inputValue(),'replication');
+  const connection=dialog.getByRole('row').filter({hasText:'dc0.example.com'}).filter({hasText:'dc3.example.com'});
+  await connection.getByRole('button',{name:'Удалить',exact:true}).click();
+  await send({endpoint:'/repl/connections/manual',method:'DELETE',payload:{revision:'2'}});
+  await connection.waitFor({state:'detached'});
+
+  await selector.selectOption('sites');
+  await dialog.getByRole('button',{name:'Создать связь сайтов',exact:true}).click();
+  await dialog.getByLabel('Имя',{exact:true}).fill('New-WAN');
+  await dialog.getByLabel('Сайты',{exact:true}).selectOption(['site0','site1']);
+  await send({endpoint:'/sites/links',method:'POST',payload:{name:'New-WAN',sites:['site0','site1'],cost:100,interval:180}});
+  assert.equal(await selector.inputValue(),'sites');
+  const linkRow=dialog.getByRole('row').filter({hasText:'New-WAN'});
+  await linkRow.getByRole('button',{name:'Удалить',exact:true}).click();
+  await send({endpoint:'/sites/links/New-WAN',method:'DELETE',payload:{revision:'3'}});
+  await linkRow.waitFor({state:'detached'});
+  await dialog.getByRole('button',{name:'Карта',exact:true}).click();
+  await dialog.locator('.topology-viewport').waitFor();
+
+  role='readonly';
+  dialog=await openMenu();
+  await dialog.getByRole('row').filter({hasText:'both.example.net'}).waitFor();
+  assert.equal(await dialog.getByRole('button',{name:'Создать доверие',exact:true}).count(),0);
+  assert.equal(await dialog.getByRole('button',{name:'Удалить',exact:true}).count(),0);
   assert.deepEqual(errors,[]);
   console.log('PASS: 0/1/8/64/256/1000 DCs, fit, zoom, pan, keyboard, search, site filter, edge focus, refresh/close, mobile, admin selection, drag preview, draw.io export, cancel and confirmed move');
   console.log('Screenshots:',dir);

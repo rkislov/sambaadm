@@ -28,6 +28,17 @@
   const scheduleFields=()=>utcDays.map((day,i)=>text('day'+i,day+' UTC (09:00-18:00; пусто — закрыто)',['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]+' UTC (09:00-18:00; empty — closed)',{optional:true,value:'00:00-24:00'}));
   const scheduleOperation=(path)=>action(t('Расписание UTC','UTC schedule'),'PUT',path,scheduleFields(),{revision:true,confirm:true,when:r=>r.scheduleSupported!==false&&r.scheduleEditable!==false,prefill:r=>Object.fromEntries((r.schedule||Array(7).fill('00:00-24:00')).map((v,i)=>['day'+i,v])),encode:body=>({revision:body.revision,schedule:utcDays.map((_,i)=>body['day'+i]||'')})});
   const linkFields=()=>[text('sites','Сайты','Sites',{array:true,multiple:true}),text('cost','Стоимость (1–32767)','Cost (1–32767)',{type:'number',numeric:true,value:100}),text('interval','Интервал, минут (15–10080, шаг 15)','Interval, minutes (15–10080, step 15)',{type:'number',numeric:true,value:180})];
+  const siteLinkCreate=action(t('Создать связь сайтов','New Site Link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true});
+  const siteLinkColumns=[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Интервал, мин','Interval, min')]];
+  const siteLinkPath=row=>'/sites/links/'+enc(row.name);
+  const siteLinkActions=[
+    action(t('Свойства','Properties'),'PUT',siteLinkPath,linkFields(),{revision:true,confirm:true,prefill:row=>({sites:(row.sites||[]).join(';'),cost:row.cost,interval:row.interval})}),
+    scheduleOperation(row=>siteLinkPath(row)+'/schedule'),
+    {...remove(siteLinkPath),revision:true}
+  ];
+  const connectionCreate=action(t('Создать соединение','Create connection'),'POST','/repl/connections',
+    [text('source','Источник','Source'),text('destination','Назначение','Destination')],{confirm:true});
+  const topologyLinksAction=action(t('Связи','Links'),'GET',null,[],{topology:true,topologyView:'links'});
   const configs = {
     '/users': {title:t('Пользователи','Users'), endpoint:'/users', directory:'users', id:r=>r.samAccountName,
       columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN']],
@@ -86,9 +97,9 @@
     '/repl':{title:t('Репликация','Replication'),endpoint:'/repl/partners',id:r=>r.dn,
       columns:[['name',t('Контроллер в AD','Configured DC')],['status',t('Наличие в каталоге','Directory registration')],['dn','DN']],
       hint:t('Наличие объекта в AD не подтверждает исправность репликации. Откройте состояние выбранного контроллера.','AD registration does not imply replication health. Inspect a controller status.'),
-      toolbar:[{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction,{label:t('Топология','Topology'),method:'GET',topology:true},view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),action(t('Создать соединение','Create connection'),'POST','/repl/connections',[text('source','Контроллер источник','Source DC'),text('destination','Контроллер назначения','Destination DC')],{confirm:true}),action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
+      toolbar:[{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction,{label:t('Топология','Topology'),method:'GET',topology:true},topologyLinksAction,view(t('Состояние репликации','Replication status'),'/repl/status',[text('dc','Контроллер (пусто — текущий)','Controller (empty — current)',{optional:true})]),view(t('Соединения репликации','Replication connections'),'/repl/connections'),connectionCreate,action(t('Пересчитать топологию KCC','Recalculate KCC topology'),'POST','/repl/kcc',[text('dc','Контроллер','Controller')],{confirm:true}),action(t('Синхронизировать','Synchronize'),'POST','/repl/sync',[text('from','Контроллер источник','Source DC'),text('dest','Контроллер назначения','Destination DC',{optional:true}),text('nc','Раздел каталога DN','Naming context DN',{optional:true})],{confirm:true})],actions:[]},
     '/sites':{title:t('Сайты и службы','Sites and Services'),endpoint:'/sites',id:r=>r.name,
-      columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction]},
+      columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},topologyLinksAction,{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
@@ -644,26 +655,29 @@
     if(a.fullDelegation)return openFullDelegation(row);
     if(a.delegation)return openDelegation(row);
     if(a.filter)return openFilter(row);
-    if(a.topology||(a.path==='/repl/connections'&&a.method==='POST'))return openTopology();
+    if(a.topology||(a===connectionCreate))return openTopology({selectedView:a.topologyView});
     if((typeof a.path==='function'?a.path(row):a.path)?.endsWith('/scripts'))return openScriptsEditor(row);
     if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
-    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
+    if(!a.returnTo)lastFocus=document.activeElement;
+    const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
-    if(row)dialog.append(el('p','mono',cfg.id(row)||row.dn||''));
+    if(row)dialog.append(el('p','mono',a.objectLabel?a.objectLabel(row):(cfg.id(row)||row.dn||'')));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
     if(a.help)dialog.append(el('p','muted',a.help));
     if(a.danger)dialog.append(el('p','alert error',t('Изменение применяется в домене. Проверьте выбранный объект. Удаление может быть необратимым.','This changes the domain. Check the selected object. Deletion may be irreversible.')));
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
+    const closeButton=()=>a.returnTo?button(t('Вернуться к связям','Back to links'),()=>a.returnTo()):button(t('Закрыть','Close'),closeOperation);
     let fields=a.fields;
     const needsSites=fields.some(f=>f.key==='sites'||f.key==='site');
-    const needsDCs=endpoint.startsWith('/repl/')&&fields.some(f=>['dc','from','dest'].includes(f.key));
+    const dcFields=['dc','from','dest','source','destination'];
+    const needsDCs=endpoint.startsWith('/repl/')&&fields.some(f=>dcFields.includes(f.key)&&!f.choices);
     if(needsSites||needsDCs){
       const pending=el('p','',t('Загрузка списка объектов…','Loading objects…'));dialog.append(pending);if(!dialog.open)dialog.showModal();
       try{const [sites,dcs]=await Promise.all([needsSites?request('/sites'):[],needsDCs?request('/sites/controllers'):[]]);if(generation!==dialogGeneration)return;
-        fields=fields.map(f=>f.key==='sites'||f.key==='site'?{...f,choices:sites.map(s=>s.name)}:needsDCs&&['dc','from','dest'].includes(f.key)?{...f,choices:dcs.map(dc=>dc.dns)}:f);pending.remove();
-      }catch(err){if(generation===dialogGeneration){message(pending,err.message,true);dialog.append(button(t('Закрыть','Close'),closeOperation));}return;}
+        fields=fields.map(f=>f.key==='sites'||f.key==='site'?{...f,choices:sites.map(s=>s.name)}:needsDCs&&dcFields.includes(f.key)&&!f.choices?{...f,choices:dcs.map(dc=>dc.dns)}:f);pending.remove();
+      }catch(err){if(generation===dialogGeneration){message(pending,err.message,true);dialog.append(closeButton());}return;}
     }
     const form=el('form','workspace-form');const defaults=a.prefill?a.prefill(row):{};
     const inputs=[];
@@ -689,12 +703,14 @@
     if(a.danger||a.confirm){const label=el('label','workspace-confirm',a.confirmLabel||t('Подтверждаю операцию для выбранного объекта','I confirm this operation on the selected object'));const c=el('input');c.type='checkbox';c.required=true;label.prepend(c);form.append(label);}
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');form.append(notice);
     const output=el('div','workspace-result');
-    const controls=el('div','workspace-tools');const submit=el('button',a.danger?'danger':'',a.submitLabel||(a.method==='GET'?t('Показать','Show'):t('Выполнить','Apply')));submit.type='submit';controls.append(submit,button(t('Закрыть','Close'),closeOperation));form.append(controls);dialog.append(form,output);
+    const controls=el('div','workspace-tools');const submit=el('button',a.danger?'danger':'',a.submitLabel||(a.method==='GET'?t('Показать','Show'):t('Выполнить','Apply')));submit.type='submit';controls.append(submit,closeButton());form.append(controls);dialog.append(form,output);
     form.addEventListener('submit',async e=>{
       e.preventDefault();if(!form.reportValidity())return;
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};
       inputs.forEach(([f,input])=>{if(f.multiple)body[f.key]=Array.from(input.selectedOptions,o=>o.value);else if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
       if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,typeof a.preset==='function'?a.preset(row):a.preset);
+      const invalid=a.validate?.(body);
+      if(invalid){message(notice,invalid,true);return;}
       const payload=a.encode?a.encode(body):body;
       if(a.method==='GET'&&Object.keys(body).length)path+=(path.includes('?')?'&':'?')+new URLSearchParams(body);
       submit.disabled=true;message(notice,t('Выполняется…','Working…'));output.replaceChildren();
@@ -706,7 +722,13 @@
         form.querySelectorAll('input[type=password]').forEach(i=>{i.value='';});
         if(a.job) await pollJob(result,output,generation);
         else if(a.method==='GET')renderResult(result,output,a,row,body);
-        else {if(result.output)describe(result.output,output);await load();}
+        else if(a.returnTo){
+          if(result?.output){
+            describe(result.output,output);
+            return;
+          }
+          await a.returnTo(t('Операция выполнена','Operation completed'));
+        }else {if(result?.output)describe(result.output,output);await load();}
       }catch(err){if(generation===dialogGeneration)message(notice,err.message,true);}
       finally{submit.disabled=false;}
     });
@@ -1182,30 +1204,50 @@
       if(admin){const form=el('form','workspace-form'),select=el('select');select.setAttribute('aria-label',t('Получатель разрешения','Permission recipient'));const all=el('option','','Authenticated Users');all.value='S-1-5-11';form.append(select);select.append(all);for(const [label,list] of [[t('Группы','Groups'),groups],[t('Пользователи','Users'),users],[t('Компьютеры','Computers'),computers]]){const group=el('optgroup');group.label=label;for(const p of list){const o=el('option','',p.samAccountName);o.value=p.dn;group.append(o);}select.append(group);}const check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю предоставление права применения','Confirm granting Apply Group Policy'));label.prepend(check);const save=el('button','',t('Разрешить применение','Allow application'));save.type='submit';form.append(label,save);form.addEventListener('submit',e=>{e.preventDefault();if(form.reportValidity())change({principal:select.value});});body.append(form);}message(notice,'');
     }catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}await refresh();
   }
-  async function openTopology(){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
+  async function openTopology({selectedView='map',category='trusts',layout=new Map(),feedback=''}={}){
+    if(!dialog.open)lastFocus=document.activeElement;
+    const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Топология Active Directory','Active Directory topology'));title.id='operation-title';
-    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
-    dialog.append(title,notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
+    const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
+    const body=el('div'),linksBody=el('section');
+    linksBody.className='topology-links-menu';
+    const toolbar=el('div','workspace-tools topology-view-switch');
+    const mapTab=button(t('Карта','Map'),()=>show('map'));
+    const linksTab=button(t('Связи','Links'),()=>show('links'));
+    function show(section){
+      selectedView=section;
+      body.hidden=section!=='map';linksBody.hidden=section!=='links';
+      for(const [id,control] of [['map',mapTab],['links',linksTab]]){
+        control.setAttribute('aria-pressed',String(id===section));
+        control.classList.toggle('selected',id===section);
+      }
+    }
+    toolbar.append(mapTab,linksTab,button(t('Обновить','Refresh'),refresh));
+    dialog.append(title,notice,toolbar,body,linksBody,button(t('Закрыть','Close'),closeOperation));
+    show(selectedView);
+    if(!dialog.open)dialog.showModal();
     let serial=0,moving=false;
-    const layout=new Map();
-    async function refresh(){if(moving)return;const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
-      try{const [topology,connections,[linksResult,trustsResult,domainResult]]=await Promise.all([
-          request('/sites/topology'),request('/repl/connections'),
-          Promise.allSettled([request('/sites/links'),request('/trusts'),request('/domain')])
+    const returnTo=(result='')=>openTopology({selectedView:'links',category,layout,feedback:result});
+    async function refresh(){if(moving)return;const current=++serial;body.replaceChildren();linksBody.replaceChildren();message(notice,t('Загрузка…','Loading…'));
+      try{const [topology,[connectionsResult,linksResult,trustsResult,domainResult]]=await Promise.all([
+          request('/sites/topology'),
+          Promise.allSettled([request('/repl/connections'),request('/sites/links'),request('/trusts'),request('/domain')])
         ]);if(generation!==dialogGeneration||current!==serial)return;
         const failures=[
           [linksResult,t('Межсайтовые связи недоступны','Site links unavailable')],
           [trustsResult,t('Доверительные отношения недоступны','Domain trusts unavailable')],
-          [domainResult,t('Имя текущего домена недоступно','Current domain name unavailable')]
+          [domainResult,t('Имя текущего домена недоступно','Current domain name unavailable')],
+          [connectionsResult,t('Соединения репликации недоступны','Replication connections unavailable')]
         ];
         const problems=failures.filter(([result])=>result.status==='rejected')
           .map(([result,label])=>label+' · '+result.reason.message);
         const trusts=trustsResult.status==='fulfilled'?(trustsResult.value||[]):null;
         const trustError=trusts===null?failures[1][1]+' · '+trustsResult.reason.message:'';
+        const connections=connectionsResult.value||[];
         const domain=domainResult.value?.dnsRoot||domainResult.value?.netbios||domainResult.value?.baseDN;
         const dcs=[...(topology.controllers||[])].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||a.dns.localeCompare(b.dns));
-        message(notice,problems.join(' · '),problems.length>0);
+        message(notice,[feedback,...problems].filter(Boolean).join(' · '),problems.length>0);
+        feedback='';
         body.append(el('p','muted',t('Стрелки показывают направление репликации. Пунктирная стрелка — отключённое соединение. Фиолетовые линии связывают сайты с Site Link. Схема показывает конфигурацию AD.','Arrows show replication direction. A dashed arrow is a disabled connection. Purple lines join sites to a site link. The diagram shows AD configuration.')));
         const form=el('form','workspace-form');const source=el('select'),destination=el('select');source.name='source';destination.name='destination';
         for(const select of [source,destination]){select.required=true;const empty=el('option','',t('Выберите контроллер','Select controller'));empty.value='';select.append(empty);for(const dc of dcs){const option=el('option','',dc.dns+' · '+dc.site);option.value=dc.dns;select.append(option);}}
@@ -1233,7 +1275,7 @@
           const cancel=button(t('Отменить перенос','Cancel move'),()=>pending.replaceChildren());
           pending.append(save,cancel);save.focus();
         }
-        const {view,map,unmapped}=window.sambaadmTopologyDiagram({...topology,controllers:dcs,connections:connections||[],links:linksResult.value||[],domain,trusts,trustError},{
+        const {view,map,unmapped,trustDetails}=window.sambaadmTopologyDiagram({...topology,controllers:dcs,connections:connections||[],links:linksResult.value||[],domain,trusts,trustError},{
           t,el,button,layout,exportWarnings:problems,
           onSiteDrop:admin?stageMove:null,
           onConnectDrop:admin?(a,b)=>{source.value=a.dns;destination.value=b.dns;update();form.scrollIntoView({block:'nearest'});}:null,
@@ -1247,14 +1289,72 @@
         const confirm=el('input');confirm.type='checkbox';confirm.required=true;
         if(admin){body.append(el('p','',t('В режиме «Создание соединения» перетащите источник на назначение. Можно также нажать два узла по очереди или выбрать контроллеры из списков. Связь создаётся после подтверждения.','In Create connection mode, drag the source onto the destination. You can also click two nodes in order or use the lists. Confirm before creating the connection.')));
           for(const [labelText,select] of [[t('Источник','Source'),source],[t('Назначение','Destination'),destination]]){const label=el('label','',labelText);select.setAttribute('aria-label',labelText);label.append(select);form.append(label);select.addEventListener('change',update);}
-          const confirmation=el('label','',t('Подтверждаю создание соединения источник → назначение','Confirm creating the source → destination connection'));confirmation.prepend(confirm);form.append(confirmation);const save=el('button','',t('Создать соединение','Create connection'));save.type='submit';save.disabled=dcs.length<2;form.append(save);body.append(form);if(dcs.length<2)form.append(el('p','muted',t('Для соединения нужны как минимум два контроллера.','At least two controllers are required.')));
+          const confirmation=el('label','',t('Подтверждаю создание соединения источник → назначение','Confirm creating the source → destination connection'));confirmation.prepend(confirm);form.append(confirmation);const save=el('button','',t('Создать соединение','Create connection'));save.type='submit';save.disabled=dcs.length<2||connectionsResult.status==='rejected';form.append(save);body.append(form);if(dcs.length<2)form.append(el('p','muted',t('Для соединения нужны как минимум два контроллера.','At least two controllers are required.')));
           form.addEventListener('submit',async e=>{e.preventDefault();updateValidity();if(!form.reportValidity())return;const payload={source:source.value,destination:destination.value};if(connections.some(c=>c.source.toLowerCase()===payload.source.toLowerCase()&&c.destination.toLowerCase()===payload.destination.toLowerCase())){message(notice,t('Такое соединение уже существует','This connection already exists'),true);return;}save.disabled=true;try{await request('/repl/connections','POST',payload);if(generation!==dialogGeneration)return;await refresh();message(notice,t('Соединение создано','Connection created'));}catch(err){if(generation===dialogGeneration){message(notice,err.message,true);save.disabled=false;}}});
           function updateValidity(){destination.setCustomValidity(source.value===destination.value?t('Выберите разные контроллеры','Choose different controllers'):'');}
         }
-        const list=el('details');list.append(el('summary','',t('Соединения и операции','Connections and actions')));renderResult(connections,list,{path:'/repl/connections'});body.append(list);
+        renderTopologyLinks(linksBody,{category,setCategory:value=>{category=value;},returnTo,dcs,
+          connectionsResult,linksResult,trustsResult,trustDetails});
       }catch(err){if(generation===dialogGeneration&&current===serial)message(notice,err.message,true);}
     }
     await refresh();
+  }
+  function renderTopologyLinks(parent,{category,setCategory,returnTo,dcs,connectionsResult,linksResult,trustsResult,trustDetails}){
+    const heading=el('h3','',t('Связи топологии','Topology links'));
+    const controls=el('div','workspace-tools');
+    const filter=el('select');
+    filter.setAttribute('aria-label',t('Вид связей','Link type'));
+    const categories=[
+      ['trusts',t('Доверительные отношения','Domain trusts')],
+      ['replication',t('Соединения репликации','Replication connections')],
+      ['sites',t('Межсайтовые связи','Site links')]
+    ];
+    for(const [key,label] of categories){
+      const option=el('option','',label);option.value=key;filter.append(option);
+    }
+    filter.value=category;
+    controls.append(filter);
+    const commands=el('div','workspace-tools');
+    const list=el('div');
+    parent.append(heading,controls,commands,list);
+    function render(){
+      const selected=filter.value;
+      setCategory(selected);
+      commands.replaceChildren();list.replaceChildren();
+      const result={trusts:trustsResult,replication:connectionsResult,sites:linksResult}[selected];
+      if(result.status==='rejected'){
+        message(list,result.reason.message,true);
+        return;
+      }
+      const rows=result.value||[];
+      if(selected==='trusts'){
+        const bind=a=>({...a,returnTo,objectLabel:row=>row.domain});
+        addAction(commands,bind(configs['/trusts'].create));
+        const labels=new Map(trustDetails.map(row=>[row.partner,row.label]));
+        topologyTable(list,rows.map(row=>({...row,description:labels.get(row.domain)})),
+          [['domain',t('Домен-партнёр','Partner domain')],['description',t('Направление и тип','Direction and type')]],
+          configs['/trusts'].actions.filter(a=>a.method==='DELETE').map(bind));
+      }else if(selected==='sites'){
+        const bind=a=>({...a,returnTo,objectLabel:row=>row.name});
+        addAction(commands,bind(siteLinkCreate));
+        topologyTable(list,rows,siteLinkColumns,siteLinkActions.map(bind));
+      }else{
+        const bind=a=>({...a,returnTo,objectLabel:row=>row.source+' → '+row.destination});
+        const choices=dcs.map(row=>row.dns).filter(Boolean);
+        const same=(a,b)=>a.toLowerCase()===b.toLowerCase();
+        if(choices.length>=2)addAction(commands,bind({...connectionCreate,
+          fields:connectionCreate.fields.map(f=>({...f,choices})),
+          validate:({source,destination})=>{
+            if(same(source,destination))return t('Выберите разные контроллеры','Choose different controllers');
+            if(rows.some(row=>same(row.source,source)&&same(row.destination,destination)))return t('Такое соединение уже существует','This connection already exists');
+          }
+        }));
+        else if(admin)commands.append(el('p','muted',t('Для соединения нужны как минимум два контроллера.','At least two controllers are required.')));
+        renderConnectionList(rows,list,bind);
+      }
+    }
+    filter.addEventListener('change',render);
+    render();
   }
   function setupGPOConsole() {
     const branches=el('div','console-tree-children');
@@ -1436,12 +1536,8 @@
         ];
       }else{
         items=data.links;
-        columns=[['name',t('Связь','Link')],['sites',t('Сайты','Sites')],['cost',t('Стоимость','Cost')],['interval',t('Интервал, мин','Interval, min')]];
-        actions=[
-          action(t('Свойства','Properties'),'PUT',row=>'/sites/links/'+enc(row.name),linkFields(),{revision:true,confirm:true,prefill:row=>({sites:(row.sites||[]).join(';'),cost:row.cost,interval:row.interval})}),
-          scheduleOperation(row=>'/sites/links/'+enc(row.name)+'/schedule'),
-          {...remove(row=>'/sites/links/'+enc(row.name)),revision:true}
-        ];
+        columns=siteLinkColumns;
+        actions=siteLinkActions;
       }
       const query=normalizeSearch(searchBox.value);
       if(query)items=items.filter(row=>columns.some(([column])=>normalizeSearch(String(row[column]??'')).includes(query)));
@@ -1468,7 +1564,7 @@
         addAction(commands,action(t('Создать подсеть','New Subnet'),'POST','/subnets',
           [text('subnet','Подсеть CIDR','Subnet CIDR',{placeholder:'192.0.2.0/24'}),siteField()],{prefill:()=>({site:site?.name})}));
       }else if(kind==='links'){
-        addAction(commands,action(t('Создать связь сайтов','New Site Link'),'POST','/sites/links',[name(),...linkFields()],{confirm:true}));
+        addAction(commands,siteLinkCreate);
       }
       commands.hidden=!commands.childElementCount;
       showList();
@@ -1521,13 +1617,20 @@
     };
     return `${common[code]||row.resultDescription||t('Неизвестная ошибка','Unknown error')} (${raw})`;
   }
+  function renderConnectionList(rows,parent,bindAction=a=>a){
+    parent.append(el('p','muted',t('Автоматические соединения управляются KCC: он может восстановить их после изменений. Ручные соединения используйте осознанно.','KCC manages automatic connections and may recreate them. Use manual connections deliberately.')));
+    const endpoint=r=>'/repl/connections/'+enc(r.id);
+    const actions=[
+      action(t('Включить соединение','Enable connection'),'PUT',endpoint,[],{revision:true,preset:{enabled:true},confirm:true,when:r=>!r.enabled}),
+      action(t('Отключить соединение','Disable connection'),'PUT',endpoint,[],{revision:true,preset:{enabled:false},confirm:true,when:r=>r.enabled}),
+      scheduleOperation(endpoint),{...remove(endpoint),revision:true}
+    ];
+    const columns=[['source',t('Источник','Source')],['destination',t('Назначение','Destination')],['enabled',t('Включено','Enabled')],['automatic','KCC']];
+    topologyTable(parent,rows,columns,actions.map(bindAction));
+  }
   function renderResult(result,parent,a,row,query) {
     const endpoint=typeof a.path==='function'?a.path(row):a.path;
-    if(endpoint==='/repl/connections'){
-      parent.append(el('p','muted',t('Автоматические соединения управляются KCC: он может восстановить их после изменений. Ручные соединения используйте осознанно.','KCC manages automatic connections and may recreate them. Use manual connections deliberately.')));
-      topologyTable(parent,result,[['source',t('Источник','Source')],['destination',t('Назначение','Destination')],['enabled',t('Включено','Enabled')],['automatic','KCC']],
-        [action(t('Включить соединение','Enable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:true},confirm:true,when:r=>!r.enabled}),action(t('Отключить соединение','Disable connection'),'PUT',r=>'/repl/connections/'+enc(r.id),[],{revision:true,preset:{enabled:false},confirm:true,when:r=>r.enabled}),scheduleOperation(r=>'/repl/connections/'+enc(r.id)),{...remove(r=>'/repl/connections/'+enc(r.id)),revision:true}]);return;
-    }
+    if(endpoint==='/repl/connections'){renderConnectionList(result,parent);return;}
     if(endpoint==='/repl/status'){
       const health={healthy:t('Успешно','Healthy'),degraded:t('Есть ошибки','Degraded'),unverified:t('Состояние не подтверждено','Health unverified'),'no-partners':t('Нет партнёров — состояние не подтверждено','No partners — health unverified')};
       parent.append(el('h3','',result.server||''),el('p','',health[result.health]||t('Неизвестно','Unknown')));

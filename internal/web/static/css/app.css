@@ -613,3 +613,6 @@ button.secondary { background: #e8f1f1; color: var(--accent); }
 .topology-trust-domain { text-align:center;overflow-wrap:anywhere;background:#e2f1ed;border:1px solid #a3c6bd;border-radius:6px;padding:6px 4px; }
 .topology-trust-relation { text-align:center;color:#24564f;font-size:.875em; }
 .topology-trust-arrow { display:block;font-size:1.5em;line-height:1; }
+
+.topology-view-switch [aria-pressed="true"] { background:#e2f1ed;border-color:#a3c6bd;color:#24564f;font-weight:700; }
+.topology-links-menu select { width:auto;max-width:100%; }
