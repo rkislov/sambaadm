@@ -5,7 +5,7 @@ const fs=require('fs'),os=require('os'),path=require('path'),http=require('http'
 const {execFileSync}=require('child_process');
 const repo=path.resolve(__dirname,'../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'sambaadm-topology-'));
 execFileSync('go',['test','./internal/web','-run','^TestWorkspaceBrowserFixtures$','-count=1'],{cwd:repo,env:{...process.env,SAMBAADM_WEB_FIXTURE_DIR:dir}});
-let role='readonly',controllers=[],connections=[],sites=[],subnets=[],siteLinks=[];const mutations=[],errors=[];
+let role='readonly',controllers=[],connections=[],sites=[],subnets=[],siteLinks=[],trusts=[],trustUnavailable=false;const mutations=[],errors=[];
 const server=http.createServer((req,res)=>{
  const pathname=new URL(req.url,'http://localhost').pathname;
  const file=pathname.startsWith('/static/')?path.join(repo,'internal/web',pathname):path.join(dir,`${role}-repl.html`);
@@ -30,7 +30,12 @@ function domain(count){
     mutations.push({endpoint,method:req.method(),payload:req.postDataJSON()});
     if(endpoint==='/sites/controllers/dc0.example.com/move')controllers[0].site=req.postDataJSON().site;
    }
-   await route.fulfill({json:endpoint==='/sites/topology'?{controllers,sites,subnets}:endpoint==='/sites/links'?siteLinks:endpoint==='/repl/connections'?connections:[]});
+   if(endpoint==='/trusts'&&trustUnavailable){
+    await route.fulfill({status:502,json:{error:'LDAP unavailable'}});
+    return;
+   }
+   await route.fulfill({json:{'/sites/topology':{controllers,sites,subnets},'/sites/links':siteLinks,
+    '/repl/connections':connections,'/domain':{dnsRoot:'example.com'},'/trusts':trusts}[endpoint]??[]});
   });
   const open=async()=>{
    await page.goto(`http://127.0.0.1:${server.address().port}/repl`);
@@ -89,7 +94,16 @@ function domain(count){
   subnets=[{name:'10.0.0.0/24',site:sites[0].dn}];
   siteLinks=[{name:'WAN <core> & backup',sites:['site0','site1','Empty & remote'],cost:75,interval:30}];
   controllers[0].rodc=true;
+  trusts=[
+   {domain:'both.example.net',scope:'external',rawDirection:'3'},
+   {domain:'in.example.net',scope:'forest',rawDirection:'1'},
+   {domain:'out.example.net',scope:'within_forest',rawDirection:'2'},
+   {domain:'off.example.net',scope:'external',rawDirection:'0'}
+  ];
   dialog=await open();
+  const rowsInTrusts=dialog.locator('.topology-trust-row');
+  await rowsInTrusts.filter({hasText:'both.example.net'}).getByText('Двустороннее · Внешнее',{exact:true}).waitFor();
+  assert.equal(await rowsInTrusts.count(),4);
   const node=dialog.locator('[data-dc="dc0.example.com"]');
   const other=dialog.locator('[data-dc="dc1.example.com"]');
   const wire=dialog.locator('polyline[data-source="dc0.example.com"][data-destination="dc1.example.com"]');
@@ -138,6 +152,7 @@ function domain(count){
     ...Object.fromEntries([...cell.attributes].map(a=>[a.name,a.value])),
     id:cell.getAttribute('id')||cell.parentElement.getAttribute('id'),
     label:cell.parentElement.getAttribute('label'),
+    sheet:cell.closest('diagram').getAttribute('id'),
     geometry:cell.querySelector('mxGeometry')?Object.fromEntries([...cell.querySelector('mxGeometry').attributes].map(a=>[a.name,a.value])):null
    }));
   },xmlText);
@@ -150,6 +165,13 @@ function domain(count){
   assert.equal(model.filter(c=>c.source===link.id).length,3);
   assert.ok(model.some(c=>c.source===dc.id&&c.target&&c.style.includes('endArrow=block')));
   assert.equal(model.filter(c=>c.id?.startsWith('dc-')).length,8,'export includes controllers hidden by the filter');
+  const trustCells=model.filter(c=>c.sheet==='domain-trusts');
+  assert.equal(trustCells.find(c=>c.id==='trust-local').value,'example.com');
+  for(const [partner,start,end] of [['both','block','block'],['in','block','none'],['out','none','block'],['off','none','none']]){
+   const target=trustCells.find(c=>c.value===partner+'.example.net');
+   const edge=trustCells.find(c=>c.source==='trust-local'&&c.target===target.id);
+   assert.ok(edge.style.includes('startArrow='+start+';')&&edge.style.includes('endArrow='+end+';'));
+  }
 
   await dialog.getByRole('searchbox').fill('');
   await page.screenshot({path:path.join(dir,'topology-editor.png'),fullPage:true});
@@ -163,6 +185,9 @@ function domain(count){
   await applyMove.click();
   await page.waitForFunction(()=>document.querySelector('[data-dc="dc0.example.com"]')?.dataset.site==='site1');
   assert.deepEqual(mutations,[{endpoint:'/sites/controllers/dc0.example.com/move',method:'POST',payload:{site:'site1',revision:'0'}}]);
+  trustUnavailable=true;await refresh();
+  await dialog.locator('.topology-trusts').getByText('Доверительные отношения недоступны · LDAP unavailable',{exact:true}).waitFor();
+  assert.equal(await dialog.locator('.topology-node').count(),8);
   assert.deepEqual(errors,[]);
   console.log('PASS: 0/1/8/64/256/1000 DCs, fit, zoom, pan, keyboard, search, site filter, edge focus, refresh/close, mobile, admin selection, drag preview, draw.io export, cancel and confirmed move');
   console.log('Screenshots:',dir);

@@ -1184,17 +1184,28 @@
   }
   async function openTopology(){
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
-    const title=el('h2','',t('Топология репликации','Replication topology'));title.id='operation-title';
+    const title=el('h2','',t('Топология Active Directory','Active Directory topology'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
     let serial=0,moving=false;
     const layout=new Map();
     async function refresh(){if(moving)return;const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
-      try{const [topology,connections,linksResult]=await Promise.all([
-          request('/sites/topology'),request('/repl/connections'),request('/sites/links').then(links=>({links}),error=>({error}))
+      try{const [topology,connections,[linksResult,trustsResult,domainResult]]=await Promise.all([
+          request('/sites/topology'),request('/repl/connections'),
+          Promise.allSettled([request('/sites/links'),request('/trusts'),request('/domain')])
         ]);if(generation!==dialogGeneration||current!==serial)return;
+        const failures=[
+          [linksResult,t('Межсайтовые связи недоступны','Site links unavailable')],
+          [trustsResult,t('Доверительные отношения недоступны','Domain trusts unavailable')],
+          [domainResult,t('Имя текущего домена недоступно','Current domain name unavailable')]
+        ];
+        const problems=failures.filter(([result])=>result.status==='rejected')
+          .map(([result,label])=>label+' · '+result.reason.message);
+        const trusts=trustsResult.status==='fulfilled'?(trustsResult.value||[]):null;
+        const trustError=trusts===null?failures[1][1]+' · '+trustsResult.reason.message:'';
+        const domain=domainResult.value?.dnsRoot||domainResult.value?.netbios||domainResult.value?.baseDN;
         const dcs=[...(topology.controllers||[])].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||a.dns.localeCompare(b.dns));
-        message(notice,linksResult.error?t('Межсайтовые связи недоступны. Схема неполная. ','Site links are unavailable. The diagram is incomplete. ')+linksResult.error.message:'',!!linksResult.error);
+        message(notice,problems.join(' · '),problems.length>0);
         body.append(el('p','muted',t('Стрелки показывают направление репликации. Пунктирная стрелка — отключённое соединение. Фиолетовые линии связывают сайты с Site Link. Схема показывает конфигурацию AD.','Arrows show replication direction. A dashed arrow is a disabled connection. Purple lines join sites to a site link. The diagram shows AD configuration.')));
         const form=el('form','workspace-form');const source=el('select'),destination=el('select');source.name='source';destination.name='destination';
         for(const select of [source,destination]){select.required=true;const empty=el('option','',t('Выберите контроллер','Select controller'));empty.value='';select.append(empty);for(const dc of dcs){const option=el('option','',dc.dns+' · '+dc.site);option.value=dc.dns;select.append(option);}}

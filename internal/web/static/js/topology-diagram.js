@@ -17,7 +17,60 @@
     const scale=Math.max(Math.abs(dx)/(box.width/2),Math.abs(dy)/(box.height/2),.001);
     return point(center.x+dx/scale,center.y+dy/scale);
   }
-  function exportDiagram(sites,nodes,links,edges,unmapped,{t}){
+  function domainTrusts(data,t){
+    const direction={
+      '0':[false,false,t('Отключено','Disabled')],
+      '1':[true,false,t('Входящее','Inbound')],
+      '2':[false,true,t('Исходящее','Outbound')],
+      '3':[true,true,t('Двустороннее','Bidirectional')]
+    };
+    const directionCodes={inbound:'1',outbound:'2',bidirectional:'3',disabled:'0'};
+    const types={
+      external:t('Внешнее','External'),
+      forest:t('Межлесное','Forest'),
+      within_forest:t('Внутри леса','Within forest'),
+      windows_ad:'Windows AD',
+      windows_non_ad:t('Windows без AD','Windows without AD'),
+      mit:'MIT Kerberos',
+      dormant:t('Неактивный тип','Dormant type')
+    };
+    const rows=[...(data.trusts||[])].sort((a,b)=>a.domain.localeCompare(b.domain)).map(trust=>{
+      const [left,right,label]=direction[trust.rawDirection||directionCodes[trust.direction]]||
+        [false,false,t('Направление неизвестно','Unknown direction')];
+      const type=types[trust.scope||trust.type]||t('Тип неизвестен','Unknown type');
+      return {partner:trust.domain,left,right,label:label+' · '+type};
+    });
+    return {
+      local:data.domain||t('Текущий домен','Current domain'),
+      title:t('Доверительные отношения','Domain trusts'),
+      legend:t('Стрелка направлена от доверяющего домена к доверенному. Показаны настройки текущего домена.','Arrows point from the trusting domain to the trusted domain. The diagram shows the current domain configuration.'),
+      status:data.trustError||(rows.length?'':t('Доверительные отношения не настроены','No domain trusts configured')),
+      rows
+    };
+  }
+  function trustPanel(model,el){
+    const panel=el('details','topology-trusts');panel.open=model.rows.length>0;
+    panel.append(el('summary','',model.title+(model.rows.length?' · '+model.rows.length:'')));
+    if(model.status){
+      panel.open=true;
+      panel.append(el('p','muted',model.status));
+      return panel;
+    }
+    panel.append(el('p','muted',model.legend));
+    const list=el('ul','topology-trust-list');
+    for(const trust of model.rows){
+      const row=el('li','topology-trust-row');
+      const relation=el('div','topology-trust-relation');
+      const arrow=el('span','topology-trust-arrow',trust.left?(trust.right?'↔':'←'):(trust.right?'→':'—'));
+      arrow.setAttribute('aria-hidden','true');
+      relation.append(arrow,el('span','',trust.label));
+      row.append(el('strong','topology-trust-domain',model.local),relation,el('strong','topology-trust-domain',trust.partner));
+      list.append(row);
+    }
+    panel.append(list);
+    return panel;
+  }
+  function exportDiagram(sites,nodes,links,edges,unmapped,trusts,{t}){
     const xml=document.implementation.createDocument(null,'mxfile');
     function append(parent,tag,attrs={}){
       const element=xml.createElement(tag);
@@ -25,10 +78,14 @@
       parent.append(element);
       return element;
     }
-    const diagram=append(xml.documentElement,'diagram',{id:'ad-topology',name:t('Топология AD','AD topology')});
-    const graph=append(diagram,'mxGraphModel',{grid:1,gridSize:10,page:0,connect:1,arrows:1});
-    const root=append(graph,'root');
-    append(root,'mxCell',{id:0});append(root,'mxCell',{id:1,parent:0});
+    function sheet(id,name){
+      const diagram=append(xml.documentElement,'diagram',{id,name});
+      const graph=append(diagram,'mxGraphModel',{grid:1,gridSize:10,page:0,connect:1,arrows:1});
+      const root=append(graph,'root');
+      append(root,'mxCell',{id:0});append(root,'mxCell',{id:1,parent:0});
+      return root;
+    }
+    let root=sheet('ad-topology',t('Топология AD','AD topology'));
     function vertex(id,parent,value,box,style,tooltip=''){
       const wrapper=tooltip?append(root,'object',{id,label:value,tooltip}):root;
       const attrs=tooltip?{}:{id,value};
@@ -62,6 +119,20 @@
       const bottom=Math.max(0,...sites.map(s=>s.y+s.height),...links.map(l=>l.y+l.height));
       vertex('unmapped',1,value,{x:40,y:bottom+44,width:480,height:40+unmapped.length*20},'rounded=1;fillColor=#fff4dd;strokeColor=#a36318;align=left;spacing=12;');
     }
+    root=sheet('domain-trusts',trusts.title);
+    vertex('trust-heading',1,trusts.legend,{x:36,y:24,width:780,height:48},'strokeColor=none;fillColor=none;align=left;');
+    const trustShape='rounded=1;strokeColor=#28625b;fontStyle=1;';
+    const local={id:'trust-local',x:36,y:88+Math.max(0,trusts.rows.length-1)*50,width:230,height:62};
+    vertex(local.id,1,trusts.local,local,trustShape+'fillColor=#dcefea;');
+    for(const [index,trust] of trusts.rows.entries()){
+      const partner={id:'trust-partner-'+index,x:560,y:88+index*100,width:230,height:62};
+      vertex(partner.id,1,trust.partner,partner,trustShape+'fillColor=#f1f8f7;');
+      const arrows='startArrow='+(trust.left?'block':'none')+';endArrow='+(trust.right?'block':'none')+';';
+      edge('trust-edge-'+index,local,partner,trust.label,
+        'strokeColor=#28625b;strokeWidth=2;startFill=1;endFill=1;'+arrows+(!trust.left&&!trust.right?'dashed=1;':''));
+    }
+    if(trusts.status)vertex('trust-status',1,trusts.status,{x:306,y:86,width:480,height:68},
+      'rounded=1;fillColor=#fff4dd;strokeColor=#a36318;align=left;spacing=12;');
     const url=URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(xml)],{type:'application/xml;charset=utf-8'}));
     const anchor=document.createElement('a');
     anchor.href=url;anchor.download='ad-topology.drawio';document.body.append(anchor);anchor.click();anchor.remove();
@@ -71,7 +142,7 @@
     const a=cellCenter(from),b=cellCenter(to),dx=b.x-a.x,dy=b.y-a.y,length=Math.hypot(dx,dy)||1;
     return point((a.x+b.x)/2-dy/length*offset,(a.y+b.y)/2+dx/length*offset);
   }
-  window.sambaadmTopologyDiagram=function(data,{t,el,button,onSelect,onSiteDrop,onConnectDrop,layout,exportError}){
+  window.sambaadmTopologyDiagram=function(data,{t,el,button,onSelect,onSiteDrop,onConnectDrop,layout,exportWarnings=[]}){
     const map=el('div','topology-map topology-diagram');
     const graph=svg('svg',{'aria-hidden':'true'});
     const defs=svg('defs');
@@ -218,6 +289,8 @@
     graph.setAttribute('viewBox',`0 0 ${width} ${height}`);
     const view=window.sambaadmTopologyViewport(map,width,height);
     const controls=view.querySelector('.topology-controls');
+    const trusts=domainTrusts(data,t);
+    view.insertBefore(trustPanel(trusts,el),view.querySelector('.topology-viewport'));
     let mode='layout',active=null;
     if(onSiteDrop){
       const select=el('select');select.setAttribute('aria-label',t('Действие при перетаскивании','Drag action'));
@@ -228,7 +301,7 @@
       select.addEventListener('change',()=>{mode=select.value;map.classList.toggle('topology-move-mode',mode==='site');});
     }
     controls.append(button(t('Скачать .drawio','Download .drawio'),()=>{
-      if(!active)exportDiagram(sites,nodes,links,edges,exportError?[exportError,...unmapped]:unmapped,{t});
+      if(!active)exportDiagram(sites,nodes,links,edges,[...exportWarnings,...unmapped],trusts,{t});
     }));
     const reset=button(t('Сбросить раскладку','Reset layout'),()=>{
       layout.clear();

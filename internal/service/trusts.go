@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/go-ldap/ldap/v3"
@@ -18,6 +19,7 @@ type Trust struct {
 	Domain    string `json:"domain"`
 	Direction string `json:"direction,omitempty"`
 	Type      string `json:"type,omitempty"`
+	Scope     string `json:"scope,omitempty"`
 	DN        string `json:"dn,omitempty"`
 	RawDir    string `json:"rawDirection,omitempty"`
 	RawType   string `json:"rawType,omitempty"`
@@ -44,7 +46,7 @@ type TrustService struct {
 func (s *TrustService) List(ctx context.Context) ([]Trust, error) {
 	entries, err := s.ldap.Search(ctx, ldapproto.SearchOptions{
 		Filter:     "(objectClass=trustedDomain)",
-		Attributes: []string{"cn", "trustDirection", "trustType", "trustPartner", "flatName"},
+		Attributes: []string{"cn", "trustDirection", "trustType", "trustAttributes", "trustPartner", "flatName"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list trusts: %w", err)
@@ -62,7 +64,7 @@ func (s *TrustService) Show(ctx context.Context, domain string) (*Trust, error) 
 	filter := fmt.Sprintf("(&(objectClass=trustedDomain)(|(trustPartner=%s)(cn=%s)(flatName=%s)))", esc, esc, esc)
 	e, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{
 		Filter:     filter,
-		Attributes: []string{"cn", "trustDirection", "trustType", "trustPartner", "flatName"},
+		Attributes: []string{"cn", "trustDirection", "trustType", "trustAttributes", "trustPartner", "flatName"},
 	})
 	if err != nil {
 		return nil, err
@@ -127,6 +129,19 @@ func (s *TrustService) Validate(ctx context.Context, domain, actor, ip string) (
 func entryToTrust(e *ldap.Entry) Trust {
 	rawDir := e.GetAttributeValue("trustDirection")
 	rawType := e.GetAttributeValue("trustType")
+	scope := ""
+	if flags, err := strconv.ParseUint(e.GetAttributeValue("trustAttributes"), 10, 32); rawType == "2" && err == nil {
+		const forestTransitive = 0x00000008
+		const withinForest = 0x00000020
+		switch {
+		case flags&withinForest != 0:
+			scope = "within_forest"
+		case flags&forestTransitive != 0:
+			scope = "forest"
+		default:
+			scope = "external"
+		}
+	}
 	domain := e.GetAttributeValue("trustPartner")
 	if domain == "" {
 		domain = e.GetAttributeValue("cn")
@@ -135,6 +150,7 @@ func entryToTrust(e *ldap.Entry) Trust {
 		Domain:    domain,
 		Direction: TrustDirectionName(rawDir),
 		Type:      TrustTypeName(rawType),
+		Scope:     scope,
 		DN:        e.DN,
 		RawDir:    rawDir,
 		RawType:   rawType,
