@@ -12,7 +12,10 @@
     const site=el('select');site.setAttribute('aria-label',t('Фильтр по сайту','Site filter'));
     const all=el('option',t('Все сайты','All sites'));all.value='';site.append(all);
     const nodes=Array.from(map.querySelectorAll('.topology-node')),edges=Array.from(map.querySelectorAll('polyline'));
-    for(const name of [...new Set(nodes.map(n=>n.dataset.site).filter(Boolean))].sort()){
+    const frames=Array.from(map.querySelectorAll('.topology-site-frame'));
+    const links=Array.from(map.querySelectorAll('.topology-site-link'));
+    const siteLines=Array.from(map.querySelectorAll('.topology-site-wire'));
+    for(const name of [...new Set(frames.map(n=>n.dataset.site).filter(Boolean))].sort()){
       const option=el('option',name);option.value=name;site.append(option);
     }
     const focus=el('input');focus.type='checkbox';focus.setAttribute('role','switch');focus.checked=nodes.length>20;
@@ -38,6 +41,12 @@
         left=Math.min(left,+n.dataset.x-110);right=Math.max(right,+n.dataset.x+110);
         top=Math.min(top,+n.dataset.y-50);bottom=Math.max(bottom,+n.dataset.y+50);
       }
+      if(!search.value.trim())for(const element of [...frames,...links]){
+        if(element.hidden)continue;
+        const {x,y,width,height}=element.dataset;
+        left=Math.min(left,+x);right=Math.max(right,+x + +width);
+        top=Math.min(top,+y);bottom=Math.max(bottom,+y + +height);
+      }
       if(!Number.isFinite(left)){left=0;right=width;top=0;bottom=height;}
       if(viewport.clientWidth<1||viewport.clientHeight<1)return;
       scale=Math.min(1.5,(viewport.clientWidth-24)/(right-left),(viewport.clientHeight-24)/(bottom-top));
@@ -45,13 +54,16 @@
       autoFit=true;apply();
     }
     function filter(refit){
-      const needle=search.value.trim().toLocaleLowerCase(),visible=new Set();
+      const needle=search.value.trim().toLocaleLowerCase(),visible=new Set(),visibleSites=new Set();
       for(const n of nodes){
         const show=(!site.value||n.dataset.site===site.value)&&(!needle||(n.dataset.dc+' '+n.textContent).toLocaleLowerCase().includes(needle));
         n.hidden=!show;n.classList.toggle('focused',n.dataset.dc===selected);
         n.setAttribute('aria-pressed',String(n.dataset.dc===selected));
-        if(show)visible.add(n.dataset.dc.toLowerCase());
+        if(show){visible.add(n.dataset.dc.toLowerCase());visibleSites.add(n.dataset.site);}
       }
+      for(const frame of frames)frame.hidden=(!!site.value&&frame.dataset.site!==site.value)||(!!needle&&!visibleSites.has(frame.dataset.site));
+      for(const link of links)link.hidden=!!site.value||!!needle;
+      for(const edge of siteLines)edge.style.display=site.value||needle?'none':'';
       visibleCount=visible.size;
       for(const edge of edges){
         const a=edge.dataset.source,b=edge.dataset.destination;
@@ -60,7 +72,7 @@
       }
       hint.textContent=!visibleCount?t('Контроллеры не найдены','No controllers found'):
         focus.checked&&!visible.has(selected.toLowerCase())?t('Выберите контроллер на схеме, чтобы увидеть его связи.','Select a controller on the map to see its connections.'):
-        t('Масштаб: кнопки или Ctrl + колесо. Перемещение: перетащите фон.','Zoom with buttons or Ctrl + wheel. Drag the background to pan.');
+        t('Перетащите фон для прокрутки. Узлы и заголовки сайтов можно двигать мышью или клавишами со стрелками.','Drag the background to pan. Move nodes and site headings by dragging or with the arrow keys.');
       if(refit)fit();else apply();
     }
     tools.append(search,site,
@@ -69,6 +81,7 @@
       button('100%',t('Исходный масштаб','Actual size'),()=>zoom(1/scale)),
       button(t('Вписать целиком','Fit to view'),t('Вписать целиком','Fit to view'),fit),label,info);
     wrap.append(tools,hint,viewport);viewport.append(map);
+    wrap.addEventListener('topology-fit',fit);
     Object.assign(map.style,{width:width+'px',height:height+'px',aspectRatio:'auto',margin:'0',transformOrigin:'0 0'});
     for(const n of nodes)n.addEventListener('click',()=>{selected=n.dataset.dc;filter(false);});
     search.addEventListener('input',()=>filter(true));site.addEventListener('change',()=>filter(true));focus.addEventListener('change',()=>filter(false));

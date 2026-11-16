@@ -1187,27 +1187,54 @@
     const title=el('h2','',t('Топология репликации','Replication topology'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
     dialog.append(title,notice,button(t('Обновить','Refresh'),refresh),body,button(t('Закрыть','Close'),closeOperation));if(!dialog.open)dialog.showModal();
-    let serial=0;
-    async function refresh(){const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
-      try{const [topology,connections]=await Promise.all([request('/sites/topology'),request('/repl/connections')]);if(generation!==dialogGeneration||current!==serial)return;
-        const dcs=[...(topology.controllers||[])].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||a.dns.localeCompare(b.dns));message(notice,'');
-        body.append(el('p','muted',t('Стрелки показывают направление источник → назначение. Сплошная линия — включено, пунктир — отключено. Это конфигурация AD, а не подтверждение исправности репликации.','Arrows show source → destination. Solid: enabled; dashed: disabled. AD configuration does not confirm replication health.')));
-        const map=el('div','topology-map');const columns=Math.max(1,Math.ceil(Math.sqrt((dcs.length||1)*1.3))),width=Math.max(720,columns*240),height=Math.max(180,Math.ceil(dcs.length/columns)*145+40);map.style.aspectRatio=width+'/'+height;
-        const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox',`0 0 ${width} ${height}`);svg.setAttribute('aria-hidden','true');map.append(svg);
-        const shape=(tag,attrs)=>{const n=document.createElementNS(svg.namespaceURI,tag);for(const [k,v] of Object.entries(attrs))n.setAttribute(k,v);return n;};
-        const defs=shape('defs',{}),marker=shape('marker',{id:'topology-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:7,markerHeight:7,orient:'auto-start-reverse'});marker.append(shape('path',{d:'M 0 0 L 10 5 L 0 10 z',fill:'#477887'}));defs.append(marker);svg.append(defs);
-        const positions=new Map(dcs.map((dc,i)=>[dc.dns.toLowerCase(),{x:width/(Math.min(columns,dcs.length-Math.floor(i/columns)*columns)+1)*((i%columns)+1),y:80+Math.floor(i/columns)*145}]));
-        const pairs=new Set(connections.map(c=>JSON.stringify([c.source.toLowerCase(),c.destination.toLowerCase()])));
-        const missing=[];for(const connection of connections){const from=positions.get(connection.source.toLowerCase()),to=positions.get(connection.destination.toLowerCase());if(!from||!to){missing.push(connection);continue;}const reverse=pairs.has(JSON.stringify([connection.destination.toLowerCase(),connection.source.toLowerCase()]));const offset=reverse?18:0,dx=to.x-from.x,dy=to.y-from.y,length=Math.hypot(dx,dy)||1;const line=shape('polyline',{points:`${from.x},${from.y} ${(from.x+to.x)/2-dy/length*offset},${(from.y+to.y)/2+dx/length*offset} ${to.x},${to.y}`,fill:'none',stroke:'#477887','stroke-width':2,'stroke-dasharray':connection.enabled?'':'7 5','marker-mid':'url(#topology-arrow)'});const hint=shape('title',{});hint.textContent=connection.source+' → '+connection.destination+(connection.automatic?' (KCC)':'');line.dataset.source=connection.source.toLowerCase();line.dataset.destination=connection.destination.toLowerCase();line.append(hint);svg.append(line);}
+    let serial=0,moving=false;
+    const layout=new Map();
+    async function refresh(){if(moving)return;const current=++serial;body.replaceChildren();message(notice,t('Загрузка…','Loading…'));
+      try{const [topology,connections,linksResult]=await Promise.all([
+          request('/sites/topology'),request('/repl/connections'),request('/sites/links').then(links=>({links}),error=>({error}))
+        ]);if(generation!==dialogGeneration||current!==serial)return;
+        const dcs=[...(topology.controllers||[])].sort((a,b)=>(a.site||'').localeCompare(b.site||'')||a.dns.localeCompare(b.dns));
+        message(notice,linksResult.error?t('Межсайтовые связи недоступны. Схема неполная. ','Site links are unavailable. The diagram is incomplete. ')+linksResult.error.message:'',!!linksResult.error);
+        body.append(el('p','muted',t('Стрелки показывают направление репликации. Пунктирная стрелка — отключённое соединение. Фиолетовые линии связывают сайты с Site Link. Схема показывает конфигурацию AD.','Arrows show replication direction. A dashed arrow is a disabled connection. Purple lines join sites to a site link. The diagram shows AD configuration.')));
         const form=el('form','workspace-form');const source=el('select'),destination=el('select');source.name='source';destination.name='destination';
         for(const select of [source,destination]){select.required=true;const empty=el('option','',t('Выберите контроллер','Select controller'));empty.value='';select.append(empty);for(const dc of dcs){const option=el('option','',dc.dns+' · '+dc.site);option.value=dc.dns;select.append(option);}}
         const update=()=>{map.querySelectorAll('.topology-node').forEach(n=>{n.classList.toggle('source',n.dataset.dc===source.value);n.classList.toggle('destination',n.dataset.dc===destination.value);});destination.setCustomValidity(source.value&&source.value===destination.value?t('Выберите разные контроллеры','Choose different controllers'):'');confirm.checked=false;};
-        let dragged='';for(const dc of dcs){const point=positions.get(dc.dns.toLowerCase());const node=button(dc.name+'\n'+dc.site,()=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();},'topology-node');node.title=dc.dns;node.style.left=point.x/width*100+'%';node.style.top=point.y/height*100+'%';node.draggable=admin;node.dataset.dc=dc.dns;node.dataset.site=dc.site||'';node.dataset.x=point.x;node.dataset.y=point.y;node.style.width='180px';
-          node.addEventListener('dragstart',e=>{dragged=dc.dns;e.dataTransfer.setData('text/plain',dc.dns);e.dataTransfer.effectAllowed='link';});node.addEventListener('dragend',()=>{dragged='';});node.addEventListener('dragover',e=>{if(admin&&dragged&&dragged!==dc.dns){e.preventDefault();e.dataTransfer.dropEffect='link';}});node.addEventListener('drop',e=>{e.preventDefault();if(!admin||!dragged||dragged===dc.dns)return;source.value=dragged;destination.value=dc.dns;dragged='';update();form.scrollIntoView({block:'nearest'});});map.append(node);}
-        body.append(window.sambaadmTopologyViewport(map,width,height));if(!dcs.length)body.append(el('p','muted',t('Контроллеры не найдены','No controllers found')));
-        if(missing.length)body.append(el('p','alert error',t('Некоторые соединения ссылаются на отсутствующие контроллеры: ','Some connections reference missing controllers: ')+missing.length));
+        const pending=el('div','topology-pending');pending.setAttribute('aria-live','polite');
+        function stageMove(dc,site){
+          if(moving||!dc.revision)return;
+          pending.replaceChildren(el('p','',dc.dns+' · '+(dc.site||'—')+' → '+site));
+          const save=button(t('Перенести DC в AD','Move DC in AD'),async()=>{
+            if(moving)return;moving=true;save.disabled=true;cancel.disabled=true;
+            try{
+              await request('/sites/controllers/'+enc(dc.dns||dc.name)+'/move','POST',{site,revision:dc.revision});
+              moving=false;
+              if(generation!==dialogGeneration||current!==serial)return;
+              layout.delete('dc:'+dc.dns.toLowerCase());
+              await refresh();
+              if(generation===dialogGeneration&&serial===current+1&&body.querySelector('.topology-map'))body.prepend(el('p','workspace-message',t('Контроллер перенесён в сайт ','Controller moved to site ')+site));
+            }catch(err){
+              moving=false;
+              if(generation!==dialogGeneration||current!==serial)return;
+              message(notice,err.message,true);cancel.disabled=false;
+              save.disabled=err.status===409;
+            }
+          },'btn-primary');
+          const cancel=button(t('Отменить перенос','Cancel move'),()=>pending.replaceChildren());
+          pending.append(save,cancel);save.focus();
+        }
+        const {view,map,unmapped}=window.sambaadmTopologyDiagram({...topology,controllers:dcs,connections:connections||[],links:linksResult.links||[]},{
+          t,el,button,layout,exportError:linksResult.error?t('Межсайтовые связи недоступны','Site links are unavailable'):'',
+          onSiteDrop:admin?stageMove:null,
+          onConnectDrop:admin?(a,b)=>{source.value=a.dns;destination.value=b.dns;update();form.scrollIntoView({block:'nearest'});}:null,
+          onSelect:dc=>{if(!admin)return;if(!source.value||destination.value){source.value=dc.dns;destination.value='';}else destination.value=dc.dns;update();}
+        });
+        body.append(pending,view);
+        if(unmapped.length){
+          const details=el('details');details.append(el('summary','',t('Объекты вне схемы','Objects outside the diagram')+' · '+unmapped.length));
+          const entries=el('ul');for(const entry of unmapped)entries.append(el('li','',entry));details.append(entries);body.append(details);
+        }
         const confirm=el('input');confirm.type='checkbox';confirm.required=true;
-        if(admin){body.append(el('p','',t('Перетащите источник на назначение или нажмите два узла по очереди. Можно также выбрать контроллеры из списков. Связь создаётся только после подтверждения.','Drag the source onto the destination or click two nodes in order. You can also use the lists. Confirm before creating the connection.')));
+        if(admin){body.append(el('p','',t('В режиме «Создание соединения» перетащите источник на назначение. Можно также нажать два узла по очереди или выбрать контроллеры из списков. Связь создаётся после подтверждения.','In Create connection mode, drag the source onto the destination. You can also click two nodes in order or use the lists. Confirm before creating the connection.')));
           for(const [labelText,select] of [[t('Источник','Source'),source],[t('Назначение','Destination'),destination]]){const label=el('label','',labelText);select.setAttribute('aria-label',labelText);label.append(select);form.append(label);select.addEventListener('change',update);}
           const confirmation=el('label','',t('Подтверждаю создание соединения источник → назначение','Confirm creating the source → destination connection'));confirmation.prepend(confirm);form.append(confirmation);const save=el('button','',t('Создать соединение','Create connection'));save.type='submit';save.disabled=dcs.length<2;form.append(save);body.append(form);if(dcs.length<2)form.append(el('p','muted',t('Для соединения нужны как минимум два контроллера.','At least two controllers are required.')));
           form.addEventListener('submit',async e=>{e.preventDefault();updateValidity();if(!form.reportValidity())return;const payload={source:source.value,destination:destination.value};if(connections.some(c=>c.source.toLowerCase()===payload.source.toLowerCase()&&c.destination.toLowerCase()===payload.destination.toLowerCase())){message(notice,t('Такое соединение уже существует','This connection already exists'),true);return;}save.disabled=true;try{await request('/repl/connections','POST',payload);if(generation!==dialogGeneration)return;await refresh();message(notice,t('Соединение создано','Connection created'));}catch(err){if(generation===dialogGeneration){message(notice,err.message,true);save.disabled=false;}}});
