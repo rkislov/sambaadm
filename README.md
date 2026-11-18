@@ -1,61 +1,27 @@
 # sambaadm
 
-[Единый комплект установки sambaadm и helper для ALT Linux](docs/alt-install.md#единый-комплект-для-новой-установки)
+**Аналог RSAT для Samba Active Directory.** Управляйте доменом через веб-интерфейс, CLI и REST API. Приложение поставляется одним Go-бинарником, а операции с файлами и службами на управляемых Linux-серверах выполняет отдельный `sambaadm-helper`.
 
-
-<!-- owner-maintenance:start -->
-**Автор проекта, изменений и публикаций — Кислов Роман Сергеевич ([@rkislov](https://github.com/rkislov)).**
-
-Ошибки и предложения принимаются через **Issues**, изменения — через **Pull Requests** из форков. Прямую запись в основной репозиторий и публикацию версий выполняет только владелец `rkislov`.
-<!-- owner-maintenance:end -->
-
-**Аналог RSAT для Samba4 Active Directory** — управление доменом через CLI, веб-интерфейс и REST API; операции на серверах выполняет отдельный агент.
-
-```text
-go build → один файл sambaadm
-         ├── CLI (cobra)
-         ├── Web UI (SSR + HTMX, без SPA и без Node.js)
-         └── REST API (/api/v1)
-```
-
-Linux-first: на контроллере домена удобно работать через `ldapi://` (Unix-сокет). Также поддерживаются `ldaps://` и кроссплатформенный запуск (Linux, Windows, macOS).
-
-> **v0.39.0** добавляет зашифрованные учётные данные сессии для SYSVOL и расширенные параметры входа с совместимостью LDAP по точному CN. [Релиз и порядок обновления](docs/releases/v0.39.0.md). [Дорожная карта](docs/ROADMAP.md).
-
----
-
-## Агент для операций на серверах
-
-Операции ОС, файлов и SYSVOL выполняет отдельный **sambaadm-helper** на каждом
-управляемом сервере, включая основной. Поддерживаются SSH и HTTPS API,
-запросы подписываются ключом управляющего сервера. LDAP, DNS и DRS остаются
-в sambaadm. Настройка обязательна для файловых операций: [инструкция helper](docs/helper.md).
-
-Доступны выбор RODC, назначения Password Replication Policy, принудительное
-заполнение кэша и просмотр аутентификаций выбранного RODC.
+[Скачать последний релиз](https://github.com/rkislov/sambaadm/releases/latest) · [Установка на ALT Linux](docs/alt-install.md#единый-комплект-для-новой-установки) · [Руководство администратора](docs/admin.md)
 
 ## Возможности
 
-| Слой | Что есть сейчас |
-|------|-----------------|
-| **CLI** | … + `share`, `printer`, `acl` |
-| **Web UI** | … + `/shares`, `/printers`, `/audit`, `/settings` |
-| **REST** | … + `/api/v1/shares`, `/printers`, `/acl` |
-| **LDAP** | `ldap://`, `ldaps://`, `ldapi://`, bind, paged search, add/modify/delete/moddn |
-| **Безопасность** | cookie-сессии (HttpOnly), CSRF, RBAC по `memberOf`, журнал аудита |
+- **Каталог Active Directory.** Пользователи, группы, компьютеры и подразделения (OU). Просмотр свойств, управление членством в группах, перенос объектов и сброс паролей. [Работа с каталогом](docs/web.md#каталог).
+- **Домен, сайты и репликация.** Роли FSMO, функциональные уровни, сайты, подсети, межсайтовые связи, доверия и соединения репликации. Можно проверить репликацию по разделам каталога, запустить синхронизацию и пересчёт KCC. Интерактивная карта показывает RWDC, RODC и связи между доменами. Раскладку можно выгрузить в редактируемый файл Draw.io. [Интерактивная топология](docs/releases/v0.43.1.md) · [Управление связями](docs/releases/v0.43.4.md).
+- **DNS.** Диспетчер в стиле RSAT с зонами прямого и обратного просмотра, деревом имён, поиском и фильтром по типу записи. Создание зон и записей, редактирование значений и TTL через DNS RPC. [Диспетчер DNS](docs/web.md#dns).
+- **Групповые политики.** Создание и привязка GPO, резервное копирование и восстановление, редактирование сценариев и поддерживаемых параметров ADMX/ADML из каталога шаблонов Windows, ALT Linux и других поставщиков. Доступны моделирование результирующей политики для пользователя и компьютера с экспортом JSON и просмотр фактического отчёта RSoP из Windows `gpresult /x result.xml`. [Редактор GPO](docs/web.md#gpo) · [Моделирование и RSoP](docs/releases/v0.42.1.md).
+- **Доставка и проверка SYSVOL.** Доставка одной или всех политик домена с отображением прогресса и ошибок по контроллерам. Проверка согласованности GPO поддерживает до 100 обнаруженных DC и формирует отчёты HTML и JSON. Для устранения расхождений доступно управляемое исправление с архивом и журналом. [Проверка SYSVOL](docs/web.md#согласованность-sysvol) · [Массовая доставка](docs/releases/v0.42.7.md).
+- **RODC и аутентификация.** Управление Password Replication Policy и принудительное заполнение кэша выбранного RODC. По настроенному JSON-аудиту Samba можно просматривать входы на RWDC и RODC и искать учётную запись по контроллерам. [Работа с RODC](docs/admin.md#назначение-учётных-записей-для-rodc) · [Журналы аутентификации](docs/releases/v0.42.6.md).
+- **Обследование домена.** Обзор состояния контроллеров, экспорт результатов, поиск остатков выведенных DC и подготовка плана очистки LDAP. Для площадок без сетевого доступа можно собрать снимки локально через `sambaadm-helper collect`, затем импортировать их и сформировать сводный отчёт. [Обследование домена](docs/admin.md#обзор-и-обследование-домена) · [Автономный сбор](docs/offline-survey.md).
+- **Файловые ресурсы и печать.** Публикация общих папок Samba и очередей CUPS, настройка параметров ресурсов, POSIX ACL и расширенных атрибутов. Для ALT p10 есть отдельное расширение Caja для просмотра предыдущих версий SMB. [Общие папки и принтеры](docs/web.md#остальные-разделы) · [Расширение Caja](contrib/caja-shadow-copies/README.md).
 
-Общая бизнес-логика живёт в `internal/service` и вызывается из CLI и HTTP. Операции на управляемых узлах отправляются соответствующему helper.
+## Агент для операций на серверах
 
----
-
-Обновлённые инструкции с иллюстрациями: [администратору в Word](docs/admin-guide/sambaadm-admin-guide.docx) и [пользователю в Word](docs/user-guide/sambaadm-user-guide.docx). Текстовые версии: [администратор](docs/admin.md), [пользователь](docs/user.md). Обе инструкции обновлены для v0.32.0: подключение helper, RODC, политики, DNS, диагностика и ежедневная работа операторов.
-
-В v0.24.0 также включён [отдельный файловый журнал событий](docs/web.md#файловый-журнал-событий-приложения): `logging.file` или `serve --log-file`, с сохранением вывода в stderr и отдельного аудита.
-
-
-В GPO доступно [моделирование результирующей политики ALT и Windows](docs/web.md#моделирование-результирующей-политики-alt-linux-и-windows): итоговые значения, GPO-источники, подсветка конфликтов и экспорт JSON. Безопасность и WMI задаются допущениями; модель не заменяет проверку на клиенте.
-
-Актуальные возможности [веб-интерфейса](docs/web.md): дерево каталога, операции пользователей и групп, DNS, GPO и остальные административные разделы.
+Установите `sambaadm-helper` на каждом Linux-узле, где sambaadm должен выполнять
+операции с файлами, SYSVOL или службами. Для доставки GPO агент нужен на
+контроллерах-источниках и получателях. Поддерживаются HTTPS API и SSH, запросы
+подписываются ключом управляющего сервера. Операции LDAP, DNS RPC и DRS выполняет
+само приложение. [Настройка и регистрация helper](docs/helper.md).
 
 ## Быстрый старт
 
@@ -79,7 +45,7 @@ sambaadm discover --realm corp.example --dc dc1.corp.example --output config.yam
 `serve --check` только проверяет настройки и не создаёт конфигурацию.
 
 
-Скачайте релиз для вашей ОС из [Releases](../../releases) и сделайте файл исполняемым (Linux):
+Скачайте релиз для вашей ОС из [Releases](https://github.com/rkislov/sambaadm/releases/latest) и сделайте файл исполняемым (Linux):
 
 ```bash
 chmod +x sambaadm-linux-amd64
@@ -126,14 +92,7 @@ make build
 ./bin/sambaadm serve --listen=:8080
 ```
 
-Кросс-сборка Linux amd64 и Windows amd64:
-
-```bash
-make release-github
-# → dist/sambaadm-linux-amd64
-# → dist/sambaadm-windows-amd64.exe
-# → dist/SHA256SUMS
-```
+`make release` собирает sambaadm для Linux, macOS и Windows, а также helper для Linux. Готовые файлы появляются в `dist/`.
 
 ---
 
@@ -224,7 +183,7 @@ sambaadm subnet list|create|delete
 sambaadm dns zone list|create|delete
 sambaadm dns record query|add|update|delete
 sambaadm gpo list|show|create|delete|link|unlink|backup|restore
-sambaadm gpo distribute <gpo>   # SYSVOL → все DC + ACL, со статусом
+sambaadm gpo distribute <gpo>   # доставка GPO на контроллеры со статусом
 
 sambaadm share list|show|create|delete|set|reload
 sambaadm printer list|create|delete
@@ -246,39 +205,30 @@ sambaadm acl get|set <path>
 | `/login` | вход (LDAP bind → `memberOf` → роль → сессия) |
 | `/` | дашборд |
 | `/users` … `/gpo`, `/domain` | разделы UI |
-| `/shares`, `/printers` | локальные шары smb.conf и принтеры |
+| `/shares`, `/printers` | общие папки Samba и принтеры на управляемом узле |
+| `/surveys` | материалы автономного обследования |
+| `/settings/helpers` | регистрация управляемых узлов |
 | `/audit` | журнал аудита |
-| `/settings` | язык интерфейса (ru/en) |
-| `/api/v1/users` | JSON API (мутации: заголовок `X-CSRF-Token`) |
+| `/settings` | настройки интерфейса и редактора GPO |
+| `/api/v1/users`, `/api/docs` | пример ресурса REST API и встроенная документация OpenAPI |
 | `/healthz` | liveness |
 | `/metrics` | Prometheus |
 
 Фронтенд — серверный HTML (`html/template`) + HTMX; CSS/JS вшиты в бинарник через `embed`. Node.js в рантайме не нужен.
 
-Роли задаются группами в `auth.roles` (DN). Если группы не заданы — все успешно вошедшие получают `admin`. CSRF обязателен для POST/PUT/PATCH/DELETE при наличии сессии (форма `csrf_token` или заголовок `X-CSRF-Token`).
+Роли задаются группами в `auth.roles` (DN). Если группы не заданы — все успешно вошедшие получают `admin`. CSRF обязателен для POST/PUT/PATCH/DELETE при наличии сессии (форма `csrf_token` или заголовок `X-CSRF-Token`). Для доступа к SYSVOL через helper доступны зашифрованные учётные данные текущей сессии. [Настройка доступа к SYSVOL](docs/session-credentials.md).
 
 ---
 
 ## Архитектура
 
-```text
-┌─────────────────────────────────────────────┐
-│                 sambaadm                    │
-│  CLI (cobra)  │  HTTP (chi)  │  REST /api   │
-│               └──────┬───────┴───────┬──────┘
-│                      ▼               ▼
-│              internal/service (ядро)
-│                      ▼
-│         LDAP / RPC / SMB
-│                      ▼
-│         embed: templates + static
-└─────────────────────────────────────────────┘
-                      ▼
-               Samba4 AD DC
-```
+CLI и HTTP используют общую логику из `internal/service`. Приложение подключается
+к Samba AD через LDAP, RPC и SMB и делегирует операции на Linux-узлах
+зарегистрированным агентам.
 
 ```text
-cmd/sambaadm/          точка входа
+cmd/sambaadm/          приложение и CLI
+cmd/sambaadm-helper/   агент для Linux-узлов
 internal/
   cli/                 команды cobra
   service/             бизнес-логика
@@ -296,24 +246,18 @@ configs/               примеры конфигурации
 
 ## Установка на ALT Linux (RPM)
 
-RPM устанавливает `/usr/bin/sambaadm`, systemd-unit и helper
-`/usr/sbin/sambaadm-package`. Обновления сохраняют YAML/env, а откат возвращает
-предыдущий RPM и снимок настроек. Первая установка не запускает сервис.
+В [релизах](https://github.com/rkislov/sambaadm/releases/latest) доступны отдельные
+RPM и комплекты установки для ALT Linux p10 и p11 на x86_64 и aarch64.
+Сверьте SHA-256 архива, распакуйте его и выполните из каталога комплекта:
 
 ```bash
-sudo bash deploy/sambaadm-package install ./sambaadm-0.31.0-alt1.x86_64.rpm
-sudoedit /etc/sambaadm/config.yaml
-sudoedit /etc/sambaadm/env
-sudo systemctl enable --now sambaadm
-# Последующие обновления:
-sudo sambaadm-package update ./new.rpm
-sudo sambaadm-package list
-sudo sambaadm-package rollback <snapshot-id>
+sh setup-alt.sh all --check
+sudo sh setup-alt.sh all
 ```
 
-Сборка: `make rpm-alt VERSION=0.31.0 RPM_ARCH=amd64` (Go + Docker).
-[Подробная инструкция, границы отката и переход с ручной установки](docs/alt-install.md).
-Проверки пакета ALT p10 отделены от приёмки на ALT СП 10.2.2.
+Режим `all` устанавливает sambaadm и локальный helper. Для установки только
+приложения используйте `server`, для удалённого узла — `helper`.
+[Установка, обновление и откат](docs/alt-install.md).
 
 ## Ручная установка на Linux (systemd)
 
@@ -357,85 +301,33 @@ docker run --rm -p 8080:8080 \
 make build     # bin/sambaadm
 make test
 make lint      # golangci-lint
-make release   # linux/darwin/windows amd64+arm64
+make release   # Linux/macOS amd64 и arm64, Windows amd64
 make docker
 ```
 
-Целевой размер бинарника: ≤ 30 МБ (`-ldflags "-s -w"`).
+После изменения шаблонов или стилей выполните `make ui`. Исходные стили находятся в `ui/styles.css`, результат сборки — в `internal/web/static/css/ui.css`.
 
 ---
 
 ## Совместимость
 
-- Samba 4.15+ (интеграционные smoke-тесты — опционально через `testdata/`)
-- Linux (основная платформа), Windows, macOS
-- Go 1.22+ для сборки
-
----
-
-## Дорожная карта (по ТЗ §12)
-
-| # | Содержание | Статус |
-|---|------------|--------|
-| 1 | Каркас: cobra, chi, embed, конфиг, LDAP-клиент, auth | ✅ |
-| 2 | Пользователи, группы, OU, компьютеры (CLI + Web + API) | ✅ |
-| 3 | Доверия, домен, FSMO, репликация, сайты | ✅ |
-| 4 | DNS, GPO (базовый) | ✅ |
-| 5 | SSR-шаблоны, HTMX, локализация, RBAC, аудит | ✅ |
-| 6 | Тесты, документация, упаковка, релиз | ✅ |
-
-Подробнее: [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-**Вне нумерации этапов ТЗ:** управление локальным `smb.conf` (общие папки, принтеры, POSIX ACL) — CLI `share`/`printer`/`acl`, UI `/shares` `/printers`, API `/api/v1/shares|printers|acl`.
-
----
+- Samba 4.15+. Интеграционные проверки описаны в [testdata/README.md](testdata/README.md).
+- Готовые сборки sambaadm доступны для Linux и macOS (amd64, arm64) и Windows (amd64). Для helper используется Linux.
+- Для сборки из исходников нужен Go 1.26 или новее.
 
 ## Документация
 
-| Документ | Описание |
-|----------|----------|
-| [`docs/cli.md`](docs/cli.md) | CLI-справочник |
-| [`docs/api.md`](docs/api.md) | REST API |
-| [`docs/admin.md`](docs/admin.md) | Установка и администрирование |
-| [`docs/security.md`](docs/security.md) | Безопасность |
-| `/api/docs` | OpenAPI (встроенный просмотрщик) |
-
----
+- [Руководство администратора](docs/admin.md) · [версия Word](docs/admin-guide/sambaadm-admin-guide.docx)
+- [Руководство пользователя](docs/user.md) · [версия Word](docs/user-guide/sambaadm-user-guide.docx)
+- [Веб-интерфейс](docs/web.md) · [CLI](docs/cli.md) · [REST API](docs/api.md)
+- [Безопасность](docs/security.md) · [Дорожная карта](docs/ROADMAP.md) · [История релизов](https://github.com/rkislov/sambaadm/releases)
 
 ## Лицензия
 
-[Apache License 2.0](LICENSE)
+[Apache License 2.0](LICENSE) · [NOTICE](NOTICE)
 
-Разработано **Кисловым Романом Сергеевичем**. См. [NOTICE](NOTICE).
+<!-- owner-maintenance:start -->
+**Автор проекта, изменений и публикаций — Кислов Роман Сергеевич ([@rkislov](https://github.com/rkislov)).**
 
-- GitHub: https://github.com/rkislov/sambaadm
-
-### Сайты и репликация (v0.11.0)
-
-Веб-интерфейс поддерживает топологию сайтов/DC/подсетей, перенос DC, IP Site Links со стоимостью и интервалом, расписания UTC для соединений, управление соединениями и запуск KCC. Состояние репликации показывает реальные результаты `drs showrepl` по разделам; зарегистрированный в AD контроллер не считается автоматически исправным. Подробнее: [веб-интерфейс](docs/web.md#сайты-и-репликация-v0110), [API](docs/api.md#топология-и-репликация-v0110).
-
-Для проверки на двух одноразовых Samba DC: `SAMBAADM_TWO_DC=1 make integration`. DRS не копирует файлы SYSVOL; применение на ALT СП 10.2.2 требует отдельной приёмки.
-
-Запись расписаний Site Link заблокирована из-за обнаруженного сбоя KCC Samba 4.17; причина показана в интерфейсе.
-
-## Нативный доменный клиент v0.20.0
-
-Доменные операции работают без `samba-tool` и Python Samba. [Запуск тестового домена на Mac, подключение и ограничения](docs/mac-domain.md).
-
-В v0.28.0 добавлен отчёт **GPO → Почему применяется GPO**: путь наследования, причины исключения и порядок условных кандидатов по LDAP. [Описание и ограничения](docs/web.md#почему-применяется-gpo).
-
-## v0.33.0
-
-Единый обзор домена, контроллеров и площадок, экспорт обследования, авторизации RWDC/RODC и проверка возможных остатков DC/сайтов/связей LDAP без удаления. Даты отображаются с часовым поясом браузера. Обновите sambaadm и отдельный sambaadm-helper для нового метода чтения версии Samba и служб. [Релиз и миграция](docs/releases/v0.33.0.md), [инструкция администратора](docs/admin.md), [инструкция пользователя](docs/user.md).
-
-
-## v0.34.0
-
-Очистка NTDS Settings, RID/DFSR-поддеревьев и отдельных значений DNS выведенных DC с проверкой зависимостей, FSMO и репликации. Новый helper создаёт холодную копию, выполняет пробную очистку и повторное восстановление в изоляции; применение защищено ревизиями и журналом. Рабочие операции обходятся без samba-tool. Обновлены руководства Markdown и Word. [Релиз и миграция](docs/releases/v0.34.0.md).
-
-### Сборка интерфейса
-
-CSS Tailwind 3.4 уже включён в исходники и бинарник. После изменения форм или
-общих компонентов выполните `make ui` (Node.js/npm только на машине разработчика).
-Исходник компонентов — `ui/styles.css`, результат — `internal/web/static/css/ui.css`.
-На сервере Node.js, npm и подключение к CDN не требуются.
+Ошибки и предложения принимаются через **Issues**, изменения — через **Pull Requests** из форков. Прямую запись в основной репозиторий и публикацию версий выполняет только владелец `rkislov`.
+<!-- owner-maintenance:end -->
