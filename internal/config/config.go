@@ -28,19 +28,21 @@ type Config struct {
 }
 
 type HelperServerConfig struct {
-	TimeConfig          string    `mapstructure:"time_config"`
-	TimeService         string    `mapstructure:"time_service"`
-	DomainBackupEnabled bool      `mapstructure:"domain_backup_enabled"`
-	Node                string    `mapstructure:"node"`
-	TrustedKeys         []string  `mapstructure:"trusted_keys"`
-	Listen              string    `mapstructure:"listen"`
-	TLS                 TLSConfig `mapstructure:"tls"`
-	SYSVOLPrefix        string    `mapstructure:"sysvol_prefix"`
-	AuthLog             string    `mapstructure:"auth_log"`
-	PasswordFile        string    `mapstructure:"password_file"`
-	BackupRoot          string    `mapstructure:"backup_root"`
-	StateDir            string    `mapstructure:"state_dir"`
-	ADMXRoot            string    `mapstructure:"admx_root"`
+	DomainRestoreEnabled bool      `mapstructure:"domain_restore_enabled"`
+	DomainRestoreRoot    string    `mapstructure:"domain_restore_root"`
+	TimeConfig           string    `mapstructure:"time_config"`
+	TimeService          string    `mapstructure:"time_service"`
+	DomainBackupEnabled  bool      `mapstructure:"domain_backup_enabled"`
+	Node                 string    `mapstructure:"node"`
+	TrustedKeys          []string  `mapstructure:"trusted_keys"`
+	Listen               string    `mapstructure:"listen"`
+	TLS                  TLSConfig `mapstructure:"tls"`
+	SYSVOLPrefix         string    `mapstructure:"sysvol_prefix"`
+	AuthLog              string    `mapstructure:"auth_log"`
+	PasswordFile         string    `mapstructure:"password_file"`
+	BackupRoot           string    `mapstructure:"backup_root"`
+	StateDir             string    `mapstructure:"state_dir"`
+	ADMXRoot             string    `mapstructure:"admx_root"`
 }
 
 // SambaConfig controls local smb.conf / file-share administration.

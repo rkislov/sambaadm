@@ -159,7 +159,8 @@ def capture(directory, conf, job):
         full = '/'+name
         if os.path.commonpath([full,os.path.abspath(paths.sysvol)]) == os.path.abspath(paths.sysvol):
             acl[name] = getntacl(lp,full,system_session()).as_sddl(dom_sid(domain_sid))
-    manifest = dict(format='sambaadm-cold-dc-v1', request=job, config=os.path.abspath(conf),
+    import samba
+    manifest = dict(sambaVersion=samba.version, format='sambaadm-cold-dc-v1', request=job, config=os.path.abspath(conf),
                     roots=roots, files=before, sysvolACL=acl, pathParameters={key:lp.get(key) for key in PATH_PARAMETERS}, domainSID=domain_sid, restoreMode='isolated-same-dc', created=now())
     archive = directory/'domain.tar.gz'
     with tarfile.open(archive,'x:gz',format=tarfile.PAX_FORMAT) as tar:

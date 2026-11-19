@@ -11,13 +11,16 @@ import (
 )
 
 type backupPageContent struct {
-	Backups   []service.ObjectBackupSummary
-	Snapshot  *service.ObjectBackup
-	Plan      *service.ObjectRestorePlan
-	FullPlans []service.DomainBackupRequest
-	FullPlan  *service.DomainBackupRequest
-	FullJob   *service.DomainBackupJob
-	Nodes     []string
+	RestorePlan *service.DomainRestorePlan
+	RestoreJob  *service.DomainRestoreJob
+	RestoreNode string
+	Backups     []service.ObjectBackupSummary
+	Snapshot    *service.ObjectBackup
+	Plan        *service.ObjectRestorePlan
+	FullPlans   []service.DomainBackupRequest
+	FullPlan    *service.DomainBackupRequest
+	FullJob     *service.DomainBackupJob
+	Nodes       []string
 }
 
 func (s *Server) objectBackupClient() *service.ObjectBackupService {
@@ -33,7 +36,7 @@ func (s *Server) handleObjectBackups(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	pd := s.page(r, "Резервные копии домена", nil)
-	content := backupPageContent{Nodes: s.fullBackupNodes()}
+	content := backupPageContent{Nodes: s.fullBackupNodes(), RestoreNode: r.FormValue("restoreNode")}
 	full := s.fullBackupClient()
 	fullID := r.FormValue("full")
 	client := s.objectBackupClient()
@@ -45,6 +48,23 @@ func (s *Server) handleObjectBackups(w http.ResponseWriter, r *http.Request) {
 		}
 		s.backupMu.Lock()
 		switch r.FormValue("action") {
+		case "domain-restore-plan":
+			input := service.DomainRestoreInput{BackupID: r.FormValue("backupID"), NewName: r.FormValue("newName"), Address: r.FormValue("address")}
+			var plan service.DomainRestorePlan
+			if err := s.callDomainRestore(r, content.RestoreNode, "domain.restore.plan", input, &plan); err != nil {
+				pd.Error = err.Error()
+			} else {
+				content.RestorePlan = &plan
+			}
+		case "domain-restore-start":
+			input := service.DomainRestoreInput{ID: r.FormValue("restoreID"), Revision: r.FormValue("restoreRevision"), ConfirmDomainLost: r.FormValue("confirmDomainLost") == "true", ConfirmIsolated: r.FormValue("confirmIsolated") == "true"}
+			var job service.DomainRestoreJob
+			if err := s.callDomainRestore(r, content.RestoreNode, "domain.restore.start", input, &job); err != nil {
+				pd.Error = err.Error()
+			} else {
+				content.RestoreJob = &job
+				pd.Flash = "Задача восстановления отправлена. Дождитесь ready; запуск службы выполняется вручную."
+			}
 		case "full-prepare":
 			out, err := full.Prepare(r.Context(), r.FormValue("controller"), sessionFrom(r).Username, r.RemoteAddr)
 			if err != nil {
@@ -122,6 +142,14 @@ func (s *Server) handleObjectBackups(w http.ResponseWriter, r *http.Request) {
 			} else {
 				content.FullJob = job
 			}
+		}
+	}
+	if restoreID := r.FormValue("restoreID"); restoreID != "" && r.Method == http.MethodGet {
+		var job service.DomainRestoreJob
+		if err := s.callDomainRestore(r, content.RestoreNode, "domain.restore.status", service.DomainRestoreInput{ID: restoreID}, &job); err != nil {
+			pd.Error = err.Error()
+		} else {
+			content.RestoreJob = &job
 		}
 	}
 	plans, planErr := full.List()

@@ -12,7 +12,7 @@ import (
 func TestObjectBackupAccessAndCSRF(t *testing.T) {
 	s := testWorkspaceServer(t)
 	s.cfg.Server.BackupDir = t.TempDir()
-	routes := []struct{ method, path string }{{"GET", "/api/v1/backups/full"}, {"POST", "/api/v1/backups/full/prepare"}, {"GET", "/api/v1/backups/full/invalid"}, {"POST", "/api/v1/backups/full/invalid/start"}, {"GET", "/backups"}, {"POST", "/backups"}, {"GET", "/api/v1/backups"}, {"POST", "/api/v1/backups"}, {"GET", "/api/v1/backups/invalid"}, {"GET", "/api/v1/backups/invalid/objects/invalid/preview"}, {"POST", "/api/v1/backups/invalid/objects/invalid/restore"}}
+	routes := []struct{ method, path string }{{"POST", "/api/v1/backups/restore/plan"}, {"POST", "/api/v1/backups/restore/start"}, {"GET", "/api/v1/backups/restore/status"}, {"GET", "/api/v1/backups/full"}, {"POST", "/api/v1/backups/full/prepare"}, {"GET", "/api/v1/backups/full/invalid"}, {"POST", "/api/v1/backups/full/invalid/start"}, {"GET", "/backups"}, {"POST", "/backups"}, {"GET", "/api/v1/backups"}, {"POST", "/api/v1/backups"}, {"GET", "/api/v1/backups/invalid"}, {"GET", "/api/v1/backups/invalid/objects/invalid/preview"}, {"POST", "/api/v1/backups/invalid/objects/invalid/restore"}}
 	for _, role := range []auth.Role{auth.RoleReadonly, auth.RoleHelpdesk} {
 		sess, _ := s.sessions.Create("tester", "CN=test", role)
 		for _, route := range routes {
@@ -60,5 +60,17 @@ func TestFullBackupPreparationFormAndStatusRender(t *testing.T) {
 	}
 	if strings.Contains(body, "<script>unsafe</script>") {
 		t.Fatal("unescaped worker error")
+	}
+}
+
+func TestDomainRecoveryPlanAndReadyRender(t *testing.T) {
+	s := testWorkspaceServer(t)
+	rec := httptest.NewRecorder()
+	s.render(rec, "backups.html", pageData{Role: auth.RoleAdmin, CSRF: "recovery-csrf", Content: backupPageContent{Nodes: []string{"recovery.example.com"}, RestoreNode: "recovery.example.com", RestorePlan: &service.DomainRestorePlan{ID: "recovery-id", Revision: "reviewed-recovery", NewName: "RECOVER", Target: "/srv/<unsafe>"}, RestoreJob: &service.DomainRestoreJob{Status: "ready", Activation: "manual", InvocationID: "new-invocation"}}})
+	body := rec.Body.String()
+	for _, want := range []string{"confirmDomainLost", "confirmIsolated", "reviewed-recovery", "recovery-csrf", "new-invocation", "/srv/&lt;unsafe&gt;", "Служба не запущена"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("missing %s: %s", want, body)
+		}
 	}
 }

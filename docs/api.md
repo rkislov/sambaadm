@@ -467,3 +467,8 @@ confirmDecommissioned:true}`, а сервер строит и проверяет
 (`controller`), `POST /backups/full/{id}/start` (`revision`, `confirmStopped:true`),
 `GET /backups/full` и `GET /backups/full/{id}`. После подготовки запуск/статус
 работают без LDAP; Samba на выбранном DC должна быть остановлена вручную.
+
+Восстановление первого DC при полной потере домена: `POST /backups/restore/plan`,
+`POST /backups/restore/start`, `GET /backups/restore/status` с query `node`.
+Новый каталог и имя DC, два подтверждения, ручной запуск службы; локальные команды
+helper работают без LDAP и веб-сессии. [Подробная инструкция](domain-recovery.md).

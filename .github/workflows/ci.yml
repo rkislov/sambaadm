@@ -61,6 +61,8 @@ jobs:
         run: SAMBAADM_RODC=1 make integration
       - name: Native cold DC backup and isolated restore without Samba CLI
         run: testdata/samba/test-domain-backup.sh
+      - name: Forest-loss recovery from a full cold backup into a new DC
+        run: testdata/samba/test-domain-restore.sh
 
   browser:
     runs-on: ubuntu-latest

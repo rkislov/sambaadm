@@ -200,6 +200,8 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return response, e
 	case "topology.cleanup.reserve", "topology.cleanup.event":
 		return helperCleanupApply(ctx, cfg, method, in)
+	case "domain.restore.plan", "domain.restore.start", "domain.restore.status":
+		return helperDomainRestore(ctx, cfg, method, in)
 	case "domain.backup.start", "domain.backup.status":
 		return helperDomainBackup(ctx, cfg, method, in)
 	case "topology.snapshot.store", "topology.snapshot.load":

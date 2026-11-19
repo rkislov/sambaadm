@@ -199,7 +199,10 @@ func backupHostFile(controller string) ([]byte, error) {
 
 func backupUnit(id string) string { return "sambaadm-domain-backup-" + id + ".service" }
 func backupActive(ctx context.Context, id string) (bool, error) {
-	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "show", backupUnit(id), "--property=LoadState", "--property=ActiveState")
+	return unitActive(ctx, backupUnit(id))
+}
+func unitActive(ctx context.Context, unit string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "/usr/bin/systemctl", "show", unit, "--property=LoadState", "--property=ActiveState")
 	data, e := cmd.Output()
 	if e != nil {
 		return false, fmt.Errorf("cannot determine backup unit status")

@@ -359,3 +359,14 @@ sudo systemctl enable --now sambaadm-helper
 в расширенных параметрах входа оставьте включённой соответствующую опцию.
 Пароль хранится зашифрованным в памяти sambaadm и передаётся helper только для
 операций SYSVOL. [Хранение, истечение сессии и обновление helper](session-credentials.md).
+
+### Восстановление первого DC после полной потери домена
+
+`domain.restore.plan/start/status` и локальные команды `domain-restore-plan`,
+`domain-restore`, `domain-restore-status` не требуют LDAP. Включаются отдельно
+через `helper.domain_restore_enabled` и `helper.domain_restore_root`.
+Восстановление выполняется в новый каталог штатными средствами установленной
+Samba (`samba-tool` и `samba_spnupdate`), с последующей изолированной проверкой.
+Это отдельный сценарий, не меняющий нативный механизм создания холодной копии
+без CLI и не перезаписывающий рабочую базу.
+[Условия, подтверждения и ручной ввод DC](domain-recovery.md).

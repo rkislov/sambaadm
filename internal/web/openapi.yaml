@@ -6,6 +6,62 @@
 "servers":
     - "url": "/api/v1"
 "paths":
+    "/backups/restore/plan":
+        "post":
+            "summary": "Inspect a verified full cold archive and prepare first-DC forest recovery (admin, CSRF)"
+            "description": "No LDAP required after login. Uses a registered recovery helper with domain_restore_enabled and a separate domain_restore_root. Single-domain forest, TDB; new name and new target only. Source must be a completed standalone full backup with matching checksum and recovery receipt. For total LDAP loss use local helper recovery commands."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["backupID", "newName", "address"]
+                            "properties":
+                                "backupID": {"type": "string", "format": "uuid"}
+                                "newName": {"type": "string", "maxLength": 15}
+                                "address": {"type": "string", "format": "ipv4"}
+            "responses":
+                "200": {"description": "One-hour plan: id, revision, target, config, sourceController, domain identity, checksum and source Samba version when recorded"}
+                "400": {"description": "Invalid source, configuration, name, address or helper failure"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+    "/backups/restore/start":
+        "post":
+            "summary": "Recover first DC into a new directory, without activating a service (admin, CSRF)"
+            "description": "Requires the reviewed revision and confirmations that the whole domain is lost, every former DC is stopped and the recovery host is isolated. A private-network systemd worker converts the cold image into a native Samba offline backup and performs native forest recovery. New DSA/invocation, FSMO/RID, old-DC removal and krbtgt rotation; then exact-candidate isolated Kerberos/LDAP/SYSVOL checks. Same request ID is one-use, including failures. Existing data is never overwritten. Activation and OS/DNS/service configuration remain manual."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["id", "revision", "confirmDomainLost", "confirmIsolated"]
+                            "properties":
+                                "id": {"type": "string", "format": "uuid"}
+                                "revision": {"type": "string"}
+                                "confirmDomainLost": {"type": "boolean", "enum": [true]}
+                                "confirmIsolated": {"type": "boolean", "enum": [true]}
+            "responses":
+                "202": {"description": "Queued or previous durable job; ready plus full liveVerification required before manual activation"}
+                "400": {"description": "Stale plan, missing confirmation, changed archive, target conflict or launch failure; inspect status before retrying"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+    "/backups/restore/status":
+        "get":
+            "summary": "Read durable domain recovery status directly from helper, without LDAP (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            "responses":
+                "200": {"description": "planned/queued/running/ready/failed/unknown/interrupted, manual activation, target/config and liveVerification. Partial targets must not be started. Logs remain private on helper."}
+                "400": {"description": "Invalid identity, missing job, incomplete ready evidence or unavailable helper"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
     "/backups/full":
         "get":
             "summary": "List persisted standalone cold DC backup preparations (admin)"

@@ -32,7 +32,7 @@ func main() {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: sambaadm-helper stdio|serve|keygen|collect [options]")
+		return fmt.Errorf("usage: sambaadm-helper stdio|serve|keygen|collect|domain-restore-plan|domain-restore|domain-restore-status [options]")
 	}
 	mode := os.Args[1]
 	if mode == "version" {
@@ -48,6 +48,13 @@ func run() error {
 	dnsResolvers := flags.String("dns-resolvers", "", "comma-separated resolver IPs (up to 4, workstation only)")
 	dnsQueries := flags.String("dns-queries", "", "comma-separated FQDN/TYPE queries (up to 8, workstation only)")
 	account := flags.String("account", "", "optional cached SSSD account for alt-workstation")
+	restoreBackup := flags.String("backup-id", "", "cold backup UUID for domain recovery")
+	restoreName := flags.String("new-name", "", "new DC NetBIOS name for forest recovery")
+	restoreAddress := flags.String("address", "", "new DC IPv4 address")
+	restoreID := flags.String("id", "", "prepared recovery UUID")
+	restoreRevision := flags.String("revision", "", "reviewed recovery plan revision")
+	confirmLost := flags.Bool("confirm-domain-lost", false, "confirm full domain loss and shutdown of all former DCs")
+	confirmIsolated := flags.Bool("confirm-isolated", false, "confirm recovery host is isolated and compatible Samba is installed")
 	site := flags.String("site", "", "operator-supplied site label")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
@@ -61,7 +68,8 @@ func run() error {
 		}
 		return agent.GenerateKey(*private, *public)
 	}
-	if mode != "stdio" && mode != "serve" && mode != "collect" {
+	recoveryMode := mode == "domain-restore-plan" || mode == "domain-restore" || mode == "domain-restore-status"
+	if mode != "stdio" && mode != "serve" && mode != "collect" && !recoveryMode {
 		return fmt.Errorf("unsupported helper command")
 	}
 	if runtime.GOOS != "linux" {
@@ -76,6 +84,41 @@ func run() error {
 	}
 	if e = checkHelperConfig(cfg.Source); e != nil {
 		return e
+	}
+	if recoveryMode {
+		if os.Geteuid() != 0 {
+			return fmt.Errorf("local domain recovery requires root")
+		}
+		logger, err := audit.New(cfg.Audit.File)
+		if err != nil {
+			return err
+		}
+		defer logger.Close()
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		input := service.DomainRestoreInput{BackupID: *restoreBackup, NewName: *restoreName, Address: *restoreAddress, ID: *restoreID, Revision: *restoreRevision, ConfirmDomainLost: *confirmLost, ConfirmIsolated: *confirmIsolated}
+		method := "domain.restore.plan"
+		if mode == "domain-restore" {
+			method = "domain.restore.start"
+		}
+		if mode == "domain-restore-status" {
+			method = "domain.restore.status"
+		}
+		raw, err := json.Marshal(input)
+		if err != nil {
+			return err
+		}
+		operation, err := json.Marshal(service.HostOperation{Name: *restoreID, Input: raw})
+		if err != nil {
+			return err
+		}
+		result, err := (&service.Services{Audit: logger}).HelperDispatch(ctx, cfg, method, operation)
+		if err != nil {
+			return err
+		}
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(result)
 	}
 	if mode == "collect" {
 		if *out == "" {
