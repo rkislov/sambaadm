@@ -6,6 +6,8 @@ server:
   metrics: true
   # Private local CA and uploaded LDAP trust; include in server backups.
   certificate_dir: /var/lib/sambaadm/certificates
+  # Private logical domain object snapshots, local to the sambaadm server.
+  backup_dir: /var/lib/sambaadm/backups
   survey_dir: /var/lib/sambaadm/surveys
 
 ldap:

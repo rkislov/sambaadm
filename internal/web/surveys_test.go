@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sambaadm/internal/auth"
 	"strings"
@@ -55,5 +56,24 @@ func TestSurveyImportAndReview(t *testing.T) {
 	}
 	if got := request("POST", url, "{}", admin.ID, admin.CSRFToken); got.Code != 400 {
 		t.Fatal(got.Code)
+	}
+}
+
+func TestSurveyBrowserFixture(t *testing.T) {
+	dir := os.Getenv("SAMBAADM_SURVEY_FIXTURE_DIR")
+	if dir == "" {
+		t.Skip("browser harness only")
+	}
+	s := testWorkspaceServer(t)
+	sess, _ := s.sessions.Create("tester", "CN=tester", auth.RoleAdmin)
+	req := httptest.NewRequest("GET", "/surveys", nil)
+	req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatal(rec.Code)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "surveys.html"), rec.Body.Bytes(), 0600); err != nil {
+		t.Fatal(err)
 	}
 }

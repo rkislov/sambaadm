@@ -1,0 +1,8 @@
+.survey-page { min-width: 0; }
+.survey-page select { max-width: 100%; }
+.survey-page p { overflow-wrap: anywhere; }
+.survey-page .survey-scroll { max-width: 100%; overflow-x: auto; margin: 1rem 0; }
+.survey-page .survey-scroll table { min-width: 48rem; width: 100%; }
+.survey-page .survey-scroll td span { white-space: pre-wrap; overflow-wrap: anywhere; }
+.survey-page .survey-scroll th { text-align: left; }
+.survey-page .survey-scroll:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

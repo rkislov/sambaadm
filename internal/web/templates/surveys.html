@@ -1,6 +1,6 @@
 {{define "surveys.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script defer src="/static/js/surveys.js"></script></head>
-<body>{{template "nav" .}}<main class="container">
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<link rel="stylesheet" href="/static/css/survey-workstation.css"><script defer src="/static/js/survey-coverage.js"></script><script defer src="/static/js/survey-workstation.js"></script><script defer src="/static/js/surveys.js"></script></head>
+<body>{{template "nav" .}}<main class="container survey-page">
 <h1>Материалы автономного обследования</h1>
 <p>Загрузите материалы, полученные от администратора площадки. Узел и площадка в импортированных файлах указаны отправителем. Проверьте содержимое перед передачей.</p>
 <form id="survey-import">
@@ -17,5 +17,10 @@
 <button type="button" id="survey-build">Сформировать отчёт</button>
 <section id="survey-report" aria-live="polite"></section></details>
 <section id="survey-view"></section>
+<details><summary>Сравнить два снимка станции</summary>
+<p>Текущий материал сравнивается с выбранным исходным. FQDN должен совпадать. Отсутствие данных не означает удаление настройки.</p>
+<label>Исходный снимок <select id="survey-before"></select></label>
+<button type="button" id="survey-compare">Сравнить с текущим</button>
+<section id="survey-diff" aria-live="polite"></section></details>
 </main></body></html>
 {{end}}

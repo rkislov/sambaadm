@@ -39,6 +39,7 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
+	backupMu    sync.Mutex
 	certMu      sync.Mutex
 	enrollMu    sync.Mutex
 	surveyMu    sync.Mutex
@@ -105,6 +106,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Use(s.requestLogger)
 	r.Use(chimw.Recoverer)
 	r.Use(s.withLang)
+	r.Use(selfRequestLimit)
 
 	staticFS, err := fs.Sub(assets, "static")
 	if err == nil {
@@ -146,14 +148,19 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/printers", s.handleWorkspace)
 		r.Get("/printers/new", s.handlePrinterCreateForm)
 		r.Post("/printers", s.handlePrinterCreatePost)
+		r.Get("/backups", s.handleObjectBackups)
+		r.Post("/backups", s.handleObjectBackups)
 		r.Get("/audit", s.handleAudit)
 		r.Get("/surveys", s.surveyPage)
 		r.Get("/diagnostics", s.handleDiagnostics)
 		r.Post("/diagnostics/run", s.handleDiagnosticsRun)
 		r.Get("/settings/certificates", s.handleCertificates)
+		r.Get("/settings/time", s.handleTimeSettings)
+		r.Post("/settings/time", s.handleTimeSettings)
 		r.Post("/settings/certificates", s.handleCertificates)
 		r.Get("/settings/helpers", s.enrollHelper)
 		r.Post("/settings/helpers", s.enrollHelper)
+		r.Get("/me", s.handleSelfPage)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsPost)
 		r.Post("/settings/gpo-editor", s.handleGPOEditorSettings)
@@ -162,6 +169,23 @@ func (s *Server) buildRouter() chi.Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
+		r.Get("/backups", s.handleAPIObjectBackups)
+		r.Post("/backups", s.handleAPIObjectBackups)
+		r.Get("/backups/full", s.handleAPIFullBackups)
+		r.Post("/backups/full/prepare", s.handleAPIFullBackups)
+		r.Get("/backups/full/{id}", s.handleAPIFullBackups)
+		r.Post("/backups/full/{id}/start", s.handleAPIFullBackups)
+		r.Get("/backups/{id}", s.handleAPIObjectBackups)
+		r.Get("/backups/{id}/objects/{guid}/preview", s.handleAPIObjectBackups)
+		r.Post("/backups/{id}/objects/{guid}/restore", s.handleAPIObjectBackups)
+		r.Get("/me", s.handleSelfGet)
+		r.Put("/me", s.handleSelfUpdate)
+		r.Get("/me/photo", s.handleSelfPhotoGet)
+		r.Post("/me/photo", s.handleSelfPhotoSet)
+		r.Post("/me/password", s.handleSelfPassword)
+		r.Get("/me/history", s.handleSelfHistory)
+		r.Get("/me/location", s.handleSelfLocation)
+
 		r.Post("/shares/wizard", s.handleAPIShareWizard)
 		r.Get("/samba/profile", s.handleAPISambaProfile)
 		r.Put("/samba/profile", s.handleAPISambaProfile)
@@ -170,6 +194,9 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/surveys", s.surveysAPI)
 		r.Post("/system/diagnostics", s.handleAPIDiagnostics)
 		r.Get("/system/metrics", s.handleAPIHostMetrics)
+		r.Get("/system/time", s.handleAPITime)
+		r.Post("/system/time/plan", s.handleAPITime)
+		r.Put("/system/time", s.handleAPITime)
 		r.Post("/gpo/templates/import", s.handleAPITemplateImport)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)
 		r.Get("/groups/{name}", s.handleAPIGroupGet)

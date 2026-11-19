@@ -96,6 +96,8 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return nil, e
 	}
 	switch method {
+	case "time.inspect", "time.plan", "time.apply":
+		return helperTime(ctx, cfg, method, in)
 	case "shares.list":
 		return s.Shares.List(ctx)
 	case "shares.show":

@@ -21,6 +21,8 @@ func Normalize(s string) Lang {
 
 var catalog = map[Lang]map[string]string{
 	RU: {
+		"nav.self":          "Личный кабинет",
+		"self.title":        "Личный кабинет",
 		"nav.sections":      "Разделы",
 		"app.name":          "sambaadm",
 		"nav.dashboard":     "Дашборд",
@@ -65,6 +67,8 @@ var catalog = map[Lang]map[string]string{
 		"common.no_data":    "Нет данных",
 	},
 	EN: {
+		"nav.self":          "My account",
+		"self.title":        "My account",
 		"nav.sections":      "Sections",
 		"app.name":          "sambaadm",
 		"nav.dashboard":     "Dashboard",

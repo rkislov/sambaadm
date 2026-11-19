@@ -14,8 +14,9 @@ type SearchOptions struct {
 	BaseDN     string
 	Filter     string
 	Attributes []string
-	Scope      *int // nil = wholeSubtree
-	MaxEntries int  // optional hard limit; incomplete results are never returned
+	Scope      *int           // nil = wholeSubtree
+	MaxEntries int            // optional hard limit; incomplete results are never returned
+	Controls   []ldap.Control // optional controls, e.g. Show Deleted
 	PageSize   uint32
 }
 
@@ -70,7 +71,7 @@ func (c *Client) Search(ctx context.Context, opts SearchOptions) ([]*ldap.Entry,
 			0, 0, false,
 			filter,
 			opts.Attributes,
-			[]ldap.Control{paging},
+			append(append([]ldap.Control{}, opts.Controls...), paging),
 		)
 
 		res, err := conn.Search(req)

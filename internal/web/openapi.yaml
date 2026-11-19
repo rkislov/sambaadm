@@ -6,6 +6,123 @@
 "servers":
     - "url": "/api/v1"
 "paths":
+    "/backups/full":
+        "get":
+            "summary": "List persisted standalone cold DC backup preparations (admin)"
+            "responses":
+                "200": {"description": "Prepared requests with purpose full, id, controller, preparedAt and planRevision; archive status must be queried separately"}
+                "400": {"description": "Preparation store unavailable"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+    "/backups/full/prepare":
+        "post":
+            "summary": "Prepare a full cold RWDC backup while LDAP is online (admin, CSRF)"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["controller"]
+                            "properties":
+                                "controller": {"type": "string"}
+            "responses":
+                "201": {"description": "Persisted standalone request with id and planRevision, valid for 24 hours; does not create an archive"}
+                "400": {"description": "Invalid controller, RODC, missing registered helper, LDAP or persistence failure"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+    "/backups/full/{id}":
+        "parameters":
+            - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+        "get":
+            "summary": "Read standalone cold backup status directly from helper without LDAP (admin)"
+            "responses":
+                "200": {"description": "Durable job with status, restoreVerified, liveVerification, sha256, bytes; only backed_up plus restoreVerified confirms success"}
+                "400": {"description": "Unknown preparation, helper unavailable, or job identity mismatch"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin required"}
+    "/backups/full/{id}/start":
+        "parameters":
+            - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+        "post":
+            "summary": "Start prepared full cold backup after manual Samba shutdown (admin, CSRF)"
+            "description": "Requires Linux/systemd helper with domain_backup_enabled. No LDAP after preparation. Native sambaadm-cold-dc-v1 same-DC snapshot including secrets and SYSVOL; not a samba-tool backup or OS image. No automatic service stop/start. Background worker checks source is stopped, captures archive and verifies isolated live restore including Kerberos, LDAP and SYSVOL. Archive stays private on helper. Reusing the same request ID reads its durable job."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["revision", "confirmStopped"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "confirmStopped": {"type": "boolean", "enum": [true]}
+            "responses":
+                "202": {"description": "Job dispatched or existing job returned; poll status before restarting source Samba"}
+                "400": {"description": "Missing confirmation, stale/expired preparation, helper or launch failure; inspect job before retrying"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin and CSRF required"}
+    "/backups":
+        "get":
+            "summary": "List private logical domain object snapshots (admin)"
+            "responses":
+                "200": {"description": "Array of id, created, actor, baseDN, count"}
+                "400": {"description": "Cannot read backup store"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin role required"}
+        "post":
+            "summary": "Capture users, workstations, GPO LDAP/SYSVOL and reference metadata (admin, CSRF)"
+            "description": "Logical interval snapshot without secrets or LDAP ACLs; not full DC recovery. Private local server.backup_dir. No partial snapshot publication; 50000 objects and 256 MiB maximum."
+            "responses":
+                "201": {"description": "Snapshot metadata"}
+                "400": {"description": "Capture or persistence failed"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin role and CSRF required"}
+    "/backups/{id}":
+        "parameters":
+            - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+        "get":
+            "summary": "Read inventory or download checksummed snapshot (admin)"
+            "parameters":
+                - {"in": "query", "name": "download", "schema": {"type": "boolean"}}
+            "responses":
+                "200": {"description": "Metadata and object inventory, or attachment containing sha256 and snapshot"}
+                "400": {"description": "Invalid ID, corrupt or unavailable snapshot"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin role required"}
+    "/backups/{id}/objects/{guid}/preview":
+        "parameters":
+            - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            - {"in": "path", "name": "guid", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}
+        "get":
+            "summary": "Check original identity, deletion, collisions and parent before restoration (admin)"
+            "responses":
+                "200": {"description": "canRestore, reason, warning, revision, dn, name, kind"}
+                "400": {"description": "Invalid snapshot/object, foreign domain or LDAP failure"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin role required"}
+    "/backups/{id}/objects/{guid}/restore":
+        "parameters":
+            - {"in": "path", "name": "id", "required": true, "schema": {"type": "string", "format": "uuid"}}
+            - {"in": "path", "name": "guid", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}
+        "post":
+            "summary": "Restore one deleted account or create a new unlinked GPO (admin, CSRF)"
+            "description": "Requires matching preview revision and confirm:true. Accounts reanimate original tombstone with SID/GUID, disabled, then restore allowlisted profile attributes; no password/group/ACL restoration. DC accounts blocked. GPO uses new GUID and restores SYSVOL; links, LDAP delegation and WMI filter require manual review. Partial failures can leave a disabled account or a new GPO; inspect error and live state before retrying."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["revision", "confirm"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+            "responses":
+                "200": {"description": "Restored"}
+                "400": {"description": "Invalid input, stale preview, blocked restoration, or partial failure; inspect message"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Admin role and CSRF required"}
     "/directory/tree":
         "get":
             "summary": "Directory Tree"

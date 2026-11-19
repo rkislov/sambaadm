@@ -28,6 +28,8 @@ type Config struct {
 }
 
 type HelperServerConfig struct {
+	TimeConfig          string    `mapstructure:"time_config"`
+	TimeService         string    `mapstructure:"time_service"`
 	DomainBackupEnabled bool      `mapstructure:"domain_backup_enabled"`
 	Node                string    `mapstructure:"node"`
 	TrustedKeys         []string  `mapstructure:"trusted_keys"`
@@ -67,6 +69,7 @@ type GPOConfig struct {
 }
 
 type ServerConfig struct {
+	BackupDir      string    `mapstructure:"backup_dir"`
 	SettingsDir    string    `mapstructure:"settings_dir"`
 	CertificateDir string    `mapstructure:"certificate_dir"`
 	EnrollmentDir  string    `mapstructure:"enrollment_dir"`
@@ -181,6 +184,7 @@ func Load(cfgFile string) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
+	v.SetDefault("server.backup_dir", "/var/lib/sambaadm/backups")
 	v.SetDefault("helper.state_dir", "/var/lib/sambaadm-helper")
 	for _, key := range []string{"ldap.allow_legacy_cn", "ldap.ca_cert", "ldap.base_dn", "ldap.bind.user", "server.tls.cert", "server.tls.key", "audit.file", "logging.file"} {
 		v.SetDefault(key, "")

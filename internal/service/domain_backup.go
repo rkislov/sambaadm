@@ -23,6 +23,8 @@ import (
 var domainBackupWorker string
 
 type DomainBackupRequest struct {
+	Purpose      string       `json:"purpose,omitempty"`
+	PreparedAt   time.Time    `json:"preparedAt,omitempty"`
 	ID           string       `json:"id"`
 	Controller   string       `json:"controller"`
 	DomainGUID   []byte       `json:"domainGUID"`
@@ -237,8 +239,8 @@ func helperDomainBackup(ctx context.Context, cfg *config.Config, method string, 
 	} else if !os.IsNotExist(e) {
 		return nil, e
 	}
-	if request.Plan == nil || request.Plan.Revision != request.PlanRevision {
-		return nil, topologyBad("cleanup plan required for verified backup")
+	if e = validateBackupPurpose(request, time.Now()); e != nil {
+		return nil, e
 	}
 	// Global helper dispatch lock serializes creation. No second unfinished worker.
 	dir, e := root.Open(".")
@@ -318,7 +320,7 @@ func localBackupStatus(ctx context.Context, root *os.Root, id string) (*DomainBa
 	job.LiveVerification = nil
 	var receipt BackupRestoreReceipt
 	if err := readBackupJSON(root, id+"/restore.json", &receipt); err == nil {
-		job.RestoreVerified = receipt.ID == id && receipt.SHA256 == job.SHA256 && receipt.PlanRevision == request.PlanRevision && receipt.Status == "verified" && receipt.Kind == backupRestoreKind && !receipt.Finished.IsZero() && receipt.Live.verified()
+		job.RestoreVerified = receipt.ID == id && receipt.SHA256 == job.SHA256 && receipt.PlanRevision == request.PlanRevision && receipt.Status == "verified" && receipt.Kind == expectedBackupRestoreKind(request) && !receipt.Finished.IsZero() && receipt.Live.verified()
 		if job.RestoreVerified {
 			job.LiveVerification = receipt.Live
 		}

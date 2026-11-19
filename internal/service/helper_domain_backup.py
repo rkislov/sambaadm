@@ -694,6 +694,32 @@ def rehearse_cleanup(directory, archive, job, checksum):
     return receipt
 
 
+
+def rehearse_full_backup(directory, archive, job, checksum):
+    """Prove a standalone snapshot boots in isolation without touching its source."""
+    with tempfile.TemporaryDirectory(prefix='sambaadm-full-') as temporary:
+        os.chmod(temporary, 0o711)
+        recovered = restore_isolated(archive, pathlib.Path(temporary)/'recovery', checksum)
+        lp, sam, _ = identity(recovered['config'], job)
+        check_database(sam)
+        del sam
+        try:
+            live = verify_live_restore(recovered['config'], job)
+        finally:
+            with (directory/'live.log').open('x') as log:
+                for name in ['live-process.log', 'live-samba.log']:
+                    path = pathlib.Path(recovered['config']).parent/name
+                    if path.exists():
+                        with path.open(errors='replace') as source:
+                            log.write(source.read(4*1024*1024))
+    if digest_file(archive) != checksum:
+        raise ValueError('Archive changed during live verification')
+    receipt = dict(id=job['id'], sha256=checksum, planRevision=job['planRevision'],
+                   status='verified', finished=now(), kind='live-dc-kerberos-ldap-sysvol-full-v1', live=live)
+    save(directory/'restore.json', receipt)
+    return receipt
+
+
 def main():
     os.umask(0o077)
     if sys.argv[1]=='--restore-isolated':
@@ -708,12 +734,17 @@ def main():
         with (directory/'worker.log').open('x') as log, contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
             archive=capture(directory,conf,job)
             checksum=digest_file(archive)
-            rehearse_cleanup(directory,archive,job,checksum)
+            if job.get('purpose') == 'full':
+                if job.get('plan'):
+                    raise ValueError('Standalone backup must not contain a cleanup plan')
+                rehearse_full_backup(directory,archive,job,checksum)
+            else:
+                rehearse_cleanup(directory,archive,job,checksum)
         status.update(status='backed_up',sha256=digest_file(archive),bytes=archive.stat().st_size,archive=archive.name)
     except Exception:
         with (directory/'worker.log').open('a') as log:
             traceback.print_exc(file=log)
-        status.update(status='failed',error='Cold backup or isolated rehearsal failed; inspect the private helper log')
+        status.update(status='failed',error='Cold backup or isolated restore verification failed; inspect the private helper log')
     status['finished']=now();save(directory/'status.json',status)
 
 

@@ -44,6 +44,10 @@ func run() error {
 	private := flags.String("private", "", "new signing private key path")
 	public := flags.String("public", "", "new trusted public key path")
 	out := flags.String("out", "", "new survey JSON file")
+	profile := flags.String("profile", "node", "node or alt-workstation")
+	dnsResolvers := flags.String("dns-resolvers", "", "comma-separated resolver IPs (up to 4, workstation only)")
+	dnsQueries := flags.String("dns-queries", "", "comma-separated FQDN/TYPE queries (up to 8, workstation only)")
+	account := flags.String("account", "", "optional cached SSSD account for alt-workstation")
 	site := flags.String("site", "", "operator-supplied site label")
 	if e := flags.Parse(os.Args[2:]); e != nil {
 		return e
@@ -79,7 +83,19 @@ func run() error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		survey, err := service.CollectNodeSurvey(ctx, cfg, *site)
+		var survey *service.NodeSurvey
+		var err error
+		switch *profile {
+		case "alt-workstation":
+			survey, err = service.CollectWorkstationSurveyWithOptions(ctx, cfg, *site, *account, service.WorkstationSurveyOptions{Resolvers: commaList(*dnsResolvers), Queries: commaList(*dnsQueries)})
+		case "node":
+			if *account != "" || *dnsResolvers != "" || *dnsQueries != "" {
+				return fmt.Errorf("--account and DNS survey options require --profile alt-workstation")
+			}
+			survey, err = service.CollectNodeSurvey(ctx, cfg, *site)
+		default:
+			return fmt.Errorf("unknown survey profile %q", *profile)
+		}
 		if err != nil {
 			return err
 		}
@@ -160,4 +176,15 @@ func run() error {
 		return nil
 	}
 	return e
+}
+
+func commaList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
 }

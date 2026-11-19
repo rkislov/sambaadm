@@ -66,7 +66,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dn, role, err := s.resolveLoginIdentity(loginContext, loginLDAP, username)
+	dn, role, guid, err := s.resolveLoginIdentity(loginContext, loginLDAP, username)
 
 	if err != nil || dn == "" {
 		slog.Warn("login identity lookup failed", "user", username, "err", err)
@@ -88,6 +88,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
+	sess.ObjectGUID = guid
 	sess.AllowLegacyCN = allowLegacy
 	sess.SkipLDAPVerify = skipVerify
 	if r.FormValue("helper_auth") == "session" {

@@ -13,6 +13,7 @@ import (
 )
 
 type RODCAuthEvent struct {
+	SID            string    `json:"sid,omitempty"`
 	Time           time.Time `json:"time"`
 	Account        string    `json:"account"`
 	Domain         string    `json:"domain"`
@@ -136,6 +137,7 @@ func readRODCAuth(ctx context.Context, r io.Reader, after time.Time, account str
 			Type           string `json:"type"`
 			Authentication *struct {
 				Account     string `json:"clientAccount"`
+				SID         string `json:"becameSid"`
 				Domain      string `json:"clientDomain"`
 				Remote      string `json:"remoteAddress"`
 				Workstation string `json:"workstation"`
@@ -174,7 +176,7 @@ func readRODCAuth(ctx context.Context, r io.Reader, after time.Time, account str
 		if account != "" && !strings.Contains(strings.ToLower(a.Domain+"\\"+a.Account), strings.ToLower(account)) {
 			continue
 		}
-		out = append(out, RODCAuthEvent{Time: t, Account: a.Account, Domain: a.Domain, Client: a.Remote, Workstation: a.Workstation, Status: a.Status, Service: a.Service, Authentication: a.Auth})
+		out = append(out, RODCAuthEvent{SID: a.SID, Time: t, Account: a.Account, Domain: a.Domain, Client: a.Remote, Workstation: a.Workstation, Status: a.Status, Service: a.Service, Authentication: a.Auth})
 		if len(out) > 500 {
 			out = out[1:]
 			truncated = true

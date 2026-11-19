@@ -114,6 +114,9 @@ func (s *UserService) Memberships(ctx context.Context, login string) ([]UserGrou
 	if e != nil {
 		return nil, e
 	}
+	return s.membershipsForEntry(ctx, entry)
+}
+func (s *UserService) membershipsForEntry(ctx context.Context, entry *ldap.Entry) ([]UserGroup, error) {
 	filter := "(member=" + ldap.EscapeFilter(entry.DN) + ")"
 	var primarySID []byte
 	if rid := entry.GetAttributeValue("primaryGroupID"); rid != "" {

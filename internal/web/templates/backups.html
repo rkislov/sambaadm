@@ -1,0 +1,40 @@
+{{define "backups.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}</head><body>
+{{template "nav" .}}
+<main class="container">
+<h1>Резервные копии домена</h1>
+<p>Снимки пользователей, АРМ и политик с файлами SYSVOL. OU, группы и привязки политик сохраняются для справки. Снимок читается последовательно и отражает интервал времени; на время копирования приостановите редактирование политик.</p>
+<p>Это логическая копия объектов без паролей и секретов. Для аварийного восстановления всего домена требуется полный бэкап контроллера Samba. Копии хранятся на сервере sambaadm; настройте их перенос на отдельный носитель.</p>
+{{if .Error}}<div class="alert error" role="alert">{{.Error}}</div>{{end}}
+{{if .Flash}}<div class="alert" role="status">{{.Flash}}</div>{{end}}
+<h2>Логические копии объектов</h2>
+<form method="post" action="/backups" class="form-card"><input type="hidden" name="csrf_token" value="{{.CSRF}}"><input type="hidden" name="action" value="create"><button type="submit">Создать резервную копию объектов</button><p>LDAP и SYSVOL читаются с домена. Копия публикуется только после успешного чтения всех объектов. Автоматического удаления старых копий нет.</p></form>
+{{with .Content}}
+<section class="form-card"><h2>Полный бэкап контроллера</h2>
+<p>Холодный снимок базы AD, секретов, SYSVOL, конфигурации и прав файлов с пробным запуском восстановленного DC в изолированной сети. Формат sambaadm-cold-dc-v1; это копия того же DC, а не образ ОС и не архив для samba-tool domain backup restore.</p>
+<p>1. Подготовьте задачу при работающем LDAP. 2. Остановите Samba на выбранном DC в согласованное окно обслуживания, оставив helper и sambaadm работающими. 3. Запустите копирование и дождитесь завершения. 4. После завершения задачи запустите Samba вручную. Статус не требует LDAP; если сессия истечёт во время остановки единственного DC, для нового входа понадобится снова запустить Samba.</p>
+{{if .Nodes}}<form method="post" action="/backups"><input type="hidden" name="csrf_token" value="{{$.CSRF}}"><input type="hidden" name="action" value="full-prepare"><label>Контроллер с зарегистрированным helper<select name="controller" required>{{range .Nodes}}<option value="{{.}}">{{.}}</option>{{end}}</select></label><button>Подготовить полный бэкап</button></form>{{else}}<p>Для полного бэкапа зарегистрируйте helper на записываемом DC и включите helper.domain_backup_enabled.</p>{{end}}
+<p>На helper нужны Linux, systemd и Python-модули Samba; helper.domain_backup_enabled: true и абсолютный helper.backup_root. Службы автоматически не останавливаются и не запускаются. Снимок содержит секреты: храните его на защищённом отдельном носителе.</p>
+{{range .FullPlans}}<p><a href="/backups?full={{.ID}}">{{.Controller}} · {{.PreparedAt.Format "2006-01-02 15:04:05 UTC"}}</a> · <a href="/backups?full={{.ID}}&amp;status=true">Статус</a> · {{.ID}}</p>{{end}}
+{{with .FullPlan}}<h3>Задача {{.ID}}</h3><p>Контроллер: {{.Controller}} · {{.BaseDN}}. Подготовка действительна 24 часа. Обновление страницы не запускает новую задачу.</p>
+<form method="post" action="/backups"><input type="hidden" name="csrf_token" value="{{$.CSRF}}"><input type="hidden" name="action" value="full-start"><input type="hidden" name="full" value="{{.ID}}"><input type="hidden" name="revision" value="{{.PlanRevision}}"><label><input type="checkbox" name="confirmStopped" value="true" required>Подтверждаю, что Samba остановлена на {{.Controller}}, helper продолжает работать и согласовано окно недоступности</label><button>Запустить полный бэкап</button></form>
+<p><a href="/backups?full={{.ID}}&amp;status=true">Обновить статус задачи</a></p><p>Архив на выбранном helper: helper.backup_root/domain-backups/{{.ID}}/domain.tar.gz. Дождитесь backed_up и подтверждённого пробного восстановления; queued, running, unknown или failed не означают готовую копию.</p>{{end}}
+{{with .FullJob}}<div role="status"><h3>Состояние: {{.Status}}</h3>{{if .Error}}<p class="alert error">{{.Error}}</p>{{end}}<p>Пробное восстановление: {{if .RestoreVerified}}подтверждено{{else}}не подтверждено{{end}}</p><p>Размер: {{.Bytes}} байт · SHA-256: {{.SHA256}}</p><p>Начало: {{.Started}} · завершение: {{.Finished}}</p></div>{{end}}
+</section>
+
+<section><h2>Сохранённые копии</h2>
+{{range .Backups}}<article class="form-card"><a href="/backups?id={{.ID}}">{{.Created.Format "2006-01-02 15:04:05 UTC"}}</a><p>{{.BaseDN}} · {{.Count}} объектов · {{.Actor}}</p><small>{{.ID}}</small></article>{{else}}<p>Сохранённых копий пока нет.</p>{{end}}</section>
+{{with .Plan}}
+<section class="form-card"><h2>Предпросмотр восстановления</h2><p>{{.Kind}} · {{.Name}}</p><p>{{.DN}}</p><p>{{.Warning}}</p>
+{{if .CanRestore}}
+<form method="post" action="/backups"><input type="hidden" name="csrf_token" value="{{$.CSRF}}"><input type="hidden" name="action" value="restore"><input type="hidden" name="id" value="{{.BackupID}}"><input type="hidden" name="guid" value="{{.GUID}}"><input type="hidden" name="revision" value="{{.Revision}}"><label><input type="checkbox" name="confirm" value="true" required>Подтверждаю восстановление этого объекта с указанными ограничениями</label><button type="submit">Восстановить выбранный объект</button></form>
+{{else}}<p class="alert">{{.Reason}}</p>{{end}}</section>
+{{end}}
+{{with .Snapshot}}
+<section><h2>Объекты копии {{.Created.Format "2006-01-02 15:04:05 UTC"}}</h2><p><a href="/api/v1/backups/{{.ID}}?download=true">Скачать снимок JSON</a></p>
+<form method="get" action="/backups" class="form-card"><input type="hidden" name="id" value="{{.ID}}"><label>Выберите объект<select name="guid" required>{{range .Objects}}<option value="{{.GUID}}">{{.Kind}} · {{.Name}} · {{.DN}}</option>{{end}}</select></label><button type="submit">Проверить возможность восстановления</button></form>
+<details><summary>Справка: OU, группы и привязки GPO</summary><p>Эти данные доступны в скачанном JSON: attributes.member, attributes.gPLink и attributes.gPOptions. Автоматическое восстановление этих связей не выполняется.</p></details>
+</section>{{end}}
+{{end}}
+</main><footer class="footer"><span>sambaadm · Samba4 AD</span></footer></body></html>
+{{end}}

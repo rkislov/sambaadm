@@ -184,6 +184,11 @@ func (s *GPOService) restoreNative(ctx context.Context, name, path, actor, ip st
 			return err
 		}
 	}
+	return s.restorePolicySnapshot(ctx, name, b, actor, ip)
+}
+
+func (s *GPOService) restorePolicySnapshot(ctx context.Context, name string, b policyBackup, actor, ip string) error {
+	var err error
 	if b.Format != 1 {
 		return fmt.Errorf("unsupported backup format")
 	}

@@ -27,14 +27,16 @@ type SurveyObservation struct {
 	Detail   string    `json:"detail"`
 }
 type NodeSurvey struct {
-	Format   string              `json:"format"`
-	Helper   string              `json:"helper"`
-	Node     string              `json:"node"`
-	Site     string              `json:"site,omitempty"`
-	Started  time.Time           `json:"started"`
-	Finished time.Time           `json:"finished"`
-	Checks   []SurveyObservation `json:"checks"`
-	Audit    *RODCAuthReport     `json:"audit"`
+	Workstation *WorkstationDiagnostics `json:"workstation,omitempty"`
+	Profile     string                  `json:"profile,omitempty"`
+	Format      string                  `json:"format"`
+	Helper      string                  `json:"helper"`
+	Node        string                  `json:"node"`
+	Site        string                  `json:"site,omitempty"`
+	Started     time.Time               `json:"started"`
+	Finished    time.Time               `json:"finished"`
+	Checks      []SurveyObservation     `json:"checks"`
+	Audit       *RODCAuthReport         `json:"audit"`
 }
 
 // Retain bounded stdout while draining the pipe so verbose probes cannot block.
@@ -106,6 +108,18 @@ func CollectNodeSurvey(ctx context.Context, cfg *config.Config, site string) (*N
 		}
 		s.Checks = append(s.Checks, surveyProbe(ctx, p[0], p[1:]...))
 	}
+	s.Checks = append(s.Checks, surveySystemFiles()...)
+	audit, err := readRODCAuthFile(ctx, s.Node, cfg.Helper.AuthLog, time.Time{}, "")
+	if err != nil {
+		audit = &RODCAuthReport{Controller: s.Node, Source: "Samba Authentication JSON audit", Status: "unavailable", Warning: "audit could not be parsed within limits"}
+	}
+	s.Audit = audit
+	s.Finished = time.Now().UTC()
+	return s, ctx.Err()
+}
+
+func surveySystemFiles() []SurveyObservation {
+	var checks []SurveyObservation
 	for _, src := range []struct {
 		path    string
 		allowed map[string]bool
@@ -145,15 +159,9 @@ func CollectNodeSurvey(ctx context.Context, cfg *config.Config, site string) (*N
 			}
 			f.Close()
 		}
-		s.Checks = append(s.Checks, o)
+		checks = append(checks, o)
 	}
-	audit, err := readRODCAuthFile(ctx, s.Node, cfg.Helper.AuthLog, time.Time{}, "")
-	if err != nil {
-		audit = &RODCAuthReport{Controller: s.Node, Source: "Samba Authentication JSON audit", Status: "unavailable", Warning: "audit could not be parsed within limits"}
-	}
-	s.Audit = audit
-	s.Finished = time.Now().UTC()
-	return s, ctx.Err()
+	return checks
 }
 
 type SurveyMaterial struct {
@@ -176,8 +184,11 @@ func ParseSurvey(ctx context.Context, kind, node, site string, data []byte) (*Su
 		var s NodeSurvey
 		d := json.NewDecoder(bytes.NewReader(data))
 		d.DisallowUnknownFields()
-		if d.Decode(&s) != nil || d.Decode(&struct{}{}) != io.EOF || s.Format != SurveyFormat || strings.TrimSpace(s.Node) == "" || len(s.Node) > 256 || len(s.Site) > 256 || s.Started.IsZero() || s.Finished.Before(s.Started) || len(s.Checks) == 0 || len(s.Checks) > 128 || s.Audit == nil || s.Audit.Controller != s.Node || len(s.Audit.Events) > 500 {
+		if d.Decode(&s) != nil || d.Decode(&struct{}{}) != io.EOF || s.Format != SurveyFormat || strings.TrimSpace(s.Node) == "" || len(s.Node) > 256 || len(s.Site) > 256 || s.Started.IsZero() || s.Finished.Before(s.Started) || len(s.Checks) == 0 || len(s.Checks) > 128 || !s.validProfile() {
 			return nil, fmt.Errorf("invalid helper snapshot")
+		}
+		if err := validateWorkstationDiagnostics(s.Workstation, s.Profile); err != nil {
+			return nil, err
 		}
 		for _, o := range s.Checks {
 			if o.Source == "" || o.Observed.IsZero() || (o.Status != "observed" && o.Status != "unknown" && o.Status != "partial") {
@@ -227,4 +238,15 @@ func ParseSurvey(ctx context.Context, kind, node, site string, data []byte) (*Su
 		return nil, fmt.Errorf("unknown import format")
 	}
 	return m, nil
+}
+
+func (s *NodeSurvey) validProfile() bool {
+	switch s.Profile {
+	case "alt-workstation":
+		return s.Audit == nil
+	case "", "node":
+		return s.Audit != nil && s.Audit.Controller == s.Node && len(s.Audit.Events) <= 500
+	default:
+		return false
+	}
 }

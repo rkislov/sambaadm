@@ -19,6 +19,7 @@ const (
 
 // Session holds authenticated user state.
 type Session struct {
+	ObjectGUID     string
 	ID             string
 	Username       string
 	DN             string
@@ -97,6 +98,22 @@ func (s *Store) Delete(id string) {
 	s.forgetCredentialsLocked(id)
 	delete(s.sessions, id)
 	s.mu.Unlock()
+}
+
+// RevokeIdentity invalidates sessions and encrypted helper passwords after a
+// password change. GUID identity survives renames; an empty identity never matches.
+func (s *Store) RevokeIdentity(guid string) {
+	if guid == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, session := range s.sessions {
+		if session.ObjectGUID == guid {
+			s.forgetCredentialsLocked(id)
+			delete(s.sessions, id)
+		}
+	}
 }
 
 // SetCookie writes the session cookie to the response.

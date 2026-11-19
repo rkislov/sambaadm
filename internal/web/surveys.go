@@ -80,8 +80,16 @@ func (s *Server) surveysAPI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		w.Header().Set("Content-Type", "application/json")
-		io.Copy(w, f)
+		var m service.SurveyMaterial
+		st, statErr := f.Stat()
+		if statErr != nil || st.Size() > service.SurveyLimit || json.NewDecoder(io.LimitReader(f, service.SurveyLimit+1)).Decode(&m) != nil {
+			writeJSON(w, 500, map[string]string{"error": "invalid stored survey"})
+			return
+		}
+		writeJSON(w, 200, struct {
+			*service.SurveyMaterial
+			Imported time.Time `json:"imported"`
+		}{&m, st.ModTime().UTC()})
 		return
 	}
 	entries, err := os.ReadDir(dir)
@@ -122,8 +130,8 @@ func (s *Server) importSurvey(w http.ResponseWriter, r *http.Request, dir string
 		return
 	}
 	record, err := json.Marshal(m)
-	if err != nil {
-		writeJSON(w, 400, map[string]string{"error": "invalid material"})
+	if err != nil || len(record) > service.SurveyLimit {
+		writeJSON(w, 400, map[string]string{"error": "normalized material exceeds 16 MiB or is invalid"})
 		return
 	}
 	id := fmt.Sprintf("%x", sha256.Sum256(record))

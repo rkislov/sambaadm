@@ -159,6 +159,26 @@ assert receipt['live']['authentication']=='temporary-user-ntlm-and-kerberos'
 worker.require_stopped()
 print('PASS: per-copy NTLM checks plus fresh Kerberos TGT, LDAP login, CIFS ticket, SMB SYSVOL read and process cleanup')
 
+# Exercise the production standalone branch with no cleanup plan at all.
+full_request = {k: v for k, v in request.items() if k != 'plan'}
+full_request.update(id='00000000-0000-0000-0000-000000000002', purpose='full', preparedAt=worker.now())
+full_job = pathlib.Path('/tmp/full-backup-job');full_job.mkdir(mode=0o700)
+(full_job/'request.json').write_text(json.dumps(full_request))
+import sys
+# Production launches a fresh Python worker; LoadParm has process-global
+# defaults, so do not share the earlier rehearsal's interpreter.
+subprocess.run([sys.executable, '/work/helper_domain_backup.py', str(full_job), str(conf)], check=True)
+full_status = json.loads((full_job/'status.json').read_text())
+if full_status['status'] != 'backed_up':
+    print((full_job/'worker.log').read_text())
+    raise AssertionError('Standalone full backup failed')
+full_receipt = json.loads((full_job/'restore.json').read_text())
+assert full_receipt['kind'] == 'live-dc-kerberos-ldap-sysvol-full-v1'
+assert all(full_receipt['live'][key] for key in ['dcStarted','userLogin','invalidPasswordRejected','sysvolRead','kerberosTGT','kerberosLDAP','kerberosSYSVOL'])
+assert full_status['sha256'] == worker.digest_file(full_job/'domain.tar.gz')
+worker.require_stopped()
+print('PASS: standalone full backup without cleanup plan, live Kerberos/LDAP/SYSVOL recovery receipt and immutable archive')
+
 # Exercise failure on actual SMB content. No source/archived file is changed.
 _, local_sam, restored_paths = worker.identity(restored['config'],request)
 del local_sam

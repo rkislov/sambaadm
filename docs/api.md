@@ -43,8 +43,8 @@
 | POST | `/gpo/{gpo}/backup` | admin | `{"path":"..."}` |
 | POST | `/gpo/{gpo}/restore` | admin | `{"path":"..."}` |
 | POST | `/gpo/{gpo}/distribute` | admin | запуск распространения на все DC |
-| POST | `/gpo/distribute` | admin | доставка всех GPO домена одной задачей, 202 с идентификатором, 409 при параллельной доставке |
-| GET | `/gpo/distribute/{jobID}` | read / admin для массовой доставки | статус задачи, прогресс и шаги |
+| POST | `/gpo/distribute` | admin | доставка всех GPO домена одной задачей; 202 с идентификатором, 409 при параллельной доставке |
+| GET | `/gpo/distribute/{jobID}` | read / admin для массовой доставки | статус задачи: прогресс и шаги |
 | GET/POST | `/shares` | read/admin | список / создать шару (+ mkdir/ACL) |
 | GET/DELETE | `/shares/{name}` | read/admin | карточка / удалить (`?remove_dir=1`) |
 | GET/POST | `/shares/{name}/acl` | read/admin | POSIX ACL каталога шары |
@@ -56,7 +56,7 @@
 
 ## Топология и репликация v0.11.0
 
-Чтение доступно всем аутентифицированным ролям: `GET /sites/topology`, `/sites/controllers`, `/sites/links`, `/repl/connections`, `/repl/status?dc=dc2.example.com`. Последний запрос возвращает `server`, `health` и `neighbors`. Поле `controller` содержит DNS-имя контроллера из AD, если его удалось сопоставить. Каждый сосед содержит `direction`, `partner`, `partition`, `lastAttempt`, `lastSuccess`, `failures`, `result`, `health`. Для RODC запрос проверяет входящих соседей по каждому разделу. Если раздел не вернул соседей или запрос по нему завершился ошибкой, ответ включает `partitionIssues` с полем `partition` и, при ошибке, полем `error`. Статус `unverified` означает, что данных для подтверждения состояния RODC недостаточно. Известные ошибки репликации дают статус `degraded`. Для RWDC сохраняются статусы `healthy`, `degraded` и `no-partners`.
+Чтение доступно всем аутентифицированным ролям: `GET /sites/topology`, `/sites/controllers`, `/sites/links`, `/repl/connections`, `/repl/status?dc=dc2.example.com`. Последний запрос возвращает `server`, `health` и `neighbors`. Каждый сосед содержит `direction`, `partner`, `partition`, `lastAttempt`, `lastSuccess`, `failures`, `result`, `health`. Поле `controller` содержит DNS-имя контроллера из AD, если его удалось сопоставить. Для RODC запрос проверяет входящих соседей по каждому разделу. Если раздел не вернул соседей или запрос по нему завершился ошибкой, ответ включает `partitionIssues` с полем `partition` и, при ошибке, полем `error`. Статус `unverified` означает, что данных для подтверждения состояния RODC недостаточно. Известные ошибки репликации дают статус `degraded`. Для RWDC сохраняются статусы `healthy`, `degraded` и `no-partners`.
 
 Изменения требуют admin и CSRF:
 
@@ -451,3 +451,19 @@ confirmDecommissioned:true}`, а сервер строит и проверяет
 - `GET /surveys` возвращает список сохранённых материалов с полями `id` и `imported`.
 - `POST /surveys?format=helper` принимает содержимое файла в теле запроса, до 16 МиБ. Для JSON обзора используйте `format=overview`, для строк Samba Authentication — `format=audit&node=dc1.corp.example`. Параметр `site` задаёт площадку для журнала или обзора. Для снимка helper обе метки читаются из файла. Передайте CSRF-токен в заголовке. Ответ содержит `id`: HTTP 201 при создании, HTTP 200 при повторном импорте.
 - `GET /surveys/{id}` возвращает материал с SHA-256 исходного файла. Для запроса используйте `id` из ответа импорта.
+
+## Время и NTP
+
+Статус, план и применение настроек chrony: `GET /system/time`, `POST /system/time/plan`, `PUT /system/time`, параметр `node`. Требуется роль admin; запись защищена CSRF, предпросмотром и сверкой ревизий. Подробности и формат запроса: [time-settings.md](time-settings.md).
+
+## Копии доменных объектов
+
+Раздел `/backups` и API `/api/v1/backups` позволяют создавать логические снимки
+и выборочно восстанавливать удалённых пользователей, АРМ и GPO. Все операции
+доступны только admin. Форматы, маршруты и ограничения описаны в
+[руководстве по резервным копиям](domain-object-backups.md).
+
+Полный холодный бэкап доступен отдельно: `POST /backups/full/prepare`
+(`controller`), `POST /backups/full/{id}/start` (`revision`, `confirmStopped:true`),
+`GET /backups/full` и `GET /backups/full/{id}`. После подготовки запуск/статус
+работают без LDAP; Samba на выбранном DC должна быть остановлена вручную.

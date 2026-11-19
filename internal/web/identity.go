@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -13,10 +14,10 @@ import (
 
 // resolveLoginIdentity looks up DN and memberOf for an authenticated user
 // and maps groups to an RBAC role.
-func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Client, username string) (dn string, role auth.Role, err error) {
+func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Client, username string) (dn string, role auth.Role, guid string, err error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
-		return "", auth.RoleReadonly, fmt.Errorf("empty username")
+		return "", auth.RoleReadonly, "", fmt.Errorf("empty username")
 	}
 
 	esc := ldap.EscapeFilter(username)
@@ -37,7 +38,7 @@ func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Cli
 
 	opts := ldapproto.SearchOptions{
 		Filter:     filter,
-		Attributes: []string{ldapproto.AttrSAMAccountName, ldapproto.AttrMemberOf, ldapproto.AttrDN},
+		Attributes: []string{ldapproto.AttrSAMAccountName, ldapproto.AttrMemberOf, ldapproto.AttrDN, "objectGUID"},
 	}
 	entry, err := client.SearchOne(ctx, opts)
 	// AD accepts a domain UPN for built-in accounts without a stored UPN.
@@ -48,10 +49,13 @@ func (s *Server) resolveLoginIdentity(ctx context.Context, client *ldapproto.Cli
 		entry, err = client.SearchOne(ctx, opts)
 	}
 	if err != nil {
-		return "", auth.RoleReadonly, fmt.Errorf("identity lookup: %w", err)
+		return "", auth.RoleReadonly, "", fmt.Errorf("identity lookup: %w", err)
 	}
 	role = s.rbac.Resolve(entry.GetAttributeValues(ldapproto.AttrMemberOf))
-	return entry.DN, role, nil
+	if raw := entry.GetRawAttributeValue("objectGUID"); len(raw) == 16 {
+		guid = hex.EncodeToString(raw)
+	}
+	return entry.DN, role, guid, nil
 }
 
 func dnsFromBaseDN(base string) string {

@@ -11,6 +11,7 @@
   <main class="container" data-console-sections>
     <h1>{{t .Lang "settings.title"}}</h1>
     <div class="console-sections">
+	{{if canAdmin .Role}}<section id="time-settings" class="setup-card"><h2>Время и NTP</h2><p class="muted">Внутренние источники времени и локальная опора изолированного стенда; просмотр состояния и предпросмотр изменений.</p><a class="btn" href="/settings/time">Настройки времени</a></section>{{end}}
     {{if canAdmin .Role}}<section id="connection-settings" class="setup-card"><h2>Сертификаты и подключения</h2><p class="muted">LDAP контроллера, доверенные центры сертификации и HTTPS-helper.</p><a class="btn" href="/settings/certificates">Управлять сертификатами</a></section>{{end}}
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}

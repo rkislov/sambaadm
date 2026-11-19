@@ -1,0 +1,46 @@
+{{define "settings/time.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}</head><body>
+{{template "nav" .}}
+<main class="container">
+<h1>Настройки времени</h1>
+<p><a href="/settings">Настройки</a> / Время и внутренние источники NTP</p>
+<p>Для изолированного стенда внешний NTP не обязателен. Внутренняя опора согласует часы узлов, но не подтверждает точность относительно UTC. Взаимное расхождение часов проверяется отдельно.</p>
+{{if .Error}}<div class="alert error" role="alert">{{.Error}}</div>{{end}}
+{{if .Flash}}<div class="alert" role="status">{{.Flash}}</div>{{end}}
+{{with .Content}}
+{{if .Nodes}}
+<form method="get" action="/settings/time" class="form-card">
+<label>Управляемый узел<select name="node">{{range .Nodes}}<option value="{{.}}" {{if eq . $.Content.Node}}selected{{end}}>{{.}}</option>{{end}}</select></label><button>Прочитать состояние</button>
+</form>
+{{with .Status}}
+<section><h2>Состояние {{.Node}}</h2><p>Часы узла: {{.Clock}} · наблюдение: {{.Observed.Format "2006-01-02 15:04:05 MST"}}</p>
+<p>Конфигурация: {{.ConfigPath}}</p>{{if .Warning}}<p class="alert">{{.Warning}}</p>{{end}}
+<h3>Служба · {{.Service.Status}}</h3><pre>{{.Service.Detail}}</pre><h3>Chrony tracking · {{.Tracking.Status}}</h3><pre>{{.Tracking.Detail}}</pre><h3>Источники · {{.Sources.Status}}</h3><pre>{{.Sources.Detail}}</pre>
+<p class="muted">Наличие вывода и активная служба сами по себе не доказывают синхронизацию. Недоступные команды отмечены в API как unknown.</p></section>
+{{end}}
+{{if .Plan}}
+<section><h2>Предпросмотр для {{.Node}}</h2><p>Файл: {{.Plan.Path}}. Синтаксис проверен chronyd без запуска службы.</p><details><summary>Текущая конфигурация</summary><pre>{{.Plan.Before}}</pre></details><h3>Предлагаемая конфигурация</h3><pre>{{.Plan.Proposed}}</pre></section>
+<form method="post" action="/settings/time" class="form-card">
+<input type="hidden" name="csrf_token" value="{{$.CSRF}}"><input type="hidden" name="node" value="{{.Node}}"><input type="hidden" name="action" value="apply">
+<input type="hidden" name="revision" value="{{.Plan.Revision}}"><input type="hidden" name="proposedRevision" value="{{.Plan.ProposedRevision}}">
+<input type="hidden" name="mode" value="{{.Settings.Mode}}"><input type="hidden" name="stratum" value="{{.Settings.Stratum}}"><input type="hidden" name="localReference" value="{{.Settings.LocalReference}}">
+<input type="hidden" name="sources" value="{{.Sources}}"><input type="hidden" name="allow" value="{{.Allow}}">
+<label><input type="checkbox" name="confirm" value="true" required>Подтверждаю замену показанных настроек и перезапуск chrony на этом узле</label>
+<p>Изменение источников и перезапуск могут повлиять на часы узла и доменную аутентификацию. Ручная установка даты и команда makestep не выполняются. Существующие директивы chrony вне показанных источников сохраняются. Если в файле есть makestep, служба при запуске может скачком скорректировать часы.</p>
+<button type="submit">Применить показанные изменения</button>
+</form>
+{{else}}
+{{if or (not .Status) .Status.Editable}}
+<form method="post" action="/settings/time" class="form-card form-wide">
+<input type="hidden" name="csrf_token" value="{{$.CSRF}}"><input type="hidden" name="node" value="{{.Node}}"><input type="hidden" name="action" value="plan">
+<label>Режим<select name="mode"><option value="isolated" {{if eq .Settings.Mode "isolated"}}selected{{end}}>Изолированный стенд</option><option value="sources" {{if eq .Settings.Mode "sources"}}selected{{end}}>Синхронизация с заданными источниками</option></select></label>
+<label>Источники, по одному на строку<textarea name="sources" rows="5" spellcheck="false" placeholder="server dc0.example.test iburst">{{.Sources}}</textarea></label><p class="field-hint">Формат: server|pool|peer адрес [iburst] [prefer]. Источники не добавляются автоматически.</p>
+<label><input type="checkbox" name="localReference" value="true" {{if .Settings.LocalReference}}checked{{end}}>Использовать часы этого узла как локальную опору изолированного стенда</label>
+<label>Stratum локальной опоры<input name="stratum" type="number" min="8" max="14" value="{{.Settings.Stratum}}" required></label>
+<label>Подсети NTP-клиентов в CIDR, по одной на строку<textarea name="allow" rows="3" spellcheck="false" placeholder="10.10.1.0/24">{{.Allow}}</textarea></label><p class="field-hint">Для локальной опоры нужны явные подсети. /0 не допускается. Сетевые экраны этим экраном не изменяются.</p>
+<button type="submit">Проверить и показать изменения</button>
+</form>{{end}}{{end}}
+{{else}}<p>Для просмотра и настройки времени зарегистрируйте helper нужного узла в <a href="/settings/helpers">настройках подключений</a>.</p>{{end}}
+{{end}}
+</main></body></html>
+{{end}}
