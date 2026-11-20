@@ -72,11 +72,12 @@ func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 		{"PUT", "/api/v1/users/alice"},
 		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/alt-settings"},
 		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/scripts"},
+		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/drives"},
 		{"POST", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/scripts/maintenance"},
 		{"POST", "/api/v1/users/alice/move"}, {"POST", "/api/v1/computers/pc/move"},
 		{"POST", "/api/v1/groups/Finance/members"}, {"DELETE", "/api/v1/groups/Finance/members"},
 		{"POST", "/api/v1/ou/move"}, {"POST", "/api/v1/subnets/delete"},
-		{"POST", "/api/v1/domain/fsmo/seize"}, {"POST", "/api/v1/domain/level/raise"},
+		{"PUT", "/api/v1/domain/password-policy"}, {"POST", "/api/v1/domain/fsmo/seize"}, {"POST", "/api/v1/domain/level/raise"},
 	}
 	s := testWorkspaceServer(t)
 	for _, route := range routes {

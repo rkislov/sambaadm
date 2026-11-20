@@ -11,19 +11,20 @@ import (
 const SystemdKey = `Software\BaseALT\Policies\SystemdUnits`
 
 type Definition struct {
-	ID                string   `json:"id"`
-	Label             string   `json:"label"`
-	Key               string   `json:"key"`
-	Value             string   `json:"value"`
-	Scope             string   `json:"scope"`
-	Template          string   `json:"template,omitempty"`
-	Category          string   `json:"category,omitempty"`
-	Description       string   `json:"description,omitempty"`
-	SupportedOn       string   `json:"supportedOn,omitempty"`
-	Digest            string   `json:"templateRevision,omitempty"`
-	Unsupported       string   `json:"unsupported,omitempty"`
-	Fields            []Field  `json:"fields,omitempty"`
-	Enabled, Disabled *Literal `json:"-"`
+	ID                string     `json:"id"`
+	Label             string     `json:"label"`
+	Key               string     `json:"key"`
+	Value             string     `json:"value"`
+	Scope             string     `json:"scope"`
+	Template          string     `json:"template,omitempty"`
+	CategoryPath      []Category `json:"categoryPath,omitempty"`
+	Category          string     `json:"category,omitempty"`
+	Description       string     `json:"description,omitempty"`
+	SupportedOn       string     `json:"supportedOn,omitempty"`
+	Digest            string     `json:"templateRevision,omitempty"`
+	Unsupported       string     `json:"unsupported,omitempty"`
+	Fields            []Field    `json:"fields,omitempty"`
+	Enabled, Disabled *Literal   `json:"-"`
 }
 
 // SystemdDefinitions reads the installed ALT templates instead of assuming a

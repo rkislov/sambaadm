@@ -278,7 +278,10 @@ func scriptExtension(raw, scope string) (string, error) {
 	if scope == "User" {
 		ase = "{40B66650-4972-11D1-A7CA-0000F87571E3}"
 	}
-	cse := "{42B5FAAE-6536-11D2-AE5A-0000F87571E3}"
+	return policyExtension(raw, "{42B5FAAE-6536-11D2-AE5A-0000F87571E3}", ase)
+}
+
+func policyExtension(raw, cse, ase string) (string, error) {
 	groups := []string{}
 	found := false
 	for rest := raw; rest != ""; {
@@ -369,7 +372,20 @@ func saveScriptTransaction(snap *scriptSnapshot, in ScriptChange, recheck func()
 	if len(deltas) == 0 && ext == snap.entry.GetAttributeValue("gPC"+in.Scope+"ExtensionNames") {
 		return "", nil
 	}
-	next, err := nextPolicyVersion(snap.view.Version, in.Scope)
+	return savePolicyFilesTransaction(snap, in.Scope, ext, dirs, deltas, ".sambaadm-scripts-backup-", recheck, commit)
+}
+
+// Registry-independent preferences and scripts share one durable journal and
+// LDAP assertion protocol. The caller supplies only validated, scoped paths.
+func savePolicyFilesTransaction(snap *scriptSnapshot, scope, ext string, dirs []string, deltas []scriptDelta, backupPrefix string, recheck func() error, commit func(uint32, string) error) (string, error) {
+	root := snap.root
+	add := func(name string, after []byte) {
+		before, existed := snap.files[name]
+		if !existed || !bytes.Equal(before, after) {
+			deltas = append(deltas, scriptDelta{Path: name, Existed: existed, Before: before, After: after})
+		}
+	}
+	next, err := nextPolicyVersion(snap.view.Version, scope)
 	if err != nil {
 		return "", err
 	}
@@ -386,7 +402,7 @@ func saveScriptTransaction(snap *scriptSnapshot, in ScriptChange, recheck func()
 			unique = append(unique, dir)
 		}
 	}
-	recovery := scriptRecovery{Format: 1, DN: snap.entry.DN, Scope: in.Scope, USN: snap.entry.GetAttributeValue("uSNChanged"), Extensions: snap.entry.GetAttributeValue("gPC" + in.Scope + "ExtensionNames"), Version: snap.view.Version, NextVersion: next, Directories: unique, Files: deltas}
+	recovery := scriptRecovery{Format: 1, DN: snap.entry.DN, Scope: scope, USN: snap.entry.GetAttributeValue("uSNChanged"), Extensions: snap.entry.GetAttributeValue("gPC" + scope + "ExtensionNames"), Version: snap.view.Version, NextVersion: next, Directories: unique, Files: deltas}
 	recovery.CreatedAt = time.Now().UTC()
 	if secure, ok := root.(policySecurityStore); ok {
 		for i := range recovery.Files {
@@ -407,7 +423,7 @@ func saveScriptTransaction(snap *scriptSnapshot, in ScriptChange, recheck func()
 	if err := recheck(); err != nil {
 		return "", errors.Join(err, root.Remove(editorJournal))
 	}
-	backup := ".sambaadm-scripts-backup-" + uuid.NewString() + ".json"
+	backup := backupPrefix + uuid.NewString() + ".json"
 	if err := createDurablePolicyFile(root, backup, encoded); err != nil {
 		return "", errors.Join(err, root.Remove(editorJournal))
 	}

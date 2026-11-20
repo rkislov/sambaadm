@@ -215,6 +215,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/domain/level/raise", s.handleAPILevelRaise)
 		r.Get("/gpo/{gpo}", s.handleAPIGPOGet)
 		r.Get("/gpo/{gpo}/alt-settings", s.handleAPIGPOALT)
+		r.Get("/gpo/{gpo}/drives", s.handleAPIGPODrives)
+		r.Put("/gpo/{gpo}/drives", s.handleAPIGPODriveSet)
 		r.Get("/gpo/{gpo}/scripts", s.handleAPIGPOScripts)
 		r.Put("/gpo/{gpo}/scripts", s.handleAPIGPOScriptsSet)
 		r.Get("/gpo/{gpo}/scripts/file", s.handleAPIGPOScriptFile)
@@ -272,6 +274,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/domain", s.handleAPIDomain)
 		r.Get("/domain/fsmo", s.handleAPIFSMO)
 		r.Post("/domain/fsmo/transfer", s.handleAPIFSMOTransfer)
+		r.Get("/domain/password-policy", s.handleDomainPasswordPolicy)
+		r.Put("/domain/password-policy", s.handleDomainPasswordPolicy)
 		r.Get("/domain/level", s.handleAPIDomainLevel)
 
 		r.Get("/repl/partners", s.handleAPIReplPartners)

@@ -1,6 +1,7 @@
 /* RSAT-style catalogue view. Directory and template text always uses textContent. */
 (function(){
   'use strict';
+  window.sambaadmPolicyPath=s=>s.categoryPath?.length?s.categoryPath:[{id:JSON.stringify([s.template||'ALT',s.category||'']),label:s.category|| (document.documentElement.lang==='ru'?'Общие':'General')}];
   window.sambaadmPolicyConsole=function(options){
     const {settings,matches,scope,state,onScope,onCategory,onOpen,editing}=options;
     const ru=document.documentElement.lang==='ru',t=(a,b)=>ru?a:b;
@@ -10,31 +11,53 @@
     const badge=()=>{const b=el('span','policy-platform-badge','ALT');b.title=t('Шаблон ALT','ALT template');return b;};
     const collator=new Intl.Collator(ru?'ru':'en',{numeric:true});
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Только просмотр','Read only')}[s]||s);
-    const selectedCategory=options.category?JSON.parse(options.category):null;
+    function categoryTree(items){
+      const nodes=new Map(),roots=new Map();
+      for(const setting of items){let siblings=roots;for(const category of window.sambaadmPolicyPath(setting)){
+        if(!nodes.has(category.id))nodes.set(category.id,{...category,children:new Map(),count:0});
+        const node=nodes.get(category.id);node.count++;siblings.set(node.id,node);siblings=node.children;
+      }}
+      return {nodes,roots};
+    }
+    const {nodes}=categoryTree(settings);
+    const selectedCategory=nodes.get(options.category);
+    const selectedPath=selectedCategory?window.sambaadmPolicyPath(settings.find(s=>window.sambaadmPolicyPath(s).some(c=>c.id===options.category))):[];
+    const categoryPath=selectedPath.slice(0,selectedPath.findIndex(c=>c.id===options.category)+1);
     const layout=el('div','policy-console'),nav=el('nav','policy-console-tree'),main=el('section','policy-console-main');
-    nav.setAttribute('aria-label',t('Дерево разделов политики','Policy configuration tree'));layout.append(nav,main);
+    nav.dataset.scope=scope;nav.setAttribute('aria-label',t('Дерево разделов политики','Policy configuration tree'));layout.append(nav,main);
     for(const [id,label] of [['Machine',t('Конфигурация компьютера','Computer Configuration')],['User',t('Конфигурация пользователя','User Configuration')]]){
-      const branch=el('details','policy-console-scope');branch.open=id===scope;
-      const summary=el('summary');summary.append(button(label,()=>{if(id!==scope)onScope(id);},id===scope?'selected':''));branch.append(summary);nav.append(branch);
-      if(id!==scope){branch.append(button(t('Открыть раздел','Open configuration'),()=>onScope(id)));continue;}
-      const policies=el('details');policies.open=true;policies.append(el('summary','',t('Политики','Policies')));branch.append(policies);
-      const templates=el('details');templates.open=true;templates.append(el('summary','',t('Административные шаблоны','Administrative Templates')));policies.append(templates);
-      const all=button(t('Все параметры','All Settings')+' ('+settings.length+')',()=>onCategory(''),'policy-folder'+(!options.category?' selected':''));all.setAttribute('aria-current',String(!options.category));templates.append(all);
-      const groups=new Map();
-      for(const s of settings){const template=s.template||'ALT',category=s.category||'';if(!groups.has(template))groups.set(template,new Map());const categories=groups.get(template);categories.set(category,(categories.get(category)||0)+1);}
-      for(const [template,categories] of [...groups].sort((a,b)=>a[0].localeCompare(b[0]))){
-        const folder=el('details');folder.open=state.expanded.has(template)||selectedCategory?.[0]===template;
-        folder.append(el('summary','',template));folder.addEventListener('toggle',()=>folder.open?state.expanded.add(template):state.expanded.delete(template));templates.append(folder);
-        for(const [category,count] of [...categories].sort((a,b)=>a[0].localeCompare(b[0]))){
-          // Category identifiers may be namespaced ADMX references. Keep them intact.
-          const name=category||t('Общие','General'),value=JSON.stringify([template,category]);
-          const item=button(name+' ('+count+')',()=>onCategory(value),'policy-folder'+(value===options.category?' selected':''));item.title=template+' / '+name;item.setAttribute('aria-current',String(value===options.category));folder.append(item);
+      const branch=el('details','policy-console-scope');branch.dataset.scope=id;branch.open=state.disclosures?.get(id)??true;branch.addEventListener('toggle',()=>{if(branch.isConnected)(state.disclosures??=new Map()).set(id,branch.open);});
+      const summary=el('summary');const scopeButton=button(label,()=>onScope(id),id===scope?'selected':'');scopeButton.dataset.scopeSelect=id;summary.append(scopeButton);branch.append(summary);nav.append(branch);
+      const branchSettings=options.models[id].settings,{roots}=categoryTree(branchSettings);
+      const policies=el('details');policies.open=state.disclosures?.get(id+'/policies')??true;policies.addEventListener('toggle',()=>{if(policies.isConnected)(state.disclosures??=new Map()).set(id+'/policies',policies.open);});policies.append(el('summary','',t('Политики','Policies')));branch.append(policies);
+      const templates=el('details');templates.open=state.disclosures?.get(id+'/templates')??true;templates.addEventListener('toggle',()=>{if(templates.isConnected)(state.disclosures??=new Map()).set(id+'/templates',templates.open);});templates.append(el('summary','',t('Административные шаблоны','Administrative Templates')));policies.append(templates);
+      const all=button(t('Все параметры','All Settings')+' ('+branchSettings.length+')',()=>onCategory('',id),'policy-folder'+(id===scope&&!options.category?' selected':''));all.dataset.category='';all.dataset.scope=id;all.setAttribute('aria-current',String(id===scope&&!options.category));templates.append(all);
+      function appendFolders(parent,children){
+        for(const node of [...children.values()].sort((a,b)=>collator.compare(a.label,b.label))){
+          const selected=id===scope&&node.id===options.category;
+          const item=button(node.label+' ('+node.count+')',()=>onCategory(node.id,id),'policy-folder'+(selected?' selected':''));
+          item.dataset.category=node.id;item.dataset.scope=id;item.title=node.label;item.setAttribute('aria-current',String(selected));
+          if(!node.children.size){parent.append(item);continue;}
+          const folder=el('details'),summary=el('summary');folder.dataset.folder=node.id;
+          const folderKey=id+'/'+node.id;folder.open=state.expanded.has(folderKey)||(id===scope&&categoryPath.some(c=>c.id===node.id));
+          summary.append(item);folder.append(summary);parent.append(folder);
+          folder.addEventListener('toggle',()=>{if(folder.isConnected)folder.open?state.expanded.add(folderKey):state.expanded.delete(folderKey);});
+          appendFolders(folder,node.children);
         }
       }
+      appendFolders(templates,roots);
+      const preferences=el('details');preferences.open=true;preferences.append(el('summary','',t('Настройки','Preferences')));
+      const system=el('details');system.open=true;system.append(el('summary','',t('Настройки системы','System settings')));
+      const drives=button(t('Сетевые диски','Drive Maps'),()=>options.onDrives(id),'policy-folder'+(options.mode==='drives'&&id===scope?' selected':''));drives.dataset.drives=id;drives.setAttribute('aria-current',String(options.mode==='drives'&&id===scope));system.append(drives);preferences.append(system);branch.append(preferences);
     }
     const editor=el('section','policy-properties');
-    if(editing){main.append(editor);return {layout,editor};}
-    const heading=el('h3','policy-console-heading',selectedCategory?(selectedCategory[0]+' / '+(selectedCategory[1]||t('Общие','General'))):t('Все параметры','All Settings'));main.append(heading);
+    if(editing||options.mode==='drives'){main.append(editor);return {layout,editor};}
+    const heading=el('h3','policy-console-heading',selectedCategory?categoryPath.map(c=>c.label).join(' \u203a '):t('Все параметры','All Settings'));main.append(heading);
+    if(selectedCategory?.children.size){
+      const folders=el('div','policy-subfolders');folders.setAttribute('aria-label',t('Вложенные разделы','Subfolders'));
+      for(const node of [...selectedCategory.children.values()].sort((a,b)=>collator.compare(a.label,b.label)))folders.append(button(node.label,()=>onCategory(node.id),'policy-folder'));
+      main.append(folders);
+    }
     const tools=el('div','policy-list-tools'),filter=el('select');filter.setAttribute('aria-label',t('Состояние параметра','Setting state'));
     for(const [value,label] of [['',t('Все состояния','All states')],['not-configured',stateLabel('not-configured')],['enabled',stateLabel('enabled')],['disabled',stateLabel('disabled')],['unsupported',stateLabel('unsupported')]]){const o=el('option','',label);o.value=value;filter.append(o);}filter.value=state.status;
     const count=el('output');count.setAttribute('aria-live','polite');tools.append(filter,count);main.append(tools);
@@ -55,15 +78,15 @@
     }
     function renderList(){
       const items=matches.filter(s=>!state.status||(s.unsupported?'unsupported':s.state)===state.status).sort((a,b)=>{
-        const value=s=>state.sort==='state'?stateLabel(s.unsupported?'unsupported':s.state):(s[state.sort]||s.id);
+        const value=s=>state.sort==='state'?stateLabel(s.unsupported?'unsupported':s.state):state.sort==='category'?window.sambaadmPolicyPath(s).map(c=>c.label).join(' / '):(s[state.sort]||s.id);
         return state.direction*(collator.compare(String(value(a)),String(value(b)))||a.id.localeCompare(b.id));
       });
       const pageSize=100,totalPages=Math.max(1,Math.ceil(items.length/pageSize));state.page=Math.min(Math.max(0,state.page),totalPages-1);
       const start=state.page*pageSize;body.replaceChildren();count.textContent=t('Найдено: ','Found: ')+items.length+' / '+settings.length;
       for(const th of head.children)th.setAttribute('aria-sort',th.dataset.sort===state.sort?(state.direction===1?'ascending':'descending'):'none');
       for(const setting of items.slice(start,start+pageSize)){
-        const row=el('tr');row.dataset.policy=setting.id;const name=el('td'),link=button(setting.label||setting.id,()=>onOpen(setting.id),'policy-setting-link');link.title=setting.id;name.append(link);if(isALT(setting))name.append(badge());row.append(name);
-        row.append(el('td','policy-state state-'+(setting.unsupported?'unsupported':setting.state),stateLabel(setting.unsupported?'unsupported':setting.state)),el('td','',setting.template||'ALT'),el('td','',setting.category||t('Общие','General')));
+        const row=el('tr');row.dataset.policy=setting.id;row.tabIndex=0;row.addEventListener('keydown',e=>{if(e.target!==row)return;if(e.key==='Enter'){e.preventDefault();onOpen(setting.id);}else if(e.key===' '){e.preventDefault();describe(setting);}});row.addEventListener('focus',()=>describe(setting));const name=el('td'),link=button(setting.label||setting.id,()=>onOpen(setting.id),'policy-setting-link');link.title=setting.id;name.append(link);if(isALT(setting))name.append(badge());row.append(name);
+        row.append(el('td','policy-state state-'+(setting.unsupported?'unsupported':setting.state),stateLabel(setting.unsupported?'unsupported':setting.state)),el('td','',setting.template||'ALT'),el('td','',window.sambaadmPolicyPath(setting).map(c=>c.label).join(' \u203a ')));
         row.addEventListener('click',e=>{if(!e.target.closest('button'))describe(setting);});row.addEventListener('dblclick',e=>{if(!e.target.closest('button'))onOpen(setting.id);});body.append(row);
       }
       if(!items.length){const row=el('tr'),cell=el('td','muted',t('Параметры не найдены','No settings found'));cell.colSpan=4;row.append(cell);body.append(row);}

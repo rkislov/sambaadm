@@ -86,8 +86,8 @@
  {label:t('Фильтрация безопасности','Security filtering'),method:'GET',filter:true},
  {...view(t('Редактор политик','Policy editor'),r=>'/gpo/'+enc(gpoID(r))+'/alt-settings'),editor:true},
         view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),
-        action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[dn('container')]),
-        action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[dn('container')],{confirm:true}),
+        action(t('Привязать к OU','Link to OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/link',[text('container','Выбранный контейнер','Selected container',{treePick:true})],{confirm:true}),
+        action(t('Отвязать от OU','Unlink from OU'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/unlink',[text('container','Выбранный контейнер','Selected container',{treePick:true})],{confirm:true}),
         action(t('Резервная копия','Back up'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/backup',[text('path','Абсолютный каталог на узле helper','Absolute directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual'})],{help:t('Укажите полный путь внутри helper.backup_root на узле helper. Например, /var/lib/sambaadm-helper/backups/manual. Символ ~ не раскрывается.','Enter an absolute path under helper.backup_root on the helper node. Example: /var/lib/sambaadm-helper/backups/manual. The ~ symbol is not expanded.')}),
         action(t('Доставить на контроллеры','Distribute to DCs'),'POST',r=>'/gpo/'+enc(gpoID(r))+'/distribute',[],{confirm:true,job:true}),remove(r=>'/gpo/'+enc(gpoID(r)))]},
     '/trusts':{title:t('Доверия','Trusts'),endpoint:'/trusts',id:r=>r.domain,
@@ -102,7 +102,7 @@
       columns:[],toolbar:[{label:t('Топология','Topology'),method:'GET',topology:true},topologyLinksAction,{label:t('Кэш RODC','RODC cache'),method:'PUT',rodc:true},controllerAuthAction]},
     '/domain':{title:t('Домен и FSMO','Domain and FSMO'),endpoint:'/domain/fsmo',id:r=>r.role,
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
-      toolbar:[view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
+      toolbar:[{label:t('Парольная политика','Password policy'),method:'GET',passwordPolicy:true},view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
         action(t('Повысить уровень','Raise level'),'POST','/domain/level/raise',[text('domain','Уровень домена','Domain level',{optional:true}),text('forest','Уровень леса','Forest level',{optional:true})],{danger:true})],
       actions:[action(t('Передать роль','Transfer role'),'POST','/domain/fsmo/transfer',[text('role','Роль','Role')],{prefill:r=>({role:r.role}),confirm:true}),action(t('Захватить роль','Seize role'),'POST','/domain/fsmo/seize',[text('role','Роль','Role')],{prefill:r=>({role:r.role}),danger:true,warning:t('Применяйте только при безвозвратной потере владельца роли.','Use only when the role owner is permanently lost.')})]},
     '/shares':{title:t('Общие папки','File shares'),endpoint:'/shares',id:r=>r.name,
@@ -523,27 +523,42 @@
     const scopeSelect=el('select');scopeSelect.id='alt-scope';for(const [value,label] of [['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]]){const o=el('option','',label);o.value=value;scopeSelect.append(o);}
     const scopeLabel=el('label','',t('Раздел политики','Policy scope'));scopeLabel.htmlFor=scopeSelect.id;
     const search=el('input');search.type='search';search.id='alt-search';search.placeholder=t('Название, описание или параметр','Name, description or parameter');const searchLabel=el('label','',t('Поиск политик','Search policies'));searchLabel.htmlFor=search.id;
-    const category=el('select');category.id='alt-category';const categoryLabel=el('label','',t('Категория','Category'));categoryLabel.htmlFor=category.id;
+    const category={value:'',disabled:false};
     toolbar.append(scopeLabel,scopeSelect,searchLabel,search);toolbar.classList.add('policy-console-toolbar');
     const content=el('div','policy-console-content');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
-    const path=a.path(row);let model,selectedPolicy='',loading=0,controller=null;
+    const path=a.path(row);let models={},model,driveModel,mode='templates',driveDirty=false,selectedPolicy='',loading=0,controller=null;
     dialog.addEventListener('close',()=>controller?.abort(),{once:true});const consoleState={expanded:new Set(),status:'',sort:'label',direction:1,page:0,selected:''};
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
     function render(){
       if(!model)return;
+      const oldTree=content.querySelector('.policy-console-tree');
+      const scroll={dialog:dialog.scrollTop,tree:content.querySelector('.policy-console-tree')?.scrollTop||0};
+      const oldList=content.querySelector('.policy-settings-scroll');if(oldList)consoleState.scroll=oldList.scrollTop;
       content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · '+(model.scope||scopeSelect.value)));
       if(model.controller)content.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
       if(model.templateSource)content.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
       if(model.templatesImportedAt)content.append(el('p','muted',t('Локальный кэш шаблонов от ','Local template cache imported at ')+new Date(model.templatesImportedAt).toLocaleString(ru?'ru-RU':'en-GB')));
       if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
-      const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||category.value===JSON.stringify([s.template||'ALT',s.category||'']))&&[s.label,s.id,s.description,s.key,...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
+      const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||window.sambaadmPolicyPath(s).some(c=>c.id===category.value))&&[s.label,s.id,s.description,s.key,...window.sambaadmPolicyPath(s).map(c=>c.label),...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
       if(!matches.some(s=>s.id===selectedPolicy))selectedPolicy='';
-      const consoleView=window.sambaadmPolicyConsole({settings:model.settings,matches,scope:model.scope||scopeSelect.value,state:consoleState,category:category.value,editing:!!selectedPolicy,
+      const consoleView=window.sambaadmPolicyConsole({mode,models,settings:model.settings,matches,scope:model.scope||scopeSelect.value,state:consoleState,category:category.value,editing:!!selectedPolicy,
         onScope:value=>{scopeSelect.value=value;scopeSelect.dispatchEvent(new Event('change'));},
-        onCategory:value=>{category.value=value;selectedPolicy='';consoleState.page=0;render();},
-        onOpen:id=>{selectedPolicy=id;render();content.querySelector('.policy-properties input[type=radio]')?.focus();}});
+        onDrives:targetScope=>{if(driveDirty){message(notice,t('Сохраните изменения диска или вернитесь к списку дисков.','Save the drive changes or return to the drive list.'),true);return;}mode='drives';scopeSelect.value=targetScope;model=models[targetScope];selectedPolicy='';search.value='';search.disabled=true;render();},
+        onCategory:(value,targetScope=scopeSelect.value)=>{if(driveDirty){message(notice,t('Сохраните изменения диска или вернитесь к списку дисков.','Save the drive changes or return to the drive list.'),true);return;}mode='templates';search.disabled=false;if(targetScope!==scopeSelect.value){scopeSelect.value=targetScope;model=models[targetScope];search.value='';consoleState.selected='';}const item=content.querySelector('.policy-console-tree [data-scope="'+targetScope+'"][data-category="'+CSS.escape(value)+'"]');for(let folder=item?.closest('details');folder;folder=folder.parentElement?.closest('details'))folder.open=true;category.value=value;selectedPolicy='';consoleState.page=0;render();content.querySelector('.policy-console-tree [data-scope="'+targetScope+'"][data-category="'+CSS.escape(value)+'"]')?.focus({preventScroll:true});},
+        onOpen:id=>{selectedPolicy=id;render();content.querySelector('.policy-properties input[type=radio]')?.focus({preventScroll:true});}});
+      if(oldTree){
+        for(const item of oldTree.querySelectorAll('[data-category]')){const selected=mode==='templates'&&item.dataset.scope===scopeSelect.value&&item.dataset.category===category.value;item.classList.toggle('selected',selected);item.setAttribute('aria-current',String(selected));}
+        for(const item of oldTree.querySelectorAll('[data-drives]')){const selected=mode==='drives'&&item.dataset.drives===scopeSelect.value;item.classList.toggle('selected',selected);item.setAttribute('aria-current',String(selected));}
+        for(const item of oldTree.querySelectorAll('[data-scope-select]'))item.classList.toggle('selected',item.dataset.scopeSelect===scopeSelect.value);
+        consoleView.layout.querySelector('.policy-console-tree').replaceWith(oldTree);
+      }
       const detail=consoleView.editor;content.append(consoleView.layout);
-      if(selectedPolicy)detail.append(button(t('К списку параметров','Back to settings'),()=>{const id=selectedPolicy;selectedPolicy='';render();content.querySelector('[data-policy="'+CSS.escape(id)+'"] button')?.focus();},'policy-back'),el('h3','',matches.find(s=>s.id===selectedPolicy)?.label||selectedPolicy));
+      if(mode==='drives')window.sambaadmDriveEditor({container:detail,model:driveModel,scope:scopeSelect.value,admin,
+        onDirty:value=>driveDirty=value,
+        onConfigure:(targetScope,name)=>{mode='templates';driveDirty=false;search.disabled=false;scopeSelect.value=targetScope;model=models[targetScope];category.value='';search.value='';selectedPolicy=model.settings.find(s=>s.id.endsWith('/'+name))?.id||'';if(!selectedPolicy){message(notice,t('Шаблон параметра недоступен. Обновите локальные шаблоны политик в настройках.','The setting template is unavailable. Refresh policy templates in Settings.'),true);}render();},
+        onSave:async change=>{const result=await request(path.replace(/\/alt-settings$/,'/drives'),'PUT',change);if(generation!==dialogGeneration)return;driveModel=result;driveDirty=false;await refresh();message(notice,t('Сетевые диски сохранены. Проверьте gpupdate и доступ к ресурсу на клиенте.','Drive mappings saved. Verify gpupdate and share access on the client.'));}
+      });
+      if(selectedPolicy)detail.append(button(t('К списку параметров','Back to settings'),()=>{const id=selectedPolicy;selectedPolicy='';render();content.querySelector('[data-policy="'+CSS.escape(id)+'"] button')?.focus({preventScroll:true});},'policy-back'),el('h3','',matches.find(s=>s.id===selectedPolicy)?.label||selectedPolicy));
       for(const setting of matches.filter(s=>s.id===selectedPolicy)){
         if((setting.template||'').toLowerCase().startsWith('basealt')||(setting.key||'').toLowerCase().startsWith('software\\basealt\\'))detail.append(el('span','policy-platform-badge','ALT'));
         const form=el('form','workspace-form policy-properties-form');
@@ -570,21 +585,27 @@
             const values={};if(select.value==='enabled')for(const {field,input} of controls){values[field.id]=field.kind==='boolean'?input.checked:field.kind==='list'?input.value.split(/\r?\n/).filter(x=>x!==''):input.value;}
             const payload={id:setting.id,state:select.value,revision:model.revision,scope:model.scope||scopeSelect.value,values};
             dialog.querySelectorAll('button,select,input,textarea').forEach(x=>{if(!x.closest('.workspace-dialog-close'))x.disabled=true;});message(notice,t('Сохранение…','Saving…'));
-            try{const result=await request(path,'PUT',payload);if(generation!==dialogGeneration)return;model=result;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
+            try{const result=await request(path,'PUT',payload);if(generation!==dialogGeneration)return;model=result;models[model.scope||scopeSelect.value]=result;const otherScope=scopeSelect.value==='Machine'?'User':'Machine';[models[otherScope],driveModel]=await Promise.all([request(path+(otherScope==='User'?'?scope=User':'')),request(path.replace(/\/alt-settings$/,'/drives'))]);if(generation!==dialogGeneration)return;render();message(notice,t('Сохранено. Проверьте gpupdate и gpresult на ALT-клиенте.','Saved. Verify gpupdate and gpresult on the ALT client.'));}
             catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);content.replaceChildren(button(t('Перезагрузить параметры','Reload settings'),()=>refresh()));}
             finally{if(generation===dialogGeneration){toolbar.querySelectorAll('input,select').forEach(x=>x.disabled=false);dialog.querySelectorAll('button').forEach(x=>x.disabled=false);}}
           });
         }detail.append(form);
       }
+      consoleView.layout.querySelector('.policy-console-tree').scrollTop=scroll.tree;
+      const list=consoleView.layout.querySelector('.policy-settings-scroll');if(list)list.scrollTop=consoleState.scroll||0;
+      dialog.scrollTop=scroll.dialog;
     }
     async function refresh(){const requestID=++loading;controller?.abort();controller=new AbortController();const active=controller;
       const started=Date.now(),timeout=setTimeout(()=>active.abort(),125000),progress=setInterval(()=>{if(generation===dialogGeneration&&requestID===loading)message(notice,t('Чтение шаблонов и GPO: ','Reading templates and GPO: ')+Math.floor((Date.now()-started)/1000)+t(' с. Первый импорт может занять больше времени.',' s. The first import may take longer.'));},5000);
       model=null;content.replaceChildren();search.disabled=category.disabled=scopeSelect.disabled=true;message(notice,t('Загрузка…','Loading…'));try{
-      const result=await request(path+(scopeSelect.value==='User'?'?scope=User':''),'GET',undefined,{signal:active.signal});if(generation!==dialogGeneration||requestID!==loading)return;model=result;
-      category.replaceChildren();const all=el('option','',t('Все категории','All categories'));all.value='';category.append(all);for(const key of [...new Set(model.settings.map(s=>JSON.stringify([s.template||'ALT',s.category||''])))].sort()){const [template,name]=JSON.parse(key),o=el('option','',template+' / '+(name||t('Общие','General')));o.value=key;category.append(o);}
-      render();message(notice,'');
-    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.name==='AbortError'||err.status===504?t('Загрузка превысила две минуты. Проверьте доступ к helper; импорт шаблонов доступен в настройках.','Loading exceeded two minutes. Check helper access; template import is available in Settings.'):err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{clearTimeout(timeout);clearInterval(progress);if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;}}
-    scopeSelect.addEventListener('change',()=>{search.value='';selectedPolicy='';consoleState.page=0;consoleState.selected='';refresh();});search.addEventListener('input',()=>{consoleState.page=0;render();});category.addEventListener('change',()=>{selectedPolicy='';consoleState.page=0;render();});
+      const results=await Promise.allSettled([...['Machine','User'].map(scope=>request(path+(scope==='User'?'?scope=User':''),'GET',undefined,{signal:active.signal})),request(path.replace(/\/alt-settings$/,'/drives'),'GET',undefined,{signal:active.signal})]);if(generation!==dialogGeneration||requestID!==loading)return;
+      if(results[2].status==='rejected')throw results[2].reason;driveModel=results[2].value;
+      models=Object.fromEntries(['Machine','User'].map((scope,i)=>[scope,results[i].status==='fulfilled'?results[i].value:{scope,version:driveModel.version,settings:[],controller:driveModel.controller}]));model=models[scopeSelect.value];
+      if(!model.settings.length&&mode==='templates')mode='drives';
+      category.value='';
+      render();const templateError=results.slice(0,2).find(r=>r.status==='rejected');if(templateError){const err=templateError.reason;message(notice,err.name==='AbortError'||err.status===504?t('Загрузка превысила две минуты. Сетевые диски доступны; проверьте доступ к шаблонам.','Loading exceeded two minutes. Drive Maps remain available; check template access.'):t('Административные шаблоны недоступны: ','Administrative templates unavailable: ')+err.message,true);notice.append(button(t('Повторить','Retry'),refresh));}else message(notice,'');
+    }catch(err){if(generation===dialogGeneration&&requestID===loading){message(notice,err.name==='AbortError'||err.status===504?t('Загрузка превысила две минуты. Проверьте доступ к helper; импорт шаблонов доступен в настройках.','Loading exceeded two minutes. Check helper access; template import is available in Settings.'):err.message,true);content.replaceChildren(el('p','muted',t('Для шаблонов включите gpo.editor_enabled и укажите gpo.admx_path, если ADMX/ADML установлены локально. Пустой путь использует SYSVOL Central Store. Сценарии запуска и входа доступны отдельно, без ADMX.','Enable gpo.editor_enabled and set gpo.admx_path for locally installed ADMX/ADML. An empty path uses the SYSVOL Central Store. Startup and logon scripts are available separately without ADMX.')),button(t('Сценарии','Scripts'),()=>openOperation(view(t('Сценарии','Scripts'),r=>'/gpo/'+enc(gpoID(r))+'/scripts'),row)),button(t('Повторить','Retry'),refresh));}}finally{clearTimeout(timeout);clearInterval(progress);if(generation===dialogGeneration&&requestID===loading)search.disabled=category.disabled=scopeSelect.disabled=false;search.disabled=mode==='drives';}}
+    scopeSelect.addEventListener('change',()=>{if(driveDirty){scopeSelect.value=model.scope;message(notice,t('Сохраните изменения диска или вернитесь к списку дисков.','Save the drive changes or return to the drive list.'),true);return;}search.value='';selectedPolicy='';consoleState.page=0;consoleState.selected='';category.value='';model=models[scopeSelect.value];render();});search.addEventListener('input',()=>{consoleState.page=0;render();});
     await refresh();
   }
   async function openDNSEditor(zone, initialName, options={}) {
@@ -660,6 +681,7 @@
     if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
+    if(a.passwordPolicy){lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Парольная политика домена','Domain password policy'));title.id='operation-title';const content=el('div');dialog.append(title,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();return window.sambaadmPasswordPolicy({container:content,admin,current:()=>generation===dialogGeneration,load:()=>request('/domain/password-policy'),save:body=>request('/domain/password-policy','PUT',body)});}
     if(!a.returnTo)lastFocus=document.activeElement;
     const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
@@ -689,6 +711,7 @@
       if(f.multiple){const selected=String(defaults[f.key]??f.value??'').split(';');for(const o of input.options)o.selected=selected.includes(o.value);}
       if(f.key==='container' && !input.value)input.value=selectedContainer||'';
       if(f.absolutePath){input.pattern='/.*';input.title=t('Нужен абсолютный путь, начинающийся с /. Символ ~ не раскрывается.','Use an absolute path starting with /. The ~ symbol is not expanded.');}if(f.placeholder)input.placeholder=f.placeholder;if(f.list)input.setAttribute('list',f.list);
+      if(f.treePick)form.append(window.sambaadmDirectoryPicker({input,tree,loadTree:()=>request('/directory/tree?kind=ou')}));
       label.append(input);form.append(label);inputs.push([f,input]);
       if(f.type==='password'){
         const confirm=el('label','',t('Повторите пароль','Repeat password'));const repeat=el('input');repeat.type='password';repeat.autocomplete='new-password';repeat.required=!f.optional;confirm.append(repeat);form.append(confirm);
@@ -705,7 +728,7 @@
     const output=el('div','workspace-result');
     const controls=el('div','workspace-tools');const submit=el('button',a.danger?'danger':'',a.submitLabel||(a.method==='GET'?t('Показать','Show'):t('Выполнить','Apply')));submit.type='submit';controls.append(submit,closeButton());form.append(controls);dialog.append(form,output);
     form.addEventListener('submit',async e=>{
-      e.preventDefault();if(!form.reportValidity())return;
+      e.preventDefault();if(!form.reportValidity())return;if(inputs.some(([f,input])=>f.treePick&&!input.value)){message(notice,t('Выберите домен или OU в дереве.','Select the domain or an OU in the tree.'),true);return;}
       let path=typeof a.path==='function'?a.path(row):a.path;const body={};
       inputs.forEach(([f,input])=>{if(f.multiple)body[f.key]=Array.from(input.selectedOptions,o=>o.value);else if(f.type==='checkbox')body[f.key]=input.checked;else if(input.value!==''||!f.optional)body[f.key]=f.numeric?Number(input.value):f.array?input.value.split(';').map(v=>v.trim()).filter(Boolean):f.type==='password'?input.value:input.value.trim();});
       if(a.revision)body.revision=row.revision;if(a.preset)Object.assign(body,typeof a.preset==='function'?a.preset(row):a.preset);

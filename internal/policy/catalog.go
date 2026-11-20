@@ -349,3 +349,63 @@ func CategoryLabels(name string, data, resources []byte) map[string]string {
 	}
 	return out
 }
+
+// Category retains stable namespace identities separately from translated labels.
+type Category struct {
+	ID     string `json:"id"`
+	Label  string `json:"label"`
+	Parent string `json:"-"`
+}
+
+// CategoryHierarchy resolves references through this file's namespace aliases.
+// Aliases are local to each ADMX: different files may use different prefixes.
+func CategoryHierarchy(name string, data, resources []byte) (map[string]Category, func(string) string) {
+	var root, lang xmlNode
+	_ = decodeTemplateXML(data, &root)
+	_ = decodeTemplateXML(resources, &lang)
+	namespaces := map[string]string{}
+	target := root.child("policyNamespaces").child("target")
+	namespace := target.attr("namespace")
+	if namespace == "" {
+		namespace = name
+	}
+	namespaces[target.attr("prefix")] = namespace
+	for _, n := range root.child("policyNamespaces").Children {
+		if n.XMLName.Local == "using" {
+			namespaces[n.attr("prefix")] = n.attr("namespace")
+		}
+	}
+	resolve := func(ref string) string {
+		if ref == "" {
+			return ""
+		}
+		if prefix, local, ok := strings.Cut(ref, ":"); ok {
+			if ns := namespaces[prefix]; ns != "" {
+				return ns + "/" + local
+			}
+			return ref // Compatibility with older templates without namespace declarations.
+		}
+		return namespace + "/" + ref
+	}
+	labels := map[string]string{}
+	for _, n := range lang.child("resources").child("stringTable").Children {
+		labels[n.attr("id")] = n.text()
+	}
+	out := map[string]Category{}
+	for _, n := range root.child("categories").Children {
+		id := resolve(n.attr("name"))
+		label := n.attr("displayName")
+		if value := labels[resourceID(label)]; value != "" {
+			label = value
+		}
+		if label == "" || strings.HasPrefix(label, "$(") {
+			label = n.attr("name")
+		}
+		c := Category{ID: id, Label: label, Parent: resolve(n.child("parentCategory").attr("ref"))}
+		out[id] = c
+		if prefix := target.attr("prefix"); prefix != "" {
+			out[prefix+":"+n.attr("name")] = c
+		}
+	}
+	return out, resolve
+}

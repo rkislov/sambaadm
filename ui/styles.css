@@ -225,3 +225,30 @@ tbody tr:hover { @apply bg-slate-50; }
 .rsop-report button[aria-pressed] { @apply transition-none; }
 .gpo-modeling > button { @apply mb-4; }
 @media(min-width:851px) { .console-section-links { position:sticky;top:5rem; } }
+
+/* Keep MMC disclosure arrows and folder labels on the same compact row. */
+.policy-console-tree summary > .policy-folder { display:inline-flex;width:calc(100% - 18px);margin:0;vertical-align:middle; }
+.policy-console-tree details > .policy-folder { padding-left:18px; }
+.policy-subfolders { display:flex;flex-wrap:wrap;gap:4px;padding:6px 12px;border-bottom:1px solid var(--border);max-height:100px;overflow:auto; }
+.policy-subfolders .policy-folder { background:transparent;box-shadow:none;border:0;border-radius:2px;padding:4px 8px;font-size:12px;min-height:28px;color:var(--ink); }
+.policy-subfolders .policy-folder::before { content:'';width:13px;height:10px;border:1px solid #c9a648;border-radius:2px;background:#fef3c7;flex-shrink:0; }
+
+.directory-picker { border:1px solid var(--border);border-radius:8px;padding:12px;min-width:0; }
+.directory-picker-tree { max-height:38vh;overflow:auto;padding:8px 2px; }
+.directory-picker-tree [role=group] { margin-left:18px;border-left:1px solid var(--border);padding-left:8px; }
+.directory-picker-node { display:flex;max-width:100%;border:0;background:transparent;box-shadow:none;justify-content:start;text-align:left;padding:5px 8px;font-size:13px;overflow-wrap:anywhere; }
+.directory-picker-tree summary > .directory-picker-node { display:inline-flex;vertical-align:middle; }
+.directory-picker-node::before { content:'';width:14px;height:11px;border:1px solid #c9a648;background:#fef3c7;border-radius:2px;flex-shrink:0; }
+.directory-picker-node.selected { background:#dbeafe;color:#1e3a8a; }
+.directory-picker-selection { display:block;overflow-wrap:anywhere;font-size:12px;padding-top:8px; }
+.directory-picker .workspace-tools input { flex:1;min-width:140px; }
+.drive-maps-editor h3 { margin-top:0; }
+.drive-maps-scroll { overflow:auto;max-height:36vh; }
+.drive-maps-table { width:100%;font-size:12px; }
+.drive-maps-table td,.drive-maps-table th { padding:7px 10px;overflow-wrap:anywhere; }
+.drive-maps-form fieldset { border:0;min-width:0;display:grid;gap:10px;padding:0; }
+.drive-maps-form fieldset label:has(input[type=checkbox]) { display:flex;align-items:center;gap:8px; }
+.drive-scope-form { margin:12px 0;padding:12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px; }
+.drive-maps-help { margin-top:16px;padding:12px;border-top:1px solid var(--border);font-size:12px; }
+.drive-maps-help button { margin:3px;padding:5px 8px;font-size:12px; }
+@media(max-width:700px){.drive-maps-table{min-width:530px}.directory-picker-tree{max-height:35vh}}

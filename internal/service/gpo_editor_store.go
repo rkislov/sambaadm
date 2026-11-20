@@ -314,6 +314,8 @@ func (s *GPOService) loadEditorDefinitionsReport(share *sysvolShare, domain stri
 	var defs []policy.Definition
 	files, total := 0, 0
 	categories := map[string]string{}
+	hierarchy := map[string]policy.Category{}
+	categoryRefs := map[string]string{}
 	seen := map[string]bool{}
 	for _, name := range names {
 		if share != nil {
@@ -382,6 +384,13 @@ func (s *GPOService) loadEditorDefinitionsReport(share *sysvolShare, domain stri
 		if len(defs) > 60000 {
 			return nil, "", fmt.Errorf("ADMX catalog exceeds 60000 policy definitions")
 		}
+		nodes, resolve := policy.CategoryHierarchy(name, data, language)
+		for key, node := range nodes {
+			hierarchy[key] = node
+		}
+		for _, d := range parsed {
+			categoryRefs[d.Template+"/"+d.Category] = resolve(d.Category)
+		}
 		for key, value := range policy.CategoryLabels(name, data, language) {
 			categories[key] = value
 		}
@@ -394,10 +403,23 @@ func (s *GPOService) loadEditorDefinitionsReport(share *sysvolShare, domain stri
 	}
 	for i := range defs {
 		d := &defs[i]
+		ref := categoryRefs[d.Template+"/"+d.Category]
+		visited := map[string]bool{}
+		for ref != "" && !visited[ref] && len(d.CategoryPath) < 64 {
+			visited[ref] = true
+			node, ok := hierarchy[ref]
+			if !ok {
+				break
+			}
+			d.CategoryPath = append([]policy.Category{{ID: node.ID, Label: node.Label}}, d.CategoryPath...)
+			ref = node.Parent
+		}
 		if label := categories[d.SupportedOn]; label != "" {
 			d.SupportedOn = label
 		}
-		if label := categories[d.Category]; label != "" {
+		if len(d.CategoryPath) > 0 {
+			d.Category = d.CategoryPath[len(d.CategoryPath)-1].Label
+		} else if label := categories[d.Category]; label != "" {
 			d.Category = label
 		} else if label := categories[d.Template+"/"+d.Category]; label != "" {
 			d.Category = label
