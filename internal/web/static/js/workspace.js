@@ -478,7 +478,7 @@
     await refresh();
   }
   function openPSOManager(selectedID='',returnTo){
-    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Детальные парольные политики (PSO)');title.id='operation-title';const panel=el('div');dialog.append(title,panel);if(returnTo)dialog.append(button('Вернуться к пользователю',returnTo));dialog.append(button('Закрыть',closeOperation));dialog.showModal();window.sambaadmPSO({container:panel,request,admin,current:()=>generation===dialogGeneration,selectedID});
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Парольные политики (PSO)');title.id='operation-title';const panel=el('div');const header=dialog.querySelector('.workspace-dialog-close');header.prepend(title);header.classList.add('pso-dialog-header');if(returnTo)dialog.append(button('Вернуться к пользователю',returnTo));dialog.append(panel);dialog.showModal();window.sambaadmPSO({container:panel,request,admin,current:()=>generation===dialogGeneration,selectedID});
   }
   async function openUserCard(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();

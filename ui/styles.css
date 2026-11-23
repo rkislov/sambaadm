@@ -315,3 +315,45 @@ tbody tr:hover { @apply bg-slate-50; }
 .pso-subject .mono { flex-basis:100%;font-size:12px; }
 .pso-delete { margin-top:24px;padding-top:16px;border-top:1px solid var(--border); }
 @media(max-width:700px){.pso-layout{grid-template-columns:minmax(0,1fr)}.pso-list{max-height:180px}.pso-detail .workspace-form{grid-template-columns:minmax(0,1fr)}}
+/* PSO: separate editing, recipients and review; keep directory paths out of the first view. */
+.pso-help { margin:16px 0 0;font-size:12px;color:#64748b; }
+.pso-help > summary,.pso-technical > summary,.pso-advanced > summary,.pso-subject summary { cursor:pointer; }
+.pso-mobile-picker { display:none; }
+.pso-list { padding-right:12px;border-right:1px solid var(--border); }
+.pso-list button { border:0;border-radius:6px;box-shadow:none;font-size:12px; }
+.pso-detail > h3 { margin:0 0 12px;font-size:18px;overflow-wrap:anywhere; }
+.pso-tabs { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin-bottom:16px;max-width:400px;padding:4px;border-radius:9px;background:#f1f5f9; }
+.pso-tabs button { min-height:32px;padding:5px 8px;border:0;box-shadow:none;background:transparent;border-radius:6px;font-size:12px; }
+.pso-tabs [aria-selected=true] { background:white;color:#0f766e;font-weight:600; }
+.pso-form { display:block; }
+.pso-fields { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px; }
+.pso-fields label { display:flex;flex-direction:column;gap:5px;font-size:12px;color:#475569; }
+.pso-fields label[hidden] { display:none; }
+.pso-fields small { font-size:11px; }
+.pso-general { margin-bottom:20px; }
+.pso-general > label:first-child:not([hidden]) { grid-column:1/-1; }
+.pso-fieldset { margin:0 0 18px;padding:14px 16px;border:1px solid var(--border);border-radius:10px;min-width:0; }
+.pso-fieldset legend { padding:0 5px;font-weight:600;font-size:13px; }
+.pso-switch { display:flex;align-items:flex-start;gap:9px;font-size:12px;line-height:19px;margin:12px 0; }
+.pso-switch input[type=checkbox] { width:16px;height:16px;min-height:0;flex:0 0 16px;margin-top:2px; }
+.pso-advanced,.pso-technical { margin-top:12px;font-size:12px;color:#64748b; }
+.pso-form-footer { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:12px; }
+.pso-subject > details { flex-basis:100%;font-size:11px;color:#64748b; }
+.pso-delete-details { margin-top:20px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:#64748b; }
+.pso-delete-details > summary { cursor:pointer; }
+.pso-delete { border:0;margin-top:8px;padding-top:0; }
+.pso-read-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px; }
+.pso-read-section { padding:14px;border:1px solid var(--border);border-radius:10px; }
+.pso-read-section h4 { margin:0 0 12px;font-size:13px; }
+.pso-read-section dl { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 12px;font-size:12px; }
+.pso-read-section dd { margin:0;font-weight:600; }
+.pso-read-section dt { color:#64748b; }
+@media(max-width:700px){.pso-list{display:none}.pso-mobile-picker{display:flex;flex-direction:column;gap:6px;font-size:12px;margin:10px 0 18px}.pso-fieldset{padding:10px}.pso-fields{gap:10px}.pso-general{grid-template-columns:minmax(0,1fr) 110px}.pso-read-grid{grid-template-columns:minmax(0,1fr)}.pso-form-footer{align-items:flex-start;flex-direction:column}.pso-form-footer button{width:100%}.pso-tabs{max-width:none}.pso-tab-panel .workspace-form{display:block}.pso-detail>h3{font-size:17px}}
+.workspace-dialog:has(.pso-layout) { width:min(1100px,96vw); }
+.pso-dialog-header { align-items:center;justify-content:space-between;gap:16px;margin-bottom:12px; }
+.pso-dialog-header h2 { margin:0;font-size:18px; }
+.pso-layout { grid-template-columns:minmax(180px,220px) minmax(0,1fr); }
+.pso-settings-grid { display:grid;grid-template-columns:1.2fr 1fr;gap:16px;align-items:start; }
+@media(max-width:1000px){.pso-settings-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:700px){.workspace-dialog:has(.pso-layout){padding:16px;width:96vw}.pso-layout{grid-template-columns:minmax(0,1fr)}.pso-dialog-header h2{font-size:16px}.pso-dialog-header{gap:8px}.pso-settings-grid{gap:0}}
+.pso-tab-panel .password-policy-preview,.pso-switch,.pso-help { overflow-wrap:anywhere; }
