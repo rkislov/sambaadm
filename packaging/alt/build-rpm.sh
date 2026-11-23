@@ -17,7 +17,7 @@ cp "$repo/deploy/sambaadm-prepare-logs" "$work/payload/"
 cp "$repo/deploy/sambaadm-setup" "$work/payload/"
 cp "$repo/deploy/sambaadm-package" "$work/payload/"
 cp "$repo/"{LICENSE,NOTICE} "$work/payload/"
-cp "$repo/docs/alt-install.md" "$work/payload/"
+cp "$repo/docs/alt-install.md" "$repo/docs/quick-install.md" "$work/payload/"
 systemd-analyze verify "$work/payload/sambaadm.service" 2>"$work/unit-check.log" || {
  # ExecStart is provided by the RPM, not yet installed in the builder.
  sed "s@/usr/bin/sambaadm@$binary@g; s@/usr/libexec/sambaadm-prepare-logs@$work/payload/sambaadm-prepare-logs@g; s@WorkingDirectory=/var/lib/sambaadm@WorkingDirectory=/tmp@" "$repo/packaging/alt/sambaadm.service" > "$work/sambaadm.service"

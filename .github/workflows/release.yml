@@ -48,6 +48,7 @@ jobs:
           make release
           cp deploy/sambaadm-package dist/sambaadm-package
           cp docs/alt-install.md dist/sambaadm-alt-install.md
+          cp docs/quick-install.md dist/sambaadm-quick-install.md
           cp docs/admin-guide/sambaadm-admin-guide.docx "dist/sambaadm-admin-guide-${VERSION#v}.docx"
           cp docs/user-guide/sambaadm-user-guide.docx "dist/sambaadm-user-guide-${VERSION#v}.docx"
           tar -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs configs deploy
