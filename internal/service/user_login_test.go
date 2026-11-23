@@ -28,6 +28,9 @@ func TestLoginDiagnosticsAuthoritativeLockAndExpiry(t *testing.T) {
 	}
 	attrs["msDS-User-Account-Control-Computed"] = []string{"0"}
 	status = loginStatus(ldap.NewEntry("CN=alice", attrs), now, "dc.test")
+	if status.CanUnlock {
+		t.Fatal("historical lockout timestamp exposes unlock despite DC confirming unlocked state")
+	}
 	for _, c := range status.Checks {
 		if c.Code == "lockout" && c.State != "ok" {
 			t.Fatal("historical lockoutTime treated as active block")

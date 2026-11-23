@@ -79,7 +79,7 @@ func loginStatus(e *ldap.Entry, now time.Time, controller string) *UserLoginStat
 	} else {
 		add("lockout", "Блокировка входа", "unknown", "Контроллер не вернул вычисляемое состояние блокировки. По одному lockoutTime нельзя подтвердить активную блокировку.")
 	}
-	out.CanUnlock = (le == nil && lock > 0) || (ce == nil && computed&16 != 0)
+	out.CanUnlock = ce == nil && computed&16 != 0 || ce != nil && le == nil && lock > 0
 	if raw := e.GetAttributeValue("lockoutTime"); le == nil && lock > 0 {
 		date, ok := filetimeDate(raw)
 		if ok {
