@@ -305,3 +305,13 @@ tbody tr:hover { @apply bg-slate-50; }
 .login-check-issue { border-color:#b45309;background:#fffbeb; }
 .login-check-unknown { border-color:#64748b; }
 .login-check-ok { border-color:#0f766e; }
+.pso-layout { display:grid;grid-template-columns:minmax(190px,260px) minmax(0,1fr);gap:18px;align-items:start; }
+.pso-list { display:flex;flex-direction:column;gap:6px;max-height:65vh;overflow:auto; }
+.pso-list button { justify-content:flex-start;text-align:left;overflow-wrap:anywhere; }
+.pso-list button.selected { background:#e6f5f3;border-color:#0f766e; }
+.pso-detail { min-width:0; }
+.pso-detail .mono,.pso-subject { overflow-wrap:anywhere; }
+.pso-subject { display:flex;flex-wrap:wrap;gap:6px 12px;padding:10px;margin:8px 0;border:1px solid var(--border);border-radius:8px; }
+.pso-subject .mono { flex-basis:100%;font-size:12px; }
+.pso-delete { margin-top:24px;padding-top:16px;border-top:1px solid var(--border); }
+@media(max-width:700px){.pso-layout{grid-template-columns:minmax(0,1fr)}.pso-list{max-height:180px}.pso-detail .workspace-form{grid-template-columns:minmax(0,1fr)}}

@@ -3658,6 +3658,54 @@
                 "403": {"description": "Недостаточно прав или неверный CSRF"}
                 "409": {"description": "Состояние изменилось; обновите диагностику"}
                 "502": {"description": "DC недоступен или результат изменения не подтверждён"}
+    "/domain/password-policies":
+        "get":
+            "summary": "Список детальных парольных политик PSO"
+            "tags": ["Domain"]
+            "description": "До 2000 PSO; неполное чтение не возвращается как редактируемый список."
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}}
+        "post":
+            "summary": "Создать PSO"
+            "tags": ["Domain"]
+            "description": "Нужны все параметры, назначения и confirm:true. Начальные параметры можно прочитать из /domain/password-policy. Subject.id и DN берутся из поиска получателей. Запись и назначения проверяются повторным чтением."
+            "responses": {"401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}, "201": {"description": "Параметры прочитаны или результат проверен"}, "400": {"description": "Неполные или недопустимые параметры"}, "403": {"description": "Требуется admin, CSRF и соответствующие права LDAP"}, "409": {"description": "Объект или получатель изменился; перечитайте данные"}, "404": {"description": "PSO не найдена или недоступна"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["name", "description", "precedence", "minLength", "historyLength", "complexity", "minAgeDays", "maxAgeDays", "lockoutThreshold", "lockoutDurationMinutes", "lockoutWindowMinutes", "reversibleEncryption", "subjects", "confirm"], "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 64}, "description": {"type": "string", "maxLength": 1024}, "precedence": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "minLength": {"type": "integer", "minimum": 0, "maximum": 255}, "historyLength": {"type": "integer", "minimum": 0, "maximum": 1024}, "complexity": {"type": "boolean"}, "minAgeDays": {"type": "number", "minimum": 0, "maximum": 998}, "maxAgeDays": {"type": "number", "minimum": 0, "maximum": 999}, "lockoutThreshold": {"type": "integer", "minimum": 0, "maximum": 999}, "lockoutDurationMinutes": {"type": "number", "minimum": 0, "maximum": 99999}, "lockoutWindowMinutes": {"type": "number", "minimum": 0, "maximum": 99999}, "reversibleEncryption": {"type": "boolean"}, "subjects": {"type": "array", "maxItems": 256, "items": {"type": "object", "additionalProperties": false, "required": ["id", "dn"], "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "dn": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}}}}, "revision": {"type": "string"}, "confirm": {"type": "boolean", "enum": [true]}}}}}}
+            "parameters": [{"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
+    "/domain/password-policies/{id}":
+        "get":
+            "summary": "Прочитать PSO и получателей"
+            "tags": ["Domain"]
+            "description": ""
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}]
+        "put":
+            "summary": "Изменить PSO и назначения"
+            "tags": ["Domain"]
+            "description": "Полная замена поддерживаемых параметров. Неизвестные LDAP-атрибуты сохраняются. Имя не переименовывается. Нужна актуальная revision; критическое assertion по GUID/uSNChanged. До 256 назначений. Результат сверяется после записи."
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}, "400": {"description": "Неполные или недопустимые параметры"}, "403": {"description": "Требуется admin, CSRF и соответствующие права LDAP"}, "409": {"description": "Объект или получатель изменился; перечитайте данные"}, "404": {"description": "PSO не найдена или недоступна"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["name", "description", "precedence", "minLength", "historyLength", "complexity", "minAgeDays", "maxAgeDays", "lockoutThreshold", "lockoutDurationMinutes", "lockoutWindowMinutes", "reversibleEncryption", "subjects", "confirm", "revision"], "properties": {"name": {"type": "string", "minLength": 1, "maxLength": 64}, "description": {"type": "string", "maxLength": 1024}, "precedence": {"type": "integer", "minimum": 1, "maximum": 2147483647}, "minLength": {"type": "integer", "minimum": 0, "maximum": 255}, "historyLength": {"type": "integer", "minimum": 0, "maximum": 1024}, "complexity": {"type": "boolean"}, "minAgeDays": {"type": "number", "minimum": 0, "maximum": 998}, "maxAgeDays": {"type": "number", "minimum": 0, "maximum": 999}, "lockoutThreshold": {"type": "integer", "minimum": 0, "maximum": 999}, "lockoutDurationMinutes": {"type": "number", "minimum": 0, "maximum": 99999}, "lockoutWindowMinutes": {"type": "number", "minimum": 0, "maximum": 99999}, "reversibleEncryption": {"type": "boolean"}, "subjects": {"type": "array", "maxItems": 256, "items": {"type": "object", "additionalProperties": false, "required": ["id", "dn"], "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "dn": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}}}}, "revision": {"type": "string"}, "confirm": {"type": "boolean", "enum": [true]}}}}}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}, {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
+        "delete":
+            "summary": "Удалить PSO"
+            "tags": ["Domain"]
+            "description": "Назначенные пользователи получат другую PSO или общую политику. Пользователи и группы не удаляются. Нужны актуальная revision и confirm:true; отсутствие PSO проверяется повторным чтением."
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}, "400": {"description": "Неполные или недопустимые параметры"}, "403": {"description": "Требуется admin, CSRF и соответствующие права LDAP"}, "409": {"description": "Объект или получатель изменился; перечитайте данные"}, "404": {"description": "PSO не найдена или недоступна"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "required": ["revision", "confirm"], "properties": {"revision": {"type": "string"}, "confirm": {"type": "boolean", "enum": [true]}}}}}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}, {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
+    "/domain/password-policies/subjects":
+        "get":
+            "summary": "Найти получателей PSO"
+            "tags": ["Domain"]
+            "description": "До 100 результатов. Разрешены пользователи и глобальные группы безопасности текущего домена. При превышении уточните запрос; частичный список не возвращается."
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}}
+            "parameters": [{"name": "q", "in": "query", "required": true, "schema": {"type": "string", "minLength": 2, "maxLength": 128}}, {"name": "kind", "in": "query", "required": true, "schema": {"type": "string", "enum": ["user", "group"]}}]
+    "/users/{login}/password-policy":
+        "get":
+            "summary": "Результирующая парольная политика пользователя"
+            "tags": ["Domain"]
+            "description": "Чтение msDS-ResultantPSO с DC. Source=pso содержит pso с параметрами; source=domain содержит domain и явную оговорку о правах чтения. Выбранная DC, но недоступная PSO не заменяется общей политикой. В ответе controller, observedAt, explanation и limitations. Пароль не проверяется."
+            "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}}
+            "parameters": [{"name": "login", "in": "path", "required": true, "schema": {"type": "string"}}]
 "components":
     "securitySchemes":
         "cookieAuth":
