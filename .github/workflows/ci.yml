@@ -89,6 +89,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dashboard.cjs
       - name: Domain search and direct object cards
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-search.cjs
+      - name: User login diagnosis and unlock
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/user-login.cjs
       - name: Web workspace contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/workspace.cjs
       - name: Folder navigation and table preferences

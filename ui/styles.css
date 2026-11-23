@@ -300,3 +300,8 @@ tbody tr:hover { @apply bg-slate-50; }
 .domain-search-result { display:flex;flex-wrap:wrap;gap:4px 12px;padding:10px;border:1px solid var(--border);border-radius:8px;margin:6px 0; }
 .domain-search-result small { flex-basis:100%;overflow-wrap:anywhere;color:#64748b; }
 @media(max-width:600px){.topbar{flex-wrap:wrap;gap:8px}.topbar [data-domain-search]{font-size:12px;padding:6px 8px}.domain-search-form{align-items:stretch;flex-direction:column}}
+.login-check { padding:10px 14px;margin:8px 0;border-left:3px solid var(--border);background:#f8fafc;overflow-wrap:anywhere; }
+.login-check h4,.login-check p { margin:4px 0; }
+.login-check-issue { border-color:#b45309;background:#fffbeb; }
+.login-check-unknown { border-color:#64748b; }
+.login-check-ok { border-color:#0f766e; }

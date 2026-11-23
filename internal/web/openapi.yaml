@@ -3622,6 +3622,42 @@
                 "403": {"description": "Admin and CSRF required"}
                 "409": {"description": "Stale plan"}
                 "502": {"description": "Preflight LDAP, DRS or helper failure"}
+    "/users/{login}/login-status":
+        "get":
+            "summary": "Диагностика входа пользователя без проверки пароля"
+            "tags": ["Users"]
+            "parameters":
+                - {"name": "login", "in": "path", "required": true, "schema": {"type": "string"}}
+            "responses":
+                "200": {"description": "Диагностика с DC, временем чтения, проверками, revision и canUnlock"}
+                "401": {"description": "Требуется вход"}
+                "502": {"description": "Не удалось прочитать состояние на DC"}
+    "/users/{login}/unlock":
+        "post":
+            "summary": "Снять блокировку пользователя и проверить результат на DC"
+            "description": "Helpdesk или admin. Сбрасывается только lockoutTime. Критическое LDAP assertion по GUID/uSNChanged защищает от гонки; результат перечитывается. Пароль и флаг отключения не меняются."
+            "tags": ["Users"]
+            "parameters":
+                - {"name": "login", "in": "path", "required": true, "schema": {"type": "string"}}
+                - {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["revision", "confirm"]
+                            "properties":
+                                "revision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+            "responses":
+                "200": {"description": "Актуальная диагностика после проверки результата"}
+                "400": {"description": "Нужны версия диагностики и подтверждение"}
+                "401": {"description": "Требуется вход"}
+                "403": {"description": "Недостаточно прав или неверный CSRF"}
+                "409": {"description": "Состояние изменилось; обновите диагностику"}
+                "502": {"description": "DC недоступен или результат изменения не подтверждён"}
 "components":
     "securitySchemes":
         "cookieAuth":
