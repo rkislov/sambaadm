@@ -3706,6 +3706,60 @@
             "description": "Чтение msDS-ResultantPSO с DC. Source=pso содержит pso с параметрами; source=domain содержит domain и явную оговорку о правах чтения. Выбранная DC, но недоступная PSO не заменяется общей политикой. В ответе controller, observedAt, explanation и limitations. Пароль не проверяется."
             "responses": {"200": {"description": "Параметры прочитаны или результат проверен"}, "401": {"description": "Требуется вход"}, "502": {"description": "DC недоступен, чтение неполно или результат не подтверждён"}}
             "parameters": [{"name": "login", "in": "path", "required": true, "schema": {"type": "string"}}]
+    "/employees/choices":
+        "get":
+            "summary": "Поиск сотрудников и групп"
+            "description": "kind=user|group, q от 2 до 128 символов. До 50 вариантов; id — сырые байты objectGUID в hex. Только admin."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+    "/employees/context":
+        "get":
+            "summary": "Проверить сотрудника и прямые группы"
+            "description": "login или id. Основная группа помечена primary:true; защищённые и служебные записи исключены."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+    "/employees/parent":
+        "get":
+            "summary": "Проверить подразделение по DN"
+            "description": "dn выбирается из /directory/tree?kind=containers. Возвращает GUID и канонический DN."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+    "/employees/plans":
+        "get":
+            "summary": "Последние 30 кадровых операций"
+            "description": "Журнал переживает перезапуск, пароль не сохраняется."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+        "post":
+            "summary": "Подготовить план приёма, перевода или увольнения"
+            "description": "Без записи в AD. scenario=join|transfer|offboard, login, userId, displayName, mail/department/title (не передано — сохранить, пусто — очистить), parent:{id,dn,name}, addGroups/removeGroups:[{id,dn,name}], activate/forceChange. Пароль не принимается. Срок плана 15 минут."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "properties": {"scenario": {"type": "string", "enum": ["join", "transfer", "offboard"]}, "login": {"type": "string", "maxLength": 20}, "userId": {"type": "string"}, "displayName": {"type": "string", "maxLength": 64}, "parent": {"type": "object", "additionalProperties": false, "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "dn": {"type": "string"}, "name": {"type": "string"}, "primary": {"type": "boolean"}}, "required": ["id", "dn"]}, "addGroups": {"type": "array", "maxItems": 32, "items": {"type": "object", "additionalProperties": false, "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "dn": {"type": "string"}, "name": {"type": "string"}, "primary": {"type": "boolean"}}, "required": ["id", "dn"]}}, "removeGroups": {"type": "array", "maxItems": 32, "items": {"type": "object", "additionalProperties": false, "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{32}$"}, "dn": {"type": "string"}, "name": {"type": "string"}, "primary": {"type": "boolean"}}, "required": ["id", "dn"]}}, "activate": {"type": "boolean"}, "forceChange": {"type": "boolean"}, "mail": {"type": "string", "maxLength": 256}, "department": {"type": "string", "maxLength": 64}, "title": {"type": "string", "maxLength": 64}}, "required": ["scenario", "login"]}}}}
+            "parameters": [{"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
+    "/employees/plans/{id}":
+        "get":
+            "summary": "Прочитать результат кадровой операции"
+            "description": "state=ready|completed|partial|interrupted; steps содержит результат каждого шага. Пароль отсутствует."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}]
+    "/employees/plans/{id}/review":
+        "post":
+            "summary": "Перечитать состояние и подготовить продолжение"
+            "description": "revision обязательна. После сбоя сверяет реальный каталог и восстанавливает только оставшиеся шаги. Пароль не принимается."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "properties": {"revision": {"type": "string"}}, "required": ["revision"]}}}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}, {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
+    "/employees/plans/{id}/apply":
+        "post":
+            "summary": "Выполнить подтверждённый кадровый план"
+            "description": "revision и confirm:true обязательны; password только если needsPassword:true. Ответ 200 может содержать state:partial — проверяйте steps и error. После неизвестного результата сначала GET и review. Операции не являются общей транзакцией."
+            "tags": ["Employees"]
+            "responses": {"200": {"description": "План или результат по шагам"}, "400": {"description": "Некорректные параметры"}, "401": {"description": "Требуется вход"}, "403": {"description": "Требуется admin и CSRF"}, "404": {"description": "Операция или сотрудник не найдены"}, "409": {"description": "Изменение данных, истечение плана или другая операция"}, "502": {"description": "Каталог или журнал недоступен"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "additionalProperties": false, "properties": {"revision": {"type": "string"}, "confirm": {"type": "boolean", "enum": [true]}, "password": {"type": "string", "format": "password", "writeOnly": true}}, "required": ["revision", "confirm"]}}}}
+            "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "pattern": "^[0-9a-f]{32}$"}}, {"name": "X-CSRF-Token", "in": "header", "required": true, "schema": {"type": "string"}}]
 "components":
     "securitySchemes":
         "cookieAuth":

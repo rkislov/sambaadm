@@ -46,6 +46,8 @@
       create:action(t('Создать пользователя','Create user'),'POST','/users',[text('login','Логин','Login'),text('displayName','Отображаемое имя','Display name',{optional:true}),password(),ou(),text('mail','Почта','Email',{type:'email',optional:true}),description(),text('enabled','Учётная запись включена','Account enabled',{type:'checkbox',value:true})]),
       actions:[{...view(t('Свойства','Properties'),r=>'/users/'+enc(r.samAccountName)),userCard:true},
         {label:'Диагностика входа / разблокировка',method:'GET',userCard:true,loginDiagnostics:true},
+        {label:'Перевести сотрудника',method:'POST',adminOnly:true,employee:'transfer'},
+        {label:'Уволить сотрудника',method:'POST',adminOnly:true,employee:'offboard'},
         action(t('Включить','Enable'),'POST',r=>'/users/'+enc(r.samAccountName)+'/enable',[],{support:true,when:r=>!r.enabled}),
         action(t('Отключить','Disable'),'POST',r=>'/users/'+enc(r.samAccountName)+'/disable',[],{support:true,when:r=>r.enabled,confirm:true}),
         action(t('Сбросить пароль','Reset password'),'POST',r=>'/users/'+enc(r.samAccountName)+'/password',[password()],{support:true,secret:true}),
@@ -217,6 +219,7 @@
     addAction(target,cfg.create);
     if(target.childElementCount>before)target.lastElementChild.classList.add('btn-primary');
   }
+  if(cfg===configs['/users']&&admin)listTools.prepend(button('Мастер сотрудника',()=>openEmployee(),'btn-primary'));
   listTools.hidden=!listTools.childElementCount;
   const views=el('div','console-tree-children');
   const operations=el('div','console-tree-children');
@@ -477,6 +480,9 @@
     }
     await refresh();
   }
+  function openEmployee(initialScenario='',initialUser=''){
+    if(!admin)return;lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Мастер сотрудника');title.id='operation-title';const panel=el('div');const header=dialog.querySelector('.workspace-dialog-close');header.prepend(title);header.classList.add('pso-dialog-header');dialog.append(panel);dialog.showModal();window.sambaadmEmployee({container:panel,request,current:()=>generation===dialogGeneration,onChanged:load,initialScenario,initialUser});
+  }
   function openPSOManager(selectedID='',returnTo){
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Парольные политики (PSO)');title.id='operation-title';const panel=el('div');const header=dialog.querySelector('.workspace-dialog-close');header.prepend(title);header.classList.add('pso-dialog-header');if(returnTo)dialog.append(button('Вернуться к пользователю',returnTo));dialog.append(panel);dialog.showModal();window.sambaadmPSO({container:panel,request,admin,current:()=>generation===dialogGeneration,selectedID});
   }
@@ -693,6 +699,7 @@
     if(a.groupMembers)return openGroupMembers(row);
     if(a.userCard)return openUserCard(a,row);
     if(a.editor)return openALTEditor(a,row);
+    if(a.employee)return openEmployee(a.employee,row?.samAccountName);
     if(a.pso)return openPSOManager();
     if(a.passwordPolicy){lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Парольная политика домена','Domain password policy'));title.id='operation-title';const content=el('div');dialog.append(title,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();return window.sambaadmPasswordPolicy({container:content,admin,current:()=>generation===dialogGeneration,load:()=>request('/domain/password-policy'),save:body=>request('/domain/password-policy','PUT',body)});}
     if(!a.returnTo)lastFocus=document.activeElement;

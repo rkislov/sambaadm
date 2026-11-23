@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-ldap/ldap/v3"
+	ldapproto "sambaadm/internal/ldap"
 )
 
 // DirectoryNode uses parsed DNs so escaped commas and multivalued RDNs remain intact.
@@ -81,8 +82,26 @@ func (s *Server) handleAPIDirectoryTree(w http.ResponseWriter, r *http.Request) 
 	if kind == "" {
 		kind = "users"
 	}
-	if kind != "users" && kind != "groups" && kind != "computers" && kind != "ou" {
+	if kind != "users" && kind != "groups" && kind != "computers" && kind != "ou" && kind != "containers" {
 		writeJSON(w, 400, map[string]string{"error": "unknown directory kind"})
+		return
+	}
+	if kind == "containers" {
+		rows, err := s.ldap.Search(r.Context(), ldapproto.SearchOptions{Filter: "(|(objectClass=organizationalUnit)(objectClass=container))", Attributes: []string{"ou", "cn"}, MaxEntries: 10000})
+		if err != nil {
+			apiResult(w, nil, err)
+			return
+		}
+		entries := []directoryEntry{}
+		for _, entry := range rows {
+			kind, name := "container", entry.GetAttributeValue("cn")
+			if value := entry.GetAttributeValue("ou"); value != "" {
+				kind, name = "ou", value
+			}
+			entries = append(entries, directoryEntry{entry.DN, name, kind})
+		}
+		tree, err := directoryTree(s.cfg.LDAP.BaseDN, entries)
+		apiResult(w, tree, err)
 		return
 	}
 	entries := []directoryEntry{}
