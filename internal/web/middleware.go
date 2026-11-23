@@ -38,6 +38,16 @@ func (s *Server) requireSession(next http.Handler) http.Handler {
 				}
 				return agent.Credentials{Username: username, Password: password}, nil
 			})
+		} else if sess.AuthMethod == "kerberos" {
+			// SSO has no user password to delegate. SYSVOL uses the same explicit
+			// service identity as LDAP, forwarded only in signed sysvol requests.
+			ctx = agent.WithCredentials(ctx, func() (agent.Credentials, error) {
+				credentials := agent.Credentials{Username: s.cfg.LDAP.Bind.User, Password: s.cfg.BindPassword()}
+				if !credentials.Valid() {
+					return agent.Credentials{}, fmt.Errorf("для SYSVOL при SSO настройте служебную учётную запись LDAP")
+				}
+				return credentials, nil
+			})
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
