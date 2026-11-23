@@ -1,0 +1,54 @@
+#!/bin/bash
+# Renew only the web certificate; domain-controller rollout is a separate UI action.
+set -euo pipefail
+if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+ echo 'Использование: sudo sambaadm-renew-certificates [--dns sambaadm.DOMAIN]'
+ echo 'Выпускает HTTPS-сертификат, проверяет конфигурацию и перезапускает службу с откатом при ошибке.'
+ exit
+fi
+[[ $EUID == 0 ]] || { echo 'Запустите через sudo.' >&2;exit 1; }
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+config_dir=/etc/sambaadm
+state_dir=/var/lib/sambaadm-install
+exec 9>/run/sambaadm-configure.lock
+flock -n 9 || { echo 'Другой мастер настройки уже запущен.' >&2;exit 1; }
+[[ -f $config_dir/config.yaml && ! -L $config_dir/config.yaml ]] || { echo 'Нужен обычный config.yaml.' >&2;exit 1; }
+args=()
+if (($#));then [[ $# == 2 && $1 == --dns && -n $2 ]] || { echo 'Поддерживается только --dns ИМЯ.' >&2;exit 2; };args=(--dns "$2");fi
+umask 077
+work=$(mktemp -d "$config_dir/.renew-XXXXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+chgrp sambaadm "$work";chmod 0750 "$work"
+install -d -o sambaadm -g sambaadm -m 0700 "$work/candidate"
+runuser -u sambaadm -- /usr/bin/sambaadm --config "$config_dir/config.yaml" certificates renew "${args[@]}" --output "$work/candidate/config.yaml"
+# Reuse the installed EnvironmentFile, without interpreting it as shell code.
+# systemd-run loads passwords using the same syntax as the real service.
+systemd-run --quiet --wait --pipe --collect --property=User=sambaadm --property=Group=sambaadm --property=EnvironmentFile=/etc/sambaadm/env /usr/bin/sambaadm --config "$work/candidate/config.yaml" serve --check
+install -d -m 0700 "$state_dir"
+backup=$(mktemp -d "$state_dir/certificates-XXXXXXXX")
+cp -p "$config_dir/config.yaml" "$backup/config.yaml"
+was_active=false
+systemctl is-active --quiet sambaadm && was_active=true
+rollback(){
+ trap - ERR INT TERM HUP
+ systemctl stop sambaadm || :
+ cp -p "$backup/config.yaml" "$config_dir/config.yaml"
+ [[ $was_active == false ]] || systemctl start sambaadm || :
+ echo "Ошибка запуска. Конфигурация восстановлена из $backup." >&2
+}
+trap rollback ERR
+trap 'rollback;exit 1' INT TERM HUP
+[[ $was_active == false ]] || systemctl stop sambaadm
+chown root:sambaadm "$work/candidate/config.yaml";chmod 0640 "$work/candidate/config.yaml"
+mv -f "$work/candidate/config.yaml" "$config_dir/config.yaml"
+# Preserve the pre-renewal running/stopped state.
+if [[ $was_active == true ]];then
+ systemctl start sambaadm
+ pid=$(systemctl show sambaadm -p MainPID --value)
+ [[ $pid =~ ^[1-9][0-9]*$ ]]
+ for attempt in 1 2 3 4 5;do sleep 1;systemctl is-active --quiet sambaadm;[[ $(systemctl show sambaadm -p MainPID --value) == "$pid" ]];done
+ runuser -u sambaadm -- /usr/bin/sambaadm --config "$config_dir/config.yaml" certificates verify
+fi
+trap - ERR INT TERM HUP
+echo "HTTPS-сертификат обновлён. Резервная копия: $backup"
+echo 'Имена DNS, настройки SSO и парольный вход сохранены. Прежние TLS-файлы остаются для отката.'

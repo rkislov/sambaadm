@@ -7,12 +7,14 @@
   <title>{{t .Lang "login.title"}} · sambaadm</title>
   <link rel="stylesheet" href="/static/css/app.css">
   <link rel="stylesheet" href="/static/css/ui.css">
+{{if .SSOEnabled}}<script src="/static/js/sso-login.js" defer></script>{{end}}
 </head>
 <body class="login-page">
   <main class="login-card">
     <h1 class="brand">sambaadm</h1>
     <p class="muted">{{t .Lang "login.subtitle"}}</p>
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+    {{if .SSOEnabled}}<section data-sso-login data-auto="{{.SSOAuto}}"><button type="button" class="btn-primary" data-sso-button>Войти через домен</button><p class="muted" role="status" data-sso-status></p><p class="muted">Или используйте логин и пароль:</p></section>{{end}}
     <form method="post" action="/login">
       <label>{{t .Lang "login.username"}}
         <input type="text" name="username" autocomplete="username" required autofocus>

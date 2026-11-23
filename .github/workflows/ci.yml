@@ -85,6 +85,10 @@ jobs:
           node testdata/web/survey-workstation.cjs
       - name: Workstation survey browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/survey-workstation-browser.cjs
+      - name: Compact dashboard and SSO fallback
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dashboard.cjs
+      - name: Domain search and direct object cards
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-search.cjs
       - name: Web workspace contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/workspace.cjs
       - name: Folder navigation and table preferences

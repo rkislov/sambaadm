@@ -1,5 +1,7 @@
 server:
   listen: ":8080"
+  # public_url: https://sambaadm.example.com
+  # http_redirect: 127.0.0.1:8080
   # tls:
   #   cert: /etc/sambaadm/server.crt
   #   key:  /etc/sambaadm/server.key
@@ -26,6 +28,12 @@ ldap:
     password_env: SAMBAADM_PASSWORD
 
 auth:
+  # Дополнительный SSO; вход по логину и паролю остаётся доступен.
+  # sso:
+  #   enabled: true
+  #   keytab: /etc/sambaadm/http.keytab
+  #   principal: HTTP/sambaadm.example.com
+  #   realm: EXAMPLE.COM
   session_ttl: 8h
   roles:
     admins:

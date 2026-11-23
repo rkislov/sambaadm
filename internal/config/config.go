@@ -71,6 +71,8 @@ type GPOConfig struct {
 }
 
 type ServerConfig struct {
+	PublicURL      string    `mapstructure:"public_url"`
+	HTTPRedirect   string    `mapstructure:"http_redirect"`
 	BackupDir      string    `mapstructure:"backup_dir"`
 	SettingsDir    string    `mapstructure:"settings_dir"`
 	CertificateDir string    `mapstructure:"certificate_dir"`
@@ -102,7 +104,14 @@ type BindConfig struct {
 	PasswordEnv string `mapstructure:"password_env"`
 }
 
+type SSOConfig struct {
+	Enabled   bool   `mapstructure:"enabled"`
+	Keytab    string `mapstructure:"keytab"`
+	Principal string `mapstructure:"principal"`
+	Realm     string `mapstructure:"realm"`
+}
 type AuthConfig struct {
+	SSO        SSOConfig     `mapstructure:"sso"`
 	SessionTTL time.Duration `mapstructure:"session_ttl"`
 	Roles      RolesConfig   `mapstructure:"roles"`
 }
@@ -210,6 +219,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.settings_dir", "/var/lib/sambaadm/settings")
 	v.SetDefault("server.survey_dir", "/var/lib/sambaadm/surveys")
 	v.SetDefault("server.listen", ":8080")
+	v.SetDefault("server.public_url", "")
+	v.SetDefault("server.http_redirect", "")
+	v.SetDefault("auth.sso.enabled", false)
+	v.SetDefault("auth.sso.keytab", "")
+	v.SetDefault("auth.sso.principal", "")
+	v.SetDefault("auth.sso.realm", "")
 	v.SetDefault("server.metrics", true)
 	v.SetDefault("ldap.uri", "ldapi://%2Fvar%2Frun%2Fsamba%2Fldapi")
 	v.SetDefault("ldap.bind.type", "simple")

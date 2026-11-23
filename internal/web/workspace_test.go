@@ -155,6 +155,18 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 			}
 		}
 	}
+	for _, auto := range []bool{false, true} {
+		rec := httptest.NewRecorder()
+		s.render(rec, "login.html", pageData{Lang: "ru", SSOEnabled: true, SSOAuto: auto})
+		name := "sso-manual.html"
+		if auto {
+			name = "sso-auto.html"
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), rec.Body.Bytes(), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 }
 
 func TestNativeDNSRejectsMissingCredentialsWithoutFallback(t *testing.T) {

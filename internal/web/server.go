@@ -21,6 +21,7 @@ import (
 	"sambaadm/internal/config"
 	"sambaadm/internal/i18n"
 	ldapproto "sambaadm/internal/ldap"
+	"sambaadm/internal/pki"
 	"sambaadm/internal/service"
 )
 
@@ -39,6 +40,7 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
+	kerberos          http.Handler
 	backupMu          sync.Mutex
 	certMu            sync.Mutex
 	certRolloutMu     sync.Mutex
@@ -75,7 +77,6 @@ func New(opts Options) (*Server, error) {
 		"year":        func() int { return time.Now().Year() },
 		"urlpath":     url.PathEscape,
 		"t":           func(lang i18n.Lang, key string) string { return i18n.T(lang, key) },
-		"eq":          func(a, b any) bool { return a == b },
 		"canAdmin":    auth.CanAdmin,
 		"canHelpdesk": auth.CanHelpdesk,
 		"navClass": func(active, href string) string {
@@ -91,6 +92,29 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
+	if opts.Config.Auth.SSO.Enabled {
+		if !strings.EqualFold(opts.Config.Auth.SSO.Realm, dnsFromBaseDN(opts.Config.LDAP.BaseDN)) {
+			return nil, fmt.Errorf("SSO realm must match the configured AD domain")
+		}
+		if err := opts.Config.ValidateWeb(); err != nil {
+			return nil, err
+		}
+		if len(opts.Config.Auth.Roles.Admins) == 0 {
+			return nil, fmt.Errorf("configure auth.roles.admins before enabling SSO")
+		}
+		if opts.Config.Server.TLS.Cert == "" || opts.Config.Server.TLS.Key == "" {
+			return nil, fmt.Errorf("Kerberos SSO requires HTTPS on this server")
+		}
+		u, _ := url.Parse(opts.Config.Server.PublicURL)
+		pair, e := pki.LoadServerPair(opts.Config.Server.TLS.Cert, opts.Config.Server.TLS.Key, u.Hostname())
+		if e != nil {
+			return nil, e
+		}
+		s.kerberos, err = auth.KerberosHandler(opts.Config.Auth.SSO, opts.Config.Server.PublicURL, http.HandlerFunc(s.finishKerberosLogin), pair.Certificate[0])
+		if err != nil {
+			return nil, err
+		}
+	}
 	s.tmpl = tmpl
 	s.router = s.buildRouter()
 	return s, nil
@@ -104,6 +128,11 @@ func (s *Server) Router() http.Handler {
 func (s *Server) buildRouter() chi.Router {
 	r := chi.NewRouter()
 	r.Use(chimw.RequestID)
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, r.WithContext(auth.WithPeerAddress(r.Context(), r.RemoteAddr)))
+		})
+	})
 	r.Use(chimw.RealIP)
 	r.Use(s.requestLogger)
 	r.Use(chimw.Recoverer)
@@ -122,6 +151,13 @@ func (s *Server) buildRouter() chi.Router {
 	r.Get("/api/openapi.yaml", s.handleOpenAPISpec)
 	r.Get("/api/docs", s.handleAPIDocs)
 
+	r.Get("/auth/kerberos", func(w http.ResponseWriter, r *http.Request) {
+		if s.kerberos == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.kerberos.ServeHTTP(w, r)
+	})
 	r.Get("/login", s.handleLoginGet)
 	r.Post("/login", s.handleLoginPost)
 	r.With(s.requireSession, s.csrfProtect).Post("/logout", s.handleLogout)
@@ -415,6 +451,7 @@ func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
 		Active:  r.URL.Path,
 	}
 	if sess != nil {
+		pd.SSOUser = sess.AuthMethod == "kerberos"
 		pd.User = sess.Username
 		pd.Role = sess.Role
 		pd.CSRF = sess.CSRFToken
@@ -426,6 +463,9 @@ func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
 }
 
 type pageData struct {
+	SSOEnabled     bool
+	SSOAuto        bool
+	SSOUser        bool
 	LegacyCN       bool
 	SkipLDAPVerify bool
 	HelperSession  bool

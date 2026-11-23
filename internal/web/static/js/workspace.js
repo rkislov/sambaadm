@@ -265,12 +265,25 @@
       if(tableTools&&!tableTools.matches(row,attributeValue))continue;
       count++;const r=el('tr');
       cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',attributeValue(key,row[key])??value(key==='displayName'?(row[key]||row.name):row[key]));cell.dataset.column=key;r.append(cell);});
-      const cell=el('td','workspace-actions');(cfg.actions||[]).forEach(a=>addAction(cell,a,row));r.append(cell);tbody.append(r);
+      const cell=el('td','workspace-actions');
+      const actions=(cfg.actions||[]).filter(a=>allowed(a)&&(!a.when||a.when(row)));
+      if(actions.length)addAction(cell,actions[0],row);
+      if(actions.length>1&&['/users','/groups','/computers','/ou','/shares','/printers'].includes(location.pathname)){
+        const menu=el('details','row-actions'),summary=el('summary','','');
+        summary.textContent='⋯';summary.setAttribute('aria-label',t('Другие действия: ','More actions: ')+cfg.id(row));
+        const commands=el('div','row-action-items');actions.slice(1).forEach(a=>addAction(commands,a,row));
+        menu.append(summary,commands);cell.append(menu);
+        menu.addEventListener('toggle',()=>{if(menu.open)tbody.querySelectorAll('.row-actions[open]').forEach(other=>{if(other!==menu)other.open=false;});});
+        menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;summary.focus();e.stopPropagation();}});
+      }
+      if(!cell.querySelector('.row-actions'))actions.slice(1).forEach(a=>addAction(cell,a,row));
+      r.append(cell);tbody.append(r);
     }
     if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=(tableTools?.count()??cfg.columns.length)+1;const r=el('tr');r.append(cell);tbody.append(r);}
     tableTools?.apply();
     selection.textContent=(selectedDN||selectedObject||t('Все объекты','All objects'))+' · '+count;
   }
+  document.addEventListener('click',event=>{tbody.querySelectorAll('.row-actions[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
   function chooseNode(node) {
     selectedObject='';selectedDN=node.dn;selectedContainer=['ou','container','domain'].includes(node.kind)?node.dn:node.parentDN;selectedIDs=new Set();
     function collect(n){selectedIDs.add((n.objectDN||n.dn).toLowerCase());(n.children||[]).forEach(collect);}collect(node);
@@ -356,7 +369,7 @@
     close.setAttribute('aria-label',t('Закрыть окно','Close dialog'));
     bar.append(close);dialog.append(bar);
   }
-  function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected)lastFocus.focus();}
+  function closeOperation(){dialogGeneration++;dialog.close();dialog.replaceChildren();if(lastFocus?.isConnected){const menu=lastFocus.closest('.row-actions');(menu&&!menu.open?menu.querySelector('summary'):lastFocus).focus();}}
   dialog.addEventListener('cancel',e=>{e.preventDefault();closeOperation();});
   async function openGroupMembers(row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
@@ -1676,6 +1689,13 @@
       }
       return;
     }
+    if(row&&a.method==='GET'&&a===cfg.actions?.[0]&&['/groups','/computers'].includes(location.pathname)&&result&&typeof result==='object'&&!Array.isArray(result)){
+      const general=el('section','object-card');general.append(el('h3','',t('Основные сведения','General')));
+      const fields={};
+      for(const [key,label] of cfg.columns){const val=result[key]??row[key];if(val!==undefined)fields[label]=attributeValue(key,val)??val;}
+      describe(fields,general);parent.append(general);
+      const raw=el('details','object-card');raw.append(el('summary','',t('Все атрибуты','All attributes')));describe(result,raw);parent.append(raw);return;
+    }
     if(cfg===configs['/gpo']){describeTree(result,parent);return;}
     // Keep DNS query results under the chosen zone, with explicit values for edits.
     if(cfg===configs['/dns']&&Array.isArray(result)) {
@@ -1695,5 +1715,13 @@
       job=await request('/gpo/distribute/'+enc(job.id));
     }
   }
-  load();
+  const entry=new URLSearchParams(location.search);
+  if(entry.has('q')){search=entry.get('q');searchInput.value=search;}
+  const object=entry.get('object');
+  load().then(()=>{
+    if(!object||!['/users','/groups','/computers'].includes(location.pathname))return;
+    const row=rows.find(row=>cfg.id(row)===object);
+    if(row){selectedObject=object;renderRows();openOperation(cfg.actions[0],row);}
+    else message(status,t('Объект не найден или недоступен.','Object not found or unavailable.'),true);
+  });
 })();

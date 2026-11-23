@@ -18,7 +18,7 @@ func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	}
 	lang := langFrom(r)
 	allowLegacy, _ := s.cfg.LDAP.LegacyCNAllowed()
-	s.render(w, "login.html", pageData{HelperSession: true, LegacyCN: allowLegacy,
+	s.render(w, "login.html", pageData{SSOEnabled: s.kerberos != nil, SSOAuto: s.kerberos != nil && r.URL.Query().Get("manual") != "1", HelperSession: true, LegacyCN: allowLegacy,
 		Title: i18n.T(lang, "login.title"),
 		Lang:  lang,
 	})
@@ -31,7 +31,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 		if extra != "" {
 			msg = msg + ": " + extra
 		}
-		s.render(w, "login.html", pageData{HelperSession: r.FormValue("helper_auth") == "session", LegacyCN: r.FormValue("ldap_legacy_cn") == "allow", SkipLDAPVerify: r.FormValue("ldap_skip_verify") == "allow",
+		s.render(w, "login.html", pageData{SSOEnabled: s.kerberos != nil, HelperSession: r.FormValue("helper_auth") == "session", LegacyCN: r.FormValue("ldap_legacy_cn") == "allow", SkipLDAPVerify: r.FormValue("ldap_skip_verify") == "allow",
 			Title: i18n.T(lang, "login.title"),
 			Lang:  lang,
 			Error: msg,
@@ -118,7 +118,11 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.audit.Success(sess.Username, "logout", "", r.RemoteAddr)
 	}
 	s.sessions.ClearCookie(w)
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	target := "/login"
+	if s.kerberos != nil {
+		target += "?manual=1"
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {

@@ -9,6 +9,7 @@
 <script src="/static/js/date-time.js" defer></script>
 <script src="/static/js/app.js" defer></script>
 <script src="/static/js/navigation.js" defer></script>
+<script src="/static/js/domain-search.js" defer></script>
 <script src="/static/js/topology-view.js" defer></script>
 <script src="/static/js/topology-diagram.js" defer></script>
 <script src="/static/js/policy-console.js" defer></script>
@@ -23,6 +24,7 @@
 <header class="topbar">
   <a class="brand" href="/">sambaadm</a>
   {{if .User}}
+  <button type="button" data-domain-search>{{if eq .Lang "ru"}}Найти в домене{{else}}Search domain{{end}}</button>
   <details class="app-navigation"><summary><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg> {{t .Lang "nav.sections"}}</summary><nav class="nav-links" aria-label="{{t .Lang "nav.sections"}}">
     <a href="/" class="{{navClass .Active "/"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span><span>{{t .Lang "nav.dashboard"}}</span></a>
     <a href="/me" class="{{navClass .Active "/me"}}"><span class="nav-tile-icon">◉</span><span>{{t .Lang "nav.self"}}</span></a>
@@ -44,7 +46,7 @@
     <a href="/settings" class="{{navClass .Active "/settings"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></svg></span><span>{{t .Lang "nav.settings"}}</span></a>
   </nav></details>
   <div class="user">
-    <span><a href="/me">{{.User}}</a> <small>({{.Role}})</small>{{if .HelperSession}}<small class="session-identity">SYSVOL: текущая сессия</small>{{end}}{{if .SkipLDAPVerify}}<small class="session-identity">LDAP: проверка сертификата отключена</small>{{end}}</span>
+    <span><a href="/me">{{.User}}</a> <small>({{.Role}})</small>{{if .SSOUser}}<small class="session-identity">Kerberos SSO</small>{{end}}{{if .HelperSession}}<small class="session-identity">SYSVOL: текущая сессия</small>{{end}}{{if .SkipLDAPVerify}}<small class="session-identity">LDAP: проверка сертификата отключена</small>{{end}}</span>
     <form method="post" action="/logout" class="inline">
       {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
       <button type="submit" class="linkish">{{t .Lang "nav.logout"}}</button>

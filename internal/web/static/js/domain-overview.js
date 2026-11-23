@@ -211,5 +211,8 @@
     report.finished = new Date().toISOString(); refresh.disabled = false;
   }
   download.addEventListener('click', () => { const url = URL.createObjectURL(new Blob([JSON.stringify({...report, exported: new Date().toISOString()}, null, 2)], {type: 'application/json'})); const a = el('a'); a.href = url; a.download = 'sambaadm-domain-survey.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
-  refresh.addEventListener('click', load); load();
+  refresh.addEventListener('click', load);
+  const disclosure=root.closest('details');let started=false;
+  function start(){if(!started&&(!disclosure||disclosure.open)){started=true;load();}}
+  if(disclosure)disclosure.addEventListener('toggle',start);start();
 })();

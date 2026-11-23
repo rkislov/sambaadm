@@ -37,6 +37,7 @@ mkdir -p %buildroot/var/lib/sambaadm-packages %buildroot/var/cache/sambaadm-pack
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
 install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
 install -m755 %{payload_dir}/sambaadm-setup %buildroot/usr/sbin/sambaadm-setup
+install -m755 %{payload_dir}/sambaadm-renew-certificates %buildroot/usr/sbin/sambaadm-renew-certificates
 install -m755 %{payload_dir}/sambaadm-package %buildroot/usr/sbin/sambaadm-package
 install -m644 %{payload_dir}/sambaadm.service %buildroot/lib/systemd/system/sambaadm.service
 install -m640 %{payload_dir}/config.yaml %buildroot/etc/sambaadm/config.yaml
@@ -73,6 +74,7 @@ fi
 /usr/bin/sambaadm
 /usr/sbin/sambaadm-package
 /usr/sbin/sambaadm-setup
+/usr/sbin/sambaadm-renew-certificates
 /usr/libexec/sambaadm-prepare-logs
 /lib/systemd/system/sambaadm.service
 %dir %attr(0750,root,sambaadm) /etc/sambaadm

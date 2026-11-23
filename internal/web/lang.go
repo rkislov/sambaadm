@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	langCookie = "sambaadm_lang"
+	langCookie        = "sambaadm_lang"
 	langKey    ctxKey = 2
 )
 
@@ -17,8 +17,6 @@ func (s *Server) withLang(next http.Handler) http.Handler {
 		lang := i18n.RU
 		if c, err := r.Cookie(langCookie); err == nil {
 			lang = i18n.Normalize(c.Value)
-		} else if al := r.Header.Get("Accept-Language"); al != "" {
-			lang = i18n.Normalize(al)
 		}
 		ctx := context.WithValue(r.Context(), langKey, lang)
 		next.ServeHTTP(w, r.WithContext(ctx))

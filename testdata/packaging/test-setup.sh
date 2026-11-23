@@ -5,6 +5,7 @@ set -euo pipefail
 repo=$(cd -- "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d);trap 'rm -rf "$work"' EXIT
 getent group sambaadm >/dev/null || groupadd -r sambaadm
+getent passwd sambaadm >/dev/null || useradd -r -g sambaadm -s /bin/false sambaadm
 mkdir -p "$work/bin" "$work/etc" "$work/state"
 cp "$repo/packaging/alt/config.yaml" "$work/sample"
 cp "$work/sample" "$work/etc/config.yaml"
@@ -17,6 +18,14 @@ set -eu
 if [[ $1 == discover ]]; then
  shift;ca='';legacy=false;while (($#));do case $1 in --ca) ca=$2;shift 2;;--allow-legacy-cn) legacy=true;shift;;*) shift 2;;esac;done
  printf 'ldap:\n  uri: ldaps://dc1.example.com:636\n  bind:\n    user: svc-sambaadm@example.com\n  ca_cert: "%s"\n  allow_legacy_cn: %s\n' "$ca" "$legacy"
+elif [[ ${3:-} == certificates && ${4:-} == verify ]];then
+ echo 'HTTPS certificate, DNS name and trust: OK'
+elif [[ ${3:-} == certificates ]]; then
+ source=$2;shift 3
+ out='';while (($#));do case $1 in --output) out=$2;shift 2;;*) shift;;esac;done
+ [[ -n $out ]]
+ cp "$source" "$out"
+ printf '\nserver:\n  listen: 0.0.0.0:443\n  public_url: https://sambaadm.example.com\n  tls: {cert: /var/lib/sambaadm/web.crt, key: /var/lib/sambaadm/web.key}\n' >> "$out"
 else
  [[ ${SETUP_FAIL_PREFLIGHT:-0} == 0 ]] || exit 7
  if [[ ${SETUP_REQUIRE_LEGACY:-0} == 1 ]] && ! grep -q 'allow_legacy_cn: true' "$2";then echo 'certificate relies on legacy Common Name';exit 7;fi

@@ -5,6 +5,10 @@ setup_usage() {
   cat <<'HELP'
 Первоначальная настройка Sambaadm
 Использование: sudo sambaadm-setup [параметры]
+  --https-name ИМЯ   HTTPS-имя панели (по умолчанию sambaadm.ДОМЕН)
+  --sso-keytab ФАЙЛ   HTTP/ИМЯ keytab для дополнительного входа Kerberos SSO
+  --http             Первоначальная установка без HTTPS (старый режим)
+  --renew-certificates Продлить HTTPS-сертификат установленной панели
   --realm ДОМЕН       DNS-имя домена (иначе определяется автоматически)
   --dc СЕРВЕР         Полное DNS-имя контроллера
   --user UPN          Существующая служебная учётная запись
@@ -28,21 +32,23 @@ setup_prompt() {
 setup_main() (
   local config_dir=$1 state_dir=$2 lock_file=$3 sample=$4 binary=$5
   shift 5
-  local domain='' dc='' bind_user='' group='' ca='' check=false replace=false yes=false legacy=false
+  local domain='' dc='' bind_user='' group='' ca='' check=false replace=false yes=false legacy=false https=true https_name='' sso_keytab=''
   while (($#)); do
     case $1 in
+      --http) https=false;shift ;;
       --help|-h) setup_usage; return ;;
       --allow-legacy-cn) legacy=true; shift ;;
       --check) check=true; shift ;;
       --replace) replace=true; shift ;;
       --yes) yes=true; shift ;;
-      --realm|--dc|--user|--admin-group|--ca)
+      --realm|--dc|--user|--admin-group|--ca|--https-name|--sso-keytab)
         (($#>=2)) && [[ -n $2 && $2 != --* ]] || { echo "Нужно значение для $1" >&2; return 2; }
-        case $1 in --realm) domain=$2;; --dc) dc=$2;; --user) bind_user=$2;; --admin-group) group=$2;; --ca) ca=$2;; esac
+        case $1 in --https-name) https_name=$2;; --sso-keytab) sso_keytab=$2;; --realm) domain=$2;; --dc) dc=$2;; --user) bind_user=$2;; --admin-group) group=$2;; --ca) ca=$2;; esac
         shift 2 ;;
       *) echo "Неизвестный параметр: $1" >&2; setup_usage >&2; return 2 ;;
     esac
   done
+  if [[ $https == false && -n $sso_keytab ]];then echo 'SSO требует HTTPS; уберите --http.' >&2;return 2;fi
   umask 077
   local setup_interactive=false
   if [[ $yes == false && -t 0 && -t 1 ]]; then setup_interactive=true; fi
@@ -135,17 +141,32 @@ setup_main() (
       return 1
     fi
   fi
+  if [[ $check == true && -n $sso_keytab ]];then
+    runuser -u sambaadm -- "$binary" --config "$work/config.yaml" sso check --keytab "$sso_keytab" --principal "HTTP/${https_name:-sambaadm.$domain}" --sso-realm "${domain^^}"
+  fi
   if [[ $check == true ]]; then echo 'Проверка успешна. Конфигурация и состояние службы не изменены.';return;fi
   local escaped=${SAMBAADM_PASSWORD//\\/\\\\}
   escaped=${escaped//\"/\\\"}
   printf 'SAMBAADM_PASSWORD="%s"\n' "$escaped" > "$work/env"
-  unset SAMBAADM_PASSWORD escaped
   if [[ -n $ca ]]; then
     args=(--realm "$domain" --user "$bind_user" --admin-group "$group" --ca "$config_dir/domain-ca.pem")
     [[ -z $dc ]] || args+=(--dc "$dc")
     [[ $legacy == false ]] || args+=(--allow-legacy-cn)
     "$binary" discover "${args[@]}" > "$work/config.yaml"
   fi
+  if [[ $https == true ]]; then
+    [[ -n $https_name ]] || https_name="sambaadm.$domain"
+    https_name=$(setup_prompt 'DNS-имя панели HTTPS' "$https_name")
+    [[ -n $sso_keytab ]] || sso_keytab=$(setup_prompt 'HTTP-keytab для SSO (пусто — вход паролем)' '')
+    install -d -o sambaadm -g sambaadm -m 0700 "$work/https"
+    local web_args=(--dns "$https_name" --output "$work/https/config.yaml")
+    [[ -z $sso_keytab ]] || web_args+=(--keytab "$sso_keytab" --sso-realm "${domain^^}")
+    runuser -u sambaadm -- "$binary" --config "$work/config.yaml" certificates configure "${web_args[@]}"
+    mv -f "$work/https/config.yaml" "$work/config.yaml"
+    chgrp sambaadm "$work/config.yaml";chmod 0640 "$work/config.yaml"
+    setup_check
+  fi
+  unset SAMBAADM_PASSWORD escaped
   install -d -m 0700 "$state_dir"
   local backup was_active=false was_enabled=false
   backup=$(mktemp -d "$state_dir/configure-XXXXXXXX")
@@ -179,16 +200,24 @@ setup_main() (
     systemctl is-active --quiet sambaadm
     [[ $(systemctl show sambaadm -p MainPID --value) == "$pid" ]]
   done
+  if [[ $https == true ]];then runuser -u sambaadm -- "$binary" --config "$config_dir/config.yaml" certificates verify;fi
   systemctl enable sambaadm
   trap - ERR INT TERM HUP
-  echo 'Sambaadm запущен: http://127.0.0.1:8080/login'
-  echo 'С удалённого компьютера: ssh -L 8080:127.0.0.1:8080 пользователь@сервер'
+  if [[ $https == true ]];then
+    echo "Sambaadm запущен: https://$https_name/login"
+    echo 'DNS-имя должно указывать на этот сервер. Установите публичный сертификат локального УЦ в доверие на рабочих станциях.'
+    echo 'Для продления: sudo sambaadm-renew-certificates'
+  else
+    echo 'Sambaadm запущен: http://127.0.0.1:8080/login'
+    echo 'С удалённого компьютера: ssh -L 8080:127.0.0.1:8080 пользователь@сервер'
+  fi
   echo 'Войдите доменным администратором. Подключение helpers: Настройки → Узлы helper.'
 )
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
   export PATH=/usr/sbin:/usr/bin:/sbin:/bin
   # Help also works before installation and without root.
   if [[ ${1:-} == --help || ${1:-} == -h ]]; then setup_usage;exit;fi
+  if [[ ${1:-} == --renew-certificates ]];then shift;exec /usr/sbin/sambaadm-renew-certificates "$@";fi
   [[ $EUID == 0 ]] || { echo 'Запустите sudo sambaadm-setup.' >&2;exit 1; }
   setup_main /etc/sambaadm /var/lib/sambaadm-install /run/sambaadm-configure.lock /usr/share/doc/sambaadm/config.example.yaml /usr/bin/sambaadm "$@"
 fi

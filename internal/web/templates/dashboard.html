@@ -9,17 +9,19 @@
 </head>
 <body>
   {{template "nav" .}}
-  <main class="container">
+  <main class="container dashboard-home">
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
-    <h1>{{t .Lang "dashboard.title"}}</h1>
-    <p class="muted">{{t .Lang "dashboard.hint"}}</p>
+    <h1>{{if eq .Lang "ru"}}Обзор домена{{else}}Domain overview{{end}}</h1>
     <section id="domain-dashboard" aria-label="Domain summary"></section>
+    <details class="dashboard-details" id="dashboard-domain-details">
+      <summary>{{if eq .Lang "ru"}}Подробности и диагностика{{else}}Details and diagnostics{{end}}</summary>
     <section id="domain-overview" data-admin="{{if canAdmin .Role}}true{{else}}false{{end}}"></section>
     {{if canAdmin .Role}}<p><a href="/surveys">{{if eq .Lang "ru"}}Материалы автономного обследования{{else}}Offline survey materials{{end}}</a></p>{{end}}
     <dl class="kv">
       <dt>LDAP URI</dt><dd>{{index .Content "LDAP"}}</dd>
       <dt>Base DN</dt><dd>{{index .Content "Base"}}</dd>
     </dl>
+    </details>
   </main>
   <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>

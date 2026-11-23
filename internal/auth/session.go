@@ -19,6 +19,7 @@ const (
 
 // Session holds authenticated user state.
 type Session struct {
+	AuthMethod     string
 	ObjectGUID     string
 	ID             string
 	Username       string

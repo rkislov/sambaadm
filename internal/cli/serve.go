@@ -16,9 +16,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"net/url"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/auth"
 	ldapproto "sambaadm/internal/ldap"
+	"sambaadm/internal/pki"
 	"sambaadm/internal/service"
 	"sambaadm/internal/version"
 	"sambaadm/internal/web"
@@ -84,6 +86,9 @@ var serveCmd = &cobra.Command{
 		}()
 		slog.Info("sambaadm starting", "version", version.String(), "config", cfg.Source, "listen", cfg.Server.Listen, "event_log", cfg.Logging.File, "log_level", level.String())
 
+		if err := cfg.ValidateWeb(); err != nil {
+			return err
+		}
 		ldapClient := ldapproto.NewServiceClient(cfg.LDAP, cfg.BindPassword)
 		defer ldapClient.Close()
 		if level == slog.LevelDebug {
@@ -130,7 +135,8 @@ var serveCmd = &cobra.Command{
 		// Bind before announcing readiness: an occupied port must never look healthy.
 		var tlsConfig *tls.Config
 		if cfg.Server.TLS.Cert != "" {
-			cert, e := tls.LoadX509KeyPair(cfg.Server.TLS.Cert, cfg.Server.TLS.Key)
+			u, _ := url.Parse(cfg.Server.PublicURL)
+			cert, e := pki.LoadServerPair(cfg.Server.TLS.Cert, cfg.Server.TLS.Key, u.Hostname())
 			if e != nil {
 				return fmt.Errorf("load HTTP TLS certificate: %w", e)
 			}
@@ -147,13 +153,29 @@ var serveCmd = &cobra.Command{
 			scheme = "https"
 		}
 		slog.Info("sambaadm listening", "addr", listener.Addr().String(), "scheme", scheme)
-		errCh := make(chan error, 1)
+		errCh := make(chan error, 2)
+		var redirectSrv *http.Server
+		if cfg.Server.HTTPRedirect != "" {
+			redirectListener, e := net.Listen("tcp", cfg.Server.HTTPRedirect)
+			if e != nil {
+				return fmt.Errorf("HTTP redirect listener: %w", e)
+			}
+			defer redirectListener.Close()
+			redirectSrv = &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				http.Redirect(w, r, strings.TrimSuffix(cfg.Server.PublicURL, "/")+r.URL.RequestURI(), http.StatusPermanentRedirect)
+			})}
+			go func() {
+				if e := redirectSrv.Serve(redirectListener); e != nil && e != http.ErrServerClosed {
+					errCh <- e
+				}
+			}()
+		}
 		go func() {
 			serveErr := httpSrv.Serve(listener)
 			if serveErr != nil && serveErr != http.ErrServerClosed {
 				errCh <- serveErr
 			}
-			close(errCh)
 		}()
 
 		sigCh := make(chan os.Signal, 1)
@@ -172,7 +194,13 @@ var serveCmd = &cobra.Command{
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		_ = ldapClient.Close()
-		return httpSrv.Shutdown(ctx)
+		err = httpSrv.Shutdown(ctx)
+		if redirectSrv != nil {
+			if e := redirectSrv.Shutdown(ctx); err == nil {
+				err = e
+			}
+		}
+		return err
 	},
 }
 

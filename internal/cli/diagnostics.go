@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"net/url"
 	"os"
 	"runtime"
+	"sambaadm/internal/auth"
 	"strings"
 	"time"
 
 	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
+	"sambaadm/internal/pki"
 	"sambaadm/internal/version"
 )
 
@@ -30,6 +33,20 @@ func diagnosticURI(raw string) string {
 	return u.String()
 }
 func startupDiagnostics(cfg *config.Config, client *ldapproto.Client) error {
+	if err := cfg.ValidateWeb(); err != nil {
+		return err
+	}
+	if cfg.Server.TLS.Cert != "" {
+		u, _ := url.Parse(cfg.Server.PublicURL)
+		if _, err := pki.LoadServerPair(cfg.Server.TLS.Cert, cfg.Server.TLS.Key, u.Hostname()); err != nil {
+			return fmt.Errorf("HTTPS certificate/key: %w", err)
+		}
+	}
+	if cfg.Auth.SSO.Enabled {
+		if _, err := auth.KerberosHandler(cfg.Auth.SSO, cfg.Server.PublicURL, http.NotFoundHandler()); err != nil {
+			return err
+		}
+	}
 	source := cfg.Source
 	if source == "" {
 		source = "defaults + environment (no config file)"
