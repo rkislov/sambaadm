@@ -41,7 +41,8 @@
   const topologyLinksAction=action(t('Связи','Links'),'GET',null,[],{topology:true,topologyView:'links'});
   const configs = {
     '/users': {title:t('Пользователи','Users'), endpoint:'/users', directory:'users', id:r=>r.samAccountName,
-      columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN']],
+      columns:[['samAccountName',t('Логин','Login')],['displayName',t('Имя','Name')],['enabled',t('Состояние','Status')],['dn','DN'],['mail',t('Почта','Email')],['department',t('Отдел','Department')],['title',t('Должность','Job title')],['telephone',t('Телефон','Phone')],['givenName',t('Имя пользователя','Given name')],['surname',t('Фамилия','Surname')],['userPrincipalName','UPN']],
+      defaultColumns:['samAccountName','displayName','enabled','dn'],
       create:action(t('Создать пользователя','Create user'),'POST','/users',[text('login','Логин','Login'),text('displayName','Отображаемое имя','Display name',{optional:true}),password(),ou(),text('mail','Почта','Email',{type:'email',optional:true}),description(),text('enabled','Учётная запись включена','Account enabled',{type:'checkbox',value:true})]),
       actions:[{...view(t('Свойства','Properties'),r=>'/users/'+enc(r.samAccountName)),userCard:true},
         action(t('Включить','Enable'),'POST',r=>'/users/'+enc(r.samAccountName)+'/enable',[],{support:true,when:r=>!r.enabled}),
@@ -104,7 +105,7 @@
       columns:[['role',t('Роль','Role')],['owner',t('Владелец','Owner')],['source',t('Источник','Source')]],
       toolbar:[{label:t('Парольная политика','Password policy'),method:'GET',passwordPolicy:true},view(t('Свойства домена','Domain properties'),'/domain'),view(t('Функциональные уровни','Functional levels'),'/domain/level'),
         action(t('Повысить уровень','Raise level'),'POST','/domain/level/raise',[text('domain','Уровень домена','Domain level',{optional:true}),text('forest','Уровень леса','Forest level',{optional:true})],{danger:true})],
-      actions:[action(t('Передать роль','Transfer role'),'POST','/domain/fsmo/transfer',[text('role','Роль','Role')],{prefill:r=>({role:r.role}),confirm:true}),action(t('Захватить роль','Seize role'),'POST','/domain/fsmo/seize',[text('role','Роль','Role')],{prefill:r=>({role:r.role}),danger:true,warning:t('Применяйте только при безвозвратной потере владельца роли.','Use only when the role owner is permanently lost.')})]},
+      actions:[action(t('Передать роль','Transfer role'),'POST','/domain/fsmo/transfer',[text('role','Роль','Role',{readOnly:true}),text('targetDC','Новый владелец (RWDC)','New owner (RWDC)')],{fsmo:true,prefill:r=>({role:r.role}),confirm:true,help:t('Роль передаётся выбранному DC. Текущий владелец должен быть доступен. Устанавливать sambaadm на целевой DC не требуется.','The role is transferred to the selected DC. The current owner must be available. Installing sambaadm on the target DC is not required.')}),action(t('Захватить роль','Seize role'),'POST','/domain/fsmo/seize',[text('role','Роль','Role',{readOnly:true}),text('targetDC','Новый владелец (RWDC)','New owner (RWDC)')],{fsmo:true,prefill:r=>({role:r.role}),danger:true,preset:{confirmDecommissioned:true},confirmLabel:t('Прежний владелец безвозвратно потерян и не будет возвращён в домен без переустановки. Подтверждаю захват роли выбранным DC.','The previous owner is permanently lost and will not return to the domain without rebuilding. I confirm seizure by the selected DC.'),warning:t('Захват — аварийная операция при безвозвратной потере владельца. Сначала выполняется попытка обычной передачи. Устанавливать sambaadm на целевой DC не требуется.','Seizure is an emergency operation for permanent owner loss. A normal transfer is attempted first. Installing sambaadm on the target DC is not required.')})]},
     '/shares':{title:t('Общие папки','File shares'),endpoint:'/shares',id:r=>r.name,
       columns:[['name',t('Имя','Name')],['path',t('Путь','Path')],['validUsers',t('Доступ','Access')]],
       create:{label:t('Создать папку','Create share'),href:'/shares/new',method:'POST'},
@@ -191,7 +192,9 @@
   if(!specialized)listPanel.append(listTools,filter);
   main.append(listPanel);
   const selection=el('p','workspace-selection');listPanel.append(selection);
-  const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>tr.append(el('th','',c[1])));tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);listPanel.append(tableWrap);
+  const tableWrap=el('div','workspace-table');const table=el('table');const thead=el('thead');const tr=el('tr');cfg.columns.forEach(c=>{const th=el('th','',c[1]);th.dataset.column=c[0];tr.append(th);});tr.append(el('th','',t('Операции','Actions')));thead.append(tr);table.append(thead);const tbody=el('tbody');table.append(tbody);tableWrap.append(table);listPanel.append(tableWrap);
+  let tableTools;
+  if(!specialized){const controls=el('div');listPanel.insertBefore(controls,selection);tableTools=window.sambaadmTableTools({container:controls,table,columns:cfg.columns.map(([key,label])=>({key,label,defaultVisible:!cfg.defaultColumns||cfg.defaultColumns.includes(key),...(key==='enabled'?{choices:[['true',t('Включена','Enabled')],['false',t('Отключена','Disabled')]]}:{})})),key:location.pathname,onChange:renderRows,onReset:()=>{search='';searchInput.value='';}});}
   const detail=el('section','workspace-detail');detail.setAttribute('aria-live','polite');root.append(detail);
   const dialog=el('dialog','workspace-dialog');dialog.setAttribute('aria-labelledby','operation-title');root.append(dialog);
   const choices=el('datalist');choices.id='directory-dns';root.append(choices);
@@ -259,11 +262,13 @@
       if(selectedIDs && !selectedIDs.has((row.dn||'').toLowerCase()))continue;
       if(selectedObject && cfg.id(row)!==selectedObject)continue;
       if(search && !normalizeSearch(search).split(/\s+/).every(word=>normalizeSearch(JSON.stringify(row)).includes(word)))continue;
+      if(tableTools&&!tableTools.matches(row,attributeValue))continue;
       count++;const r=el('tr');
-      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',attributeValue(key,row[key])??value(key==='displayName'?(row[key]||row.name):row[key]));r.append(cell);});
+      cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',attributeValue(key,row[key])??value(key==='displayName'?(row[key]||row.name):row[key]));cell.dataset.column=key;r.append(cell);});
       const cell=el('td','workspace-actions');(cfg.actions||[]).forEach(a=>addAction(cell,a,row));r.append(cell);tbody.append(r);
     }
-    if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=cfg.columns.length+1;const r=el('tr');r.append(cell);tbody.append(r);}
+    if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=(tableTools?.count()??cfg.columns.length)+1;const r=el('tr');r.append(cell);tbody.append(r);}
+    tableTools?.apply();
     selection.textContent=(selectedDN||selectedObject||t('Все объекты','All objects'))+' · '+count;
   }
   function chooseNode(node) {
@@ -285,11 +290,14 @@
     const list=el('ul','directory-tree');
     if(tree){
       function appendNode(parent,node,depth){
+        if(!['domain','ou','container'].includes(node.kind))return;
+        const folders=(node.children||[]).filter(child=>['domain','ou','container'].includes(child.kind));
         const item=el('li');
         const control=button(node.label,()=>chooseNode(node));
+        control.classList.add('directory-folder');
         control.title=node.dn;
         markCurrent(control,selectedDN===node.dn);
-        if(node.children?.length){
+        if(folders.length){
           const branch=el('details');
           branch.open=depth===0||opened.has(node.dn);
           branch.addEventListener('toggle',()=>branch.open?opened.add(node.dn):opened.delete(node.dn));
@@ -297,7 +305,7 @@
           const summary=el('summary');
           summary.append(control);
           const children=el('ul');
-          node.children.forEach(child=>appendNode(children,child,depth+1));
+          folders.forEach(child=>appendNode(children,child,depth+1));
           branch.append(summary,children);
           item.append(branch);
         }else item.append(control);
@@ -306,19 +314,6 @@
       appendNode(list,tree,0);
     }else if(cfg.directory){
       objectTree.append(el('p','muted',t('Дерево недоступно. Список можно использовать отдельно.','Hierarchy unavailable. The list remains usable.')));
-    }else{
-      for(const row of rows){
-        const id=cfg.id(row);
-        const label=row.name||row.displayName||row.domain||row.role||id||'—';
-        const item=el('li');
-        const control=button(label,()=>{
-          selectedObject=id;selectedDN='';selectedIDs=null;
-          renderRows();renderTree();
-        });
-        markCurrent(control,selectedObject===id);
-        item.append(control);
-        list.append(item);
-      }
     }
     if(list.childElementCount)objectTree.append(list);
     sidebar.scrollTop=scrollTop;
@@ -686,6 +681,7 @@
     const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
     if(row)dialog.append(el('p','mono',a.objectLabel?a.objectLabel(row):(cfg.id(row)||row.dn||'')));
+    if(a.fsmo&&row)dialog.append(el('p','mono',t('Текущий владелец: ','Current owner: ')+(row.owner||t('Не определён','Unknown'))));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
     if(a.help)dialog.append(el('p','muted',a.help));
     if(a.danger)dialog.append(el('p','alert error',t('Изменение применяется в домене. Проверьте выбранный объект. Удаление может быть необратимым.','This changes the domain. Check the selected object. Deletion may be irreversible.')));
@@ -693,12 +689,12 @@
     const closeButton=()=>a.returnTo?button(t('Вернуться к связям','Back to links'),()=>a.returnTo()):button(t('Закрыть','Close'),closeOperation);
     let fields=a.fields;
     const needsSites=fields.some(f=>f.key==='sites'||f.key==='site');
-    const dcFields=['dc','from','dest','source','destination'];
-    const needsDCs=endpoint.startsWith('/repl/')&&fields.some(f=>dcFields.includes(f.key)&&!f.choices);
+    const dcFields=['dc','from','dest','source','destination','targetDC'];
+    const needsDCs=(endpoint.startsWith('/repl/')||a.fsmo)&&fields.some(f=>dcFields.includes(f.key)&&!f.choices);
     if(needsSites||needsDCs){
       const pending=el('p','',t('Загрузка списка объектов…','Loading objects…'));dialog.append(pending);if(!dialog.open)dialog.showModal();
       try{const [sites,dcs]=await Promise.all([needsSites?request('/sites'):[],needsDCs?request('/sites/controllers'):[]]);if(generation!==dialogGeneration)return;
-        fields=fields.map(f=>f.key==='sites'||f.key==='site'?{...f,choices:sites.map(s=>s.name)}:needsDCs&&dcFields.includes(f.key)&&!f.choices?{...f,choices:dcs.map(dc=>dc.dns)}:f);pending.remove();
+        fields=fields.map(f=>f.key==='sites'||f.key==='site'?{...f,choices:sites.map(s=>s.name)}:needsDCs&&dcFields.includes(f.key)&&!f.choices?{...f,choices:dcs.filter(dc=>dc.dns&&(!a.fsmo||!dc.rodc)).map(dc=>dc.dns)}:f);pending.remove();
       }catch(err){if(generation===dialogGeneration){message(pending,err.message,true);dialog.append(closeButton());}return;}
     }
     const form=el('form','workspace-form');const defaults=a.prefill?a.prefill(row):{};
@@ -706,7 +702,7 @@
     for(const f of fields){const label=el('label','',f.label);let input;
       if(f.choices){input=el('select');input.multiple=!!f.multiple;if(!f.multiple){const empty=el('option','',f.optional?t('По умолчанию','Default'):t('Выберите объект','Select object'));empty.value='';input.append(empty);}f.choices.forEach(c=>{const option=el('option','',c);option.value=c;input.append(option);});}
       else {input=el('input');input.type=f.type||'text';}
-      input.setAttribute('aria-label',f.label);input.name=f.key;input.required=!f.optional&&f.type!=='checkbox';input.autocomplete=f.type==='password'?'new-password':'off';
+      input.readOnly=!!f.readOnly;input.setAttribute('aria-label',f.label);input.name=f.key;input.required=!f.optional&&f.type!=='checkbox';input.autocomplete=f.type==='password'?'new-password':'off';
       if(f.type==='checkbox')input.checked=!!f.value;else input.value=defaults[f.key]??f.value??((f.key==='ou'||f.key==='parentDN')?selectedContainer:'');
       if(f.multiple){const selected=String(defaults[f.key]??f.value??'').split(';');for(const o of input.options)o.selected=selected.includes(o.value);}
       if(f.key==='container' && !input.value)input.value=selectedContainer||'';

@@ -194,9 +194,8 @@ func TestIntegrationNativeFSMOTransfer(t *testing.T) {
 	ctx := context.Background()
 	client := s.Domain.ldap.ServicePeer("ldaps://" + host + ":636")
 	defer client.Close()
-	other := NewWithOptions(client, s.Audit, ServiceOptions{Username: os.Getenv("SAMBAADM_IT_USER"), Password: func() string { return os.Getenv("SAMBAADM_PASSWORD") }})
 	for _, role := range []string{"pdc", "domaindns", "forestdns"} {
-		if err := other.Domain.FSMOTransfer(ctx, role, "test", ""); err != nil {
+		if err := s.Domain.FSMOChangeOn(ctx, role, host, "test", "", false); err != nil {
 			t.Fatalf("transfer %s to DC2: %v", role, err)
 		}
 		nc := s.Domain.ldap.BaseDN()

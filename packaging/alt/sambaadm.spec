@@ -36,10 +36,12 @@ mkdir -p %buildroot/var/lib/sambaadm %buildroot/var/log/sambaadm
 mkdir -p %buildroot/var/lib/sambaadm-packages %buildroot/var/cache/sambaadm-packages
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
 install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
+install -m755 %{payload_dir}/sambaadm-setup %buildroot/usr/sbin/sambaadm-setup
 install -m755 %{payload_dir}/sambaadm-package %buildroot/usr/sbin/sambaadm-package
 install -m644 %{payload_dir}/sambaadm.service %buildroot/lib/systemd/system/sambaadm.service
 install -m640 %{payload_dir}/config.yaml %buildroot/etc/sambaadm/config.yaml
 install -m600 %{payload_dir}/env %buildroot/etc/sambaadm/env
+install -m644 %{payload_dir}/config.yaml %buildroot/usr/share/doc/sambaadm/config.example.yaml
 install -m644 %{payload_dir}/LICENSE %{payload_dir}/NOTICE %{payload_dir}/alt-install.md %buildroot/usr/share/doc/sambaadm/
 
 %pre
@@ -52,7 +54,8 @@ getent passwd sambaadm >/dev/null || useradd -r -g sambaadm -d /var/lib/sambaadm
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || :
 fi
-# Do not enable, start or restart here: the transactional helper owns activation.
+# First-start setup is explicit; package updates preserve the current service.
+echo 'Для первой настройки и запуска выполните: sudo sambaadm-setup'
 
 %preun
 if [ "$1" -eq 0 ] && [ -d /run/systemd/system ]; then
@@ -69,6 +72,7 @@ fi
 %defattr(-,root,root)
 /usr/bin/sambaadm
 /usr/sbin/sambaadm-package
+/usr/sbin/sambaadm-setup
 /usr/libexec/sambaadm-prepare-logs
 /lib/systemd/system/sambaadm.service
 %dir %attr(0750,root,sambaadm) /etc/sambaadm

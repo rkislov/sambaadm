@@ -56,3 +56,16 @@ func TestNormalizeDisplayedFSMORoles(t *testing.T) {
 		}
 	}
 }
+
+func TestFSMOTargetRejectsUnregisteredAndReadOnlyControllers(t *testing.T) {
+	controllers := []Controller{{DNS: "dc1.example.test", NTDS: "CN=NTDS Settings,CN=DC1"}, {DNS: "rodc.example.test", NTDS: "CN=NTDS Settings,CN=RODC", RODC: true}, {DNS: "incomplete.example.test"}, {DNS: "evil.example.test/path", NTDS: "CN=NTDS Settings,CN=Evil"}}
+	for _, target := range []string{"", "unknown.example.test", "ldaps://dc1.example.test", "rodc.example.test", "incomplete.example.test", "evil.example.test/path"} {
+		if _, err := fsmoTarget(controllers, target); err == nil {
+			t.Errorf("accepted unsafe target %q", target)
+		}
+	}
+	dc, err := fsmoTarget(controllers, "DC1.EXAMPLE.TEST")
+	if err != nil || dc.DNS != "dc1.example.test" {
+		t.Fatalf("catalogued RWDC: %v, %v", dc, err)
+	}
+}

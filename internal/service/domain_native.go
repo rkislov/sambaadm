@@ -8,7 +8,95 @@ import (
 	ldapproto "sambaadm/internal/ldap"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// FSMOChangeOn runs the native operation on an explicitly selected, catalogued RWDC.
+// The web host does not need to be installed on that controller.
+func (s *DomainService) FSMOChangeOn(ctx context.Context, role, targetDC, actor, ip string, seize bool) error {
+	if _, err := s.roleDN(role); err != nil {
+		return err
+	}
+	controllers, err := (&SiteService{ldap: s.ldap}).Controllers(ctx)
+	if err != nil {
+		return err
+	}
+	dc, err := fsmoTarget(controllers, targetDC)
+	if err != nil {
+		return err
+	}
+	uri, err := consistencyPeerURI(s.ldap.URI(), dc.DNS)
+	if err != nil {
+		return err
+	}
+	peer := s.ldap.ServicePeer(uri)
+	defer peer.Close()
+	conn, err := peer.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("target DC unavailable: %w", err)
+	}
+	root, err := conn.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 0, false, "(objectClass=*)", []string{"dsServiceName"}, nil))
+	if err != nil {
+		return fmt.Errorf("target DC unavailable: %w", err)
+	}
+	if len(root.Entries) != 1 || !strings.EqualFold(root.Entries[0].GetAttributeValue("dsServiceName"), dc.NTDS) {
+		return fmt.Errorf("target DC identity does not match the directory")
+	}
+	ntds, err := peer.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: dc.NTDS, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=nTDSDSA)", Attributes: []string{"msDS-isRODC"}})
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(ntds.GetAttributeValue("msDS-isRODC"), "FALSE") {
+		return fmt.Errorf("target DC must be writable (RWDC)")
+	}
+	remote := *s.remote
+	remote.Host = dc.DNS
+	selected := &DomainService{ldap: peer, audit: s.audit, remote: &remote}
+	if err := selected.changeFSMO(ctx, role, actor, ip, seize); err != nil {
+		return err
+	}
+	dn, _ := selected.roleDN(role)
+	// DRS replication can acknowledge before the target exposes the new owner.
+	// Poll reads only: never repeat the transfer/seizure after an uncertain outcome.
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	for {
+		owner, err := peer.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: dn, Scope: ldapproto.ScopeBase(), Filter: "(objectClass=*)", Attributes: []string{"fSMORoleOwner"}})
+		if err != nil {
+			return fmt.Errorf("operation sent; owner verification failed: %w", err)
+		}
+		if strings.EqualFold(owner.GetAttributeValue("fSMORoleOwner"), dc.NTDS) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("operation sent; owner verification interrupted: %w", ctx.Err())
+		case <-deadline.C:
+			return fmt.Errorf("operation sent; selected DC is not the observed role owner; inspect replication before retrying")
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+
+}
+func fsmoTarget(controllers []Controller, target string) (Controller, error) {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return Controller{}, fmt.Errorf("targetDC is required")
+	}
+	for _, dc := range controllers {
+		if !strings.EqualFold(dc.DNS, target) {
+			continue
+		}
+		if dc.RODC || dc.NTDS == "" {
+			return Controller{}, fmt.Errorf("target DC must be a registered writable DC (RWDC)")
+		}
+		if _, err := consistencyPeerURI("ldaps://unused", dc.DNS); err != nil {
+			return Controller{}, err
+		}
+		return dc, nil
+	}
+	return Controller{}, fmt.Errorf("target DC is not registered in this domain")
+}
 
 func (s *DomainService) roleDN(role string) (string, error) {
 	base := s.ldap.BaseDN()

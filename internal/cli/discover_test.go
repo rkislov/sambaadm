@@ -34,7 +34,7 @@ func TestResolveCandidates(t *testing.T) {
 }
 
 func TestDiscoveredConfigFile(t *testing.T) {
-	data, err := discoveredConfig(context.Background(), "CORP.EXAMPLE", "DC1.CORP.EXAMPLE", "svc@corp.example", "CN=Operators,DC=corp,DC=example", "/etc/domain-ca.pem")
+	data, err := discoveredConfig(context.Background(), "CORP.EXAMPLE", "DC1.CORP.EXAMPLE", "svc@corp.example", "CN=Operators,DC=corp,DC=example", "/etc/domain-ca.pem", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,5 +94,22 @@ func TestEnsureServerConfigPreservesExisting(t *testing.T) {
 	got, err := os.ReadFile(cfgFile)
 	if err != nil || !bytes.Equal(got, original) {
 		t.Fatal("existing config changed", err)
+	}
+}
+
+func TestDiscoveryLegacyCertificateCompatibilityIsExplicit(t *testing.T) {
+	for _, allowed := range []bool{false, true} {
+		data, err := discoveredConfig(context.Background(), "corp.example", "dc1.corp.example", "svc@corp.example", "", "", allowed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if err = os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := config.Load(path)
+		if err != nil || cfg.LDAP.AllowLegacyCN != allowed {
+			t.Fatalf("legacy=%v config=%+v error=%v", allowed, cfg, err)
+		}
 	}
 }

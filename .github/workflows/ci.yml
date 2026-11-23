@@ -87,6 +87,10 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/survey-workstation-browser.cjs
       - name: Web workspace contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/workspace.cjs
+      - name: Folder navigation and table preferences
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/directory-navigation.cjs
+      - name: FSMO target controller browser contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/fsmo.cjs
       - name: Scalable topology browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/topology.cjs
       - name: Policy console browser contracts

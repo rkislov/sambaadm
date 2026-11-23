@@ -252,3 +252,20 @@ tbody tr:hover { @apply bg-slate-50; }
 .drive-maps-help { margin-top:16px;padding:12px;border-top:1px solid var(--border);font-size:12px; }
 .drive-maps-help button { margin:3px;padding:5px 8px;font-size:12px; }
 @media(max-width:700px){.drive-maps-table{min-width:530px}.directory-picker-tree{max-height:35vh}}
+
+/* Keep navigation compact even when a container holds thousands of objects. */
+.directory-folder::before { content:'';width:13px;height:10px;border:1px solid #c9a648;border-radius:2px;background:#fef3c7;flex-shrink:0;margin-right:6px; }
+.table-tools { display:flex;gap:12px;flex-wrap:wrap;margin:8px 0 12px;font-size:12px; }
+.table-tools summary { cursor:pointer;padding:6px 10px;border:1px solid var(--border);border-radius:6px; }
+.table-tools-options { display:grid;gap:8px;padding:12px;background:#f8fafc;border:1px solid var(--border);border-radius:6px;min-width:220px; }
+.table-tools-options label { display:flex;align-items:center;gap:8px; }
+.table-tools-options label:has(input[type=search]),.table-tools-options label:has(select) { display:grid;gap:4px; }
+.table-tools-options input[type=checkbox] { width:16px;height:16px;min-height:0; }
+.table-tools-options input[type=search],.table-tools-options select { padding:5px 8px;font-size:12px; }
+.table-tools-options { max-height:50vh;overflow:auto; }
+.console-sidebar .dns-console-tree { max-height:none;overflow:visible; }
+@media(max-width:850px){.console-sidebar{max-height:35vh}}
+
+/* Additional columns scroll horizontally instead of squeezing names into letters. */
+.configured-table th[data-column],.configured-table td[data-column] { min-width:140px; }
+.configured-table th[data-column=dn],.configured-table td[data-column=dn] { min-width:320px; }

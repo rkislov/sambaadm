@@ -149,18 +149,20 @@ func (s *Server) handleAPIFSMOSeize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Role string `json:"role"`
+		Role                  string `json:"role"`
+		TargetDC              string `json:"targetDC"`
+		ConfirmDecommissioned bool   `json:"confirmDecommissioned"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSON(w, 400, map[string]string{"error": "invalid JSON"})
 		return
 	}
-	if strings.TrimSpace(in.Role) == "" {
-		writeJSON(w, 400, map[string]string{"error": "required fields are missing"})
+	if strings.TrimSpace(in.Role) == "" || strings.TrimSpace(in.TargetDC) == "" || !in.ConfirmDecommissioned {
+		writeJSON(w, 400, map[string]string{"error": "role, targetDC and confirmDecommissioned:true are required"})
 		return
 	}
 	sess := sessionFrom(r)
-	err := s.svcs.Domain.FSMOSeize(r.Context(), in.Role, sess.Username, r.RemoteAddr)
+	err := s.svcs.Domain.FSMOChangeOn(r.Context(), in.Role, in.TargetDC, sess.Username, r.RemoteAddr, true)
 	apiResult(w, map[string]string{"status": "ok"}, err)
 }
 func (s *Server) handleAPILevelRaise(w http.ResponseWriter, r *http.Request) {

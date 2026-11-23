@@ -517,6 +517,7 @@
     "/domain/fsmo/seize":
         "post":
             "summary": "FSMOSeize"
+            "description": "Requires role, targetDC (registered writable DC DNS name) and confirmDecommissioned:true. Emergency operation for permanent owner loss. Validates target identity and verifies observed role owner."
             "responses":
                 "200":
                     "description": "Operation result"
@@ -1673,6 +1674,7 @@
     "/domain/fsmo/transfer":
         "post":
             "summary": "FSMOTransfer"
+            "description": "Requires role and targetDC (registered writable DC DNS name). Runs against the selected DC; no sambaadm installation on the target required. Validates target identity and verifies observed role owner."
             "responses":
                 "200":
                     "description": "Operation result"

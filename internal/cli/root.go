@@ -119,7 +119,7 @@ func ensureServerConfig(cmd *cobra.Command) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	data, err := discoveredConfig(cmd.Context(), realm, "", user, "", "")
+	data, err := discoveredConfig(cmd.Context(), realm, "", user, "", "", false)
 	if err != nil {
 		return fmt.Errorf("предзаполнение config.yaml: %w; выполните sambaadm discover --realm DOMAIN --dc DC --output %s", err, path)
 	}

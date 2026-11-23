@@ -92,8 +92,8 @@ case " $components " in *' sambaadm '*)
 ;; esac
 if [ -x /usr/libexec/sambaadm-prepare-logs ]; then /usr/libexec/sambaadm-prepare-logs; fi
 echo "Компоненты $components версии $release установлены; существующие настройки сохранены."
-if [ "$new_server" = true ] && [ -d /run/systemd/system ] && { [ -t 0 ] || [ -n "${SAMBAADM_PASSWORD:-}" ]; }; then
-  bash ./configure-server.sh
+if [ "$new_server" = true ] && [ -d /run/systemd/system ] && { [ -t 0 ] && [ -t 1 ]; }; then
+  /usr/sbin/sambaadm-setup
 elif [ "$new_server" = true ]; then
-  echo 'Для первичной настройки выполните sudo bash configure-server.sh из каталога комплекта.'
+  echo 'Для первичной настройки выполните sudo sambaadm-setup.'
 fi

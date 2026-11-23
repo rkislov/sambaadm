@@ -305,14 +305,15 @@ func (s *Server) handleAPIFSMOTransfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Role string `json:"role"`
+		Role     string `json:"role"`
+		TargetDC string `json:"targetDC"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Role == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "role required"})
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Role == "" || strings.TrimSpace(body.TargetDC) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "role and targetDC required"})
 		return
 	}
 	sess := sessionFrom(r)
-	if err := s.svcs.Domain.FSMOTransfer(r.Context(), body.Role, sess.Username, r.RemoteAddr); err != nil {
+	if err := s.svcs.Domain.FSMOChangeOn(r.Context(), body.Role, body.TargetDC, sess.Username, r.RemoteAddr, false); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}

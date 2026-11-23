@@ -98,10 +98,11 @@ func resolveCandidates(ctx context.Context, candidates []string, domain, dc stri
 
 func init() {
 	var dc, group, ca, output string
+	var allowLegacyCN bool
 	cmd := &cobra.Command{Use: "discover", Short: "Определить конфигурацию сервера по Samba и DNS", Args: cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
-			data, err := discoveredConfig(cmd.Context(), realm, dc, user, group, ca)
+			data, err := discoveredConfig(cmd.Context(), realm, dc, user, group, ca, allowLegacyCN)
 			if err != nil {
 				return err
 			}
@@ -115,6 +116,7 @@ func init() {
 			_, err = cmd.OutOrStdout().Write(data)
 			return err
 		}}
+	cmd.Flags().BoolVar(&allowLegacyCN, "allow-legacy-cn", false, "разрешить точное DNS-имя CN только при отсутствии SAN с проверкой цепочки ЦС")
 	cmd.Flags().StringVar(&output, "output", "", "создать config.yaml без перезаписи существующего файла")
 	cmd.Flags().StringVar(&dc, "dc", "", "FQDN контроллера LDAPS")
 	cmd.Flags().StringVar(&group, "admin-group", "", "DN группы администраторов")
@@ -142,7 +144,7 @@ func writeDiscoveredConfig(path string, data []byte) error {
 	return nil
 }
 
-func discoveredConfig(ctx context.Context, realm, dc, user, group, ca string) ([]byte, error) {
+func discoveredConfig(ctx context.Context, realm, dc, user, group, ca string, allowLegacyCN bool) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	domain, target, err := discoverAD(ctx, realm, dc)
@@ -162,7 +164,7 @@ func discoveredConfig(ctx context.Context, realm, dc, user, group, ca string) ([
 		return nil, fmt.Errorf("для CA требуется абсолютный путь")
 	}
 	cfg := map[string]any{"server": map[string]string{"listen": "127.0.0.1:8080", "enrollment_dir": "/var/lib/sambaadm/enrollment"},
-		"ldap":  map[string]any{"uri": "ldaps://" + target + ":636", "base_dn": base, "ca_cert": ca, "bind": map[string]string{"type": "simple", "user": bind, "password_env": "SAMBAADM_PASSWORD"}},
+		"ldap":  map[string]any{"uri": "ldaps://" + target + ":636", "base_dn": base, "ca_cert": ca, "allow_legacy_cn": allowLegacyCN, "bind": map[string]string{"type": "simple", "user": bind, "password_env": "SAMBAADM_PASSWORD"}},
 		"auth":  map[string]any{"roles": map[string][]string{"admins": {admins}}},
 		"audit": map[string]string{"file": "/var/log/sambaadm/audit.log"}, "logging": map[string]string{"file": "/var/log/sambaadm/events.log"}}
 	return yaml.Marshal(cfg)

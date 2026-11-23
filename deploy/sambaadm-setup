@@ -1,0 +1,194 @@
+#!/bin/bash
+# Interactive first start, installed by the RPM as /usr/sbin/sambaadm-setup.
+set -euo pipefail
+setup_usage() {
+  cat <<'HELP'
+Первоначальная настройка Sambaadm
+Использование: sudo sambaadm-setup [параметры]
+  --realm ДОМЕН       DNS-имя домена (иначе определяется автоматически)
+  --dc СЕРВЕР         Полное DNS-имя контроллера
+  --user UPN          Существующая служебная учётная запись
+  --admin-group DN    Группа администраторов интерфейса
+  --ca ФАЙЛ           PEM-сертификат доверенного ЦС для LDAPS
+  --allow-legacy-cn   Старый сертификат без SAN: точное имя CN и доверенная цепочка
+  --check             Проверить предложенные настройки без замены конфигурации и запуска
+  --replace           Заменить существующие настройки с резервной копией
+  --yes               Без вопросов; пароль только через SAMBAADM_PASSWORD
+  --help              Эта справка
+Без параметров мастер запрашивает недостающие сведения и пароль без отображения.
+HELP
+}
+setup_prompt() {
+  local label=$1 current=$2 answer
+  if [[ $setup_interactive == true ]]; then
+    read -r -p "$label${current:+ [$current]}: " answer </dev/tty
+    printf '%s' "${answer:-$current}"
+  else printf '%s' "$current"; fi
+}
+setup_main() (
+  local config_dir=$1 state_dir=$2 lock_file=$3 sample=$4 binary=$5
+  shift 5
+  local domain='' dc='' bind_user='' group='' ca='' check=false replace=false yes=false legacy=false
+  while (($#)); do
+    case $1 in
+      --help|-h) setup_usage; return ;;
+      --allow-legacy-cn) legacy=true; shift ;;
+      --check) check=true; shift ;;
+      --replace) replace=true; shift ;;
+      --yes) yes=true; shift ;;
+      --realm|--dc|--user|--admin-group|--ca)
+        (($#>=2)) && [[ -n $2 && $2 != --* ]] || { echo "Нужно значение для $1" >&2; return 2; }
+        case $1 in --realm) domain=$2;; --dc) dc=$2;; --user) bind_user=$2;; --admin-group) group=$2;; --ca) ca=$2;; esac
+        shift 2 ;;
+      *) echo "Неизвестный параметр: $1" >&2; setup_usage >&2; return 2 ;;
+    esac
+  done
+  umask 077
+  local setup_interactive=false
+  if [[ $yes == false && -t 0 && -t 1 ]]; then setup_interactive=true; fi
+  [[ -d $config_dir && ! -L $config_dir && -x $binary ]] || { echo 'Установите пакет sambaadm перед настройкой.' >&2; return 1; }
+  exec 9>"$lock_file"
+  flock -n 9 || { echo 'Другой мастер настройки уже запущен.' >&2; return 1; }
+  local path
+  for path in config.yaml env domain-ca.pem; do
+    [[ ! -L $config_dir/$path && ( ! -e $config_dir/$path || -f $config_dir/$path ) ]] || { echo "Нештатный файл $config_dir/$path; настройка остановлена." >&2; return 1; }
+  done
+  if [[ $check == false && $replace == false && -e $config_dir/config.yaml ]] && ! cmp -s "$config_dir/config.yaml" "$sample"; then
+    echo 'Конфигурация уже изменена. Мастер сохранил её без перезаписи.'
+    echo 'Для проверки новых параметров используйте --check; для явной замены с копией — --replace.'
+    return 1
+  fi
+  local work
+  work=$(mktemp -d "$config_dir/.setup-XXXXXXXX")
+  trap 'rm -rf -- "$work"' EXIT
+  chgrp sambaadm "$work"; chmod 0750 "$work"
+  local args=()
+  [[ -z $domain ]] || args+=(--realm "$domain")
+  [[ -z $dc ]] || args+=(--dc "$dc")
+  # Discovery output contains no credentials. Reuse the existing Samba/DNS probe.
+  if "$binary" discover "${args[@]}" > "$work/discovered.yaml" 2>"$work/discovery.log"; then
+    [[ -n $domain ]] || domain=$(sed -n 's/^[[:space:]]*user: svc-sambaadm@//p' "$work/discovered.yaml")
+    [[ -n $dc ]] || dc=$(sed -n 's@^[[:space:]]*uri: ldaps://\([^:/]*\):636$@\1@p' "$work/discovered.yaml")
+  else
+    echo 'Автообнаружение не завершено. Укажите DNS-имя домена и контроллера.' >&2
+  fi
+  if [[ -z $domain ]]; then domain=$(setup_prompt 'DNS-имя домена' ''); fi
+  if [[ -z $dc ]]; then dc=$(setup_prompt 'Контроллер (пусто — поиск по DNS SRV)' ''); fi
+  [[ -n $domain ]] || { echo 'Укажите --realm corp.example; проверьте доменный DNS.' >&2; return 1; }
+  domain=${domain,,};domain=${domain%.}
+  if [[ -z $bind_user ]]; then bind_user=$(setup_prompt 'Существующая служебная запись UPN' ''); fi
+  [[ -n $bind_user ]] || { echo 'Укажите существующую запись через --user login@domain.' >&2;return 1; }
+  if [[ -z $group ]]; then group=$(setup_prompt 'DN группы администраторов' "CN=Domain Admins,CN=Users,DC=${domain//./,DC=}"); fi
+  if [[ -z $ca ]]; then
+    # A local DC may already have a CA. Never fetch or blindly trust a remote certificate.
+    local candidate='' private_dir=''
+    candidate=$(testparm -s --parameter-name='tls cafile' 2>/dev/null || :)
+    if [[ -n $candidate && $candidate != /* ]]; then
+      private_dir=$(testparm -s --parameter-name='private dir' 2>/dev/null || :)
+      [[ -z $private_dir ]] || candidate=$private_dir/$candidate
+    fi
+    [[ -n $candidate && -f $candidate && -r $candidate ]] || candidate=''
+    ca=$(setup_prompt 'PEM-файл ЦС LDAPS (пусто — системное доверие)' "$candidate")
+  fi
+  args=(--realm "$domain" --user "$bind_user" --admin-group "$group")
+  [[ -z $dc ]] || args+=(--dc "$dc")
+  if [[ -n $ca ]]; then
+    [[ $ca == /* && -f $ca && -r $ca ]] || { echo 'Для --ca нужен читаемый PEM-файл с абсолютным путём.' >&2; return 1; }
+    if LC_ALL=C grep -Eq 'BEGIN .*PRIVATE KEY' "$ca"; then echo 'Файл ЦС содержит закрытый ключ; укажите только публичный сертификат.' >&2;return 1;fi
+    cp -- "$ca" "$work/domain-ca.pem";chgrp sambaadm "$work/domain-ca.pem";chmod 0640 "$work/domain-ca.pem"
+    args+=(--ca "$work/domain-ca.pem")
+  fi
+  [[ $legacy == false ]] || args+=(--allow-legacy-cn)
+  "$binary" discover "${args[@]}" > "$work/config.yaml"
+  chgrp sambaadm "$work/config.yaml";chmod 0640 "$work/config.yaml"
+  printf '\nПредложенные настройки (пароля здесь нет):\n'
+  cat "$work/config.yaml"
+  echo 'Мастер не создаёт доменные учётные записи. Указанная запись должна существовать и иметь нужные права.'
+  if [[ $setup_interactive == true ]]; then
+    local answer
+    read -r -p 'Проверить и применить эти настройки? [д/Н]: ' answer </dev/tty
+    [[ $answer == д || $answer == Д || $answer == y || $answer == Y ]] || { echo 'Настройка отменена; конфигурация не изменена.'; return 1; }
+  elif [[ $yes != true ]]; then
+    echo 'Нужен интерактивный терминал либо --yes с SAMBAADM_PASSWORD.' >&2;return 1
+  fi
+  if [[ -z ${SAMBAADM_PASSWORD:-} && $setup_interactive == true ]]; then
+    read -rs -p 'Пароль служебной записи: ' SAMBAADM_PASSWORD </dev/tty;echo >&2
+  fi
+  [[ -n ${SAMBAADM_PASSWORD:-} && $SAMBAADM_PASSWORD != *$'\n'* && $SAMBAADM_PASSWORD != *$'\r'* ]] || { echo 'Пароль не задан или содержит перевод строки.' >&2; return 1; }
+  export SAMBAADM_PASSWORD
+  echo 'Проверка сертификата LDAPS, входа и чтения домена от имени службы…'
+  setup_check() { runuser -u sambaadm -- "$binary" --config "$work/config.yaml" serve --check 2>&1 | tee "$work/preflight.log"; }
+  if ! setup_check; then
+    local compatible=false answer=''
+    if [[ $legacy == false && $setup_interactive == true ]] && grep -q 'legacy Common Name' "$work/preflight.log"; then
+      echo 'У сервера сертификат без SAN. Совместимость допускает только точное DNS-имя CN и сохраняет проверку доверия и срока.' >&2
+      read -r -p 'Разрешить такую совместимость? [д/Н]: ' answer </dev/tty
+      if [[ $answer == д || $answer == Д || $answer == y || $answer == Y ]]; then
+        legacy=true;args+=(--allow-legacy-cn)
+        "$binary" discover "${args[@]}" > "$work/config.yaml"
+        setup_check && compatible=true
+      fi
+    fi
+    if [[ $compatible == false ]]; then
+      echo 'Проверка не пройдена. Настройки не заменены, служба не изменена. Проверьте имя DC, DNS, ЦС и учётную запись.' >&2
+      echo 'Для сертификата без SAN можно явно выбрать --allow-legacy-cn; сертификат с SAN предпочтителен.' >&2
+      return 1
+    fi
+  fi
+  if [[ $check == true ]]; then echo 'Проверка успешна. Конфигурация и состояние службы не изменены.';return;fi
+  local escaped=${SAMBAADM_PASSWORD//\\/\\\\}
+  escaped=${escaped//\"/\\\"}
+  printf 'SAMBAADM_PASSWORD="%s"\n' "$escaped" > "$work/env"
+  unset SAMBAADM_PASSWORD escaped
+  if [[ -n $ca ]]; then
+    args=(--realm "$domain" --user "$bind_user" --admin-group "$group" --ca "$config_dir/domain-ca.pem")
+    [[ -z $dc ]] || args+=(--dc "$dc")
+    [[ $legacy == false ]] || args+=(--allow-legacy-cn)
+    "$binary" discover "${args[@]}" > "$work/config.yaml"
+  fi
+  install -d -m 0700 "$state_dir"
+  local backup was_active=false was_enabled=false
+  backup=$(mktemp -d "$state_dir/configure-XXXXXXXX")
+  for path in config.yaml env domain-ca.pem; do [[ ! -e $config_dir/$path ]] || cp -p -- "$config_dir/$path" "$backup/$path"; done
+  echo "Резервная копия исходной конфигурации: $backup"
+  systemctl is-active --quiet sambaadm && was_active=true
+  systemctl is-enabled --quiet sambaadm && was_enabled=true
+  setup_rollback() {
+    trap - ERR INT TERM HUP
+    systemctl stop sambaadm || :
+    for path in config.yaml env domain-ca.pem; do
+      if [[ -e $backup/$path ]]; then cp -p -- "$backup/$path" "$config_dir/$path";else rm -f -- "$config_dir/$path";fi
+    done
+    [[ $was_enabled == true ]] || systemctl disable sambaadm || :
+    [[ $was_active == false ]] || systemctl start sambaadm || :
+    echo "Запуск не завершён; исходная конфигурация восстановлена из $backup." >&2
+  }
+  trap 'setup_rollback' ERR
+  trap 'setup_rollback; exit 1' INT TERM HUP
+  [[ $was_active == false ]] || systemctl stop sambaadm
+  if [[ -n $ca ]]; then chown root:sambaadm "$work/domain-ca.pem";mv -f -- "$work/domain-ca.pem" "$config_dir/domain-ca.pem";fi
+  chown root:sambaadm "$work/config.yaml";chmod 0640 "$work/config.yaml"
+  mv -f -- "$work/config.yaml" "$config_dir/config.yaml"
+  mv -f -- "$work/env" "$config_dir/env"
+  systemctl start sambaadm
+  local pid attempt
+  pid=$(systemctl show sambaadm -p MainPID --value)
+  [[ $pid =~ ^[1-9][0-9]*$ ]]
+  for attempt in 1 2 3 4 5; do
+    sleep 1
+    systemctl is-active --quiet sambaadm
+    [[ $(systemctl show sambaadm -p MainPID --value) == "$pid" ]]
+  done
+  systemctl enable sambaadm
+  trap - ERR INT TERM HUP
+  echo 'Sambaadm запущен: http://127.0.0.1:8080/login'
+  echo 'С удалённого компьютера: ssh -L 8080:127.0.0.1:8080 пользователь@сервер'
+  echo 'Войдите доменным администратором. Подключение helpers: Настройки → Узлы helper.'
+)
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+  # Help also works before installation and without root.
+  if [[ ${1:-} == --help || ${1:-} == -h ]]; then setup_usage;exit;fi
+  [[ $EUID == 0 ]] || { echo 'Запустите sudo sambaadm-setup.' >&2;exit 1; }
+  setup_main /etc/sambaadm /var/lib/sambaadm-install /run/sambaadm-configure.lock /usr/share/doc/sambaadm/config.example.yaml /usr/bin/sambaadm "$@"
+fi
