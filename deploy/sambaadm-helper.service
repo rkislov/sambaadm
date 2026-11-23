@@ -18,6 +18,7 @@ StateDirectoryMode=0700
 LogsDirectory=sambaadm-helper
 LogsDirectoryMode=0700
 ReadWritePaths=-/etc/samba -/var/lib/samba -/var/cache/samba -/var/log/samba -/srv/samba
+ReadWritePaths=-/etc/pki/ca-trust/source/anchors -/etc/pki/ca-trust/extracted
 UMask=0077
 
 [Install]

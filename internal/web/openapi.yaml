@@ -514,6 +514,22 @@
                                     "type": "string"
                             "required":
                                 - "subnet"
+    "/certificates/rollouts":
+        "get":
+            "summary": "List persistent LDAPS certificate rollout plans and node results"
+            "responses":
+                "200":
+                    "description": "Admin only; interrupted jobs require explicit reconciliation"
+        "post":
+            "summary": "Plan, apply, reconcile or roll back LDAPS certificates on every DC"
+            "description": "Admin and CSRF required. JSON action:plan with years (string:1,3,5,10), renewCA (boolean); discovers every DC including RODC, requires registered updated ALT helpers, generates per-node keys/CSRs and signs public certificates. action:apply with id and confirm:true revalidates the inventory, installs additive CA trust on every DC before any leaf, then installs sequentially and verifies strict LDAPS from helper and management host. action:rollback with id,node,confirm:true restores one node's original TLS configuration; added trust is retained. Keys never leave the DC. Journaled, explicit resume after interruption; external smb.conf changes block replacement."
+            "responses":
+                "200":
+                    "description": "Plan or rollback result"
+                "202":
+                    "description": "Rollout started; poll GET"
+                "409":
+                    "description": "Missing helper, stale inventory or invalid job state"
     "/domain/fsmo/seize":
         "post":
             "summary": "FSMOSeize"

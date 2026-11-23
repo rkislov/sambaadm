@@ -79,6 +79,10 @@ jobs:
         run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-setup.sh
       - name: Combined installer first install, update and repeat
         run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-installer-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
+      - name: Certificate deployment transaction and rollback
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go test -c -o "$RUNNER_TEMP/certificate.test" ./internal/service
+          docker run --rm -v "$RUNNER_TEMP/certificate.test:/certificate.test:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} sh -c 'mkdir -p /var/lib/sambaadm-certificate-tests; TMPDIR=/var/lib/sambaadm-certificate-tests /certificate.test -test.run ^TestHelperCertificate -test.v'
       - name: ALT p10 real systemd update and rollback
         run: |
           trap 'docker logs --tail 50 sambaadm-alt-systemd || true; docker rm -f sambaadm-alt-systemd || true' EXIT

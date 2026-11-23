@@ -89,6 +89,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/workspace.cjs
       - name: Folder navigation and table preferences
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/directory-navigation.cjs
+      - name: Certificate rollout browser contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/certificate-rollout.cjs
       - name: FSMO target controller browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/fsmo.cjs
       - name: Scalable topology browser contracts

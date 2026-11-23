@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -19,6 +20,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,7 +89,7 @@ func (s *Server) localCertificateAuthority() (*x509.Certificate, *ecdsa.PrivateK
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		root := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "sambaadm local LDAP CA"}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(10, 0, 0), IsCA: true, BasicConstraintsValid: true, MaxPathLenZero: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
+		root := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "sambaadm local LDAP CA"}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: time.Now().AddDate(20, 0, 0), IsCA: true, BasicConstraintsValid: true, MaxPathLenZero: true, KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
 		der, err := x509.CreateCertificate(rand.Reader, root, root, &key.PublicKey, key)
 		if err != nil {
 			return nil, nil, nil, err
@@ -127,6 +129,50 @@ func (s *Server) localCertificateAuthority() (*x509.Certificate, *ecdsa.PrivateK
 		return nil, nil, nil, fmt.Errorf("локальный УЦ недействителен")
 	}
 	return cert, key, state.Certificate, nil
+}
+
+// Renew only the CA certificate, retaining the issuer key and identity. All
+// existing certificates remain signed by the same key; rollout installs the
+// renewed public root on every DC before installing any new server certificate.
+func (s *Server) certificateAuthorityForYears(years int, renew bool) (*x509.Certificate, *ecdsa.PrivateKey, []byte, bool, error) {
+	ca, key, caPEM, err := s.localCertificateAuthority()
+	if err != nil || !renew || ca.NotAfter.After(time.Now().AddDate(years, 0, 1)) {
+		return ca, key, caPEM, false, err
+	}
+	root := *ca
+	root.NotBefore = time.Now().Add(-5 * time.Minute)
+	root.NotAfter = time.Now().AddDate(20, 0, 0)
+	root.SerialNumber, err = rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &root, &root, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	path := filepath.Join(s.cfg.Server.CertificateDir, "authority.json")
+	old, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	fingerprint := sha256.Sum256(ca.Raw)
+	if err = saveCertificateFile(filepath.Join(s.cfg.Server.CertificateDir, fmt.Sprintf("authority-before-%x.json", fingerprint[:8])), old); err != nil {
+		return nil, nil, nil, false, err
+	}
+	var state certificateAuthority
+	if err = json.Unmarshal(old, &state); err != nil {
+		return nil, nil, nil, false, err
+	}
+	state.Certificate = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	raw, err := json.Marshal(state)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+	if err = saveCertificateFile(path, raw); err != nil {
+		return nil, nil, nil, false, err
+	}
+	ca, err = x509.ParseCertificate(der)
+	return ca, key, state.Certificate, true, err
 }
 
 func validCABundle(raw []byte) error {
@@ -327,7 +373,37 @@ func (s *Server) inspectLDAPCertificate(ctx context.Context, view *certificatePa
 	return "Сертификат действителен: имя, срок и цепочка доверия проверены."
 }
 
+func certificateYears(value string) (int, error) {
+	if value == "" {
+		return 10, nil
+	}
+	years, err := strconv.Atoi(value)
+	if err != nil || (years != 1 && years != 3 && years != 5 && years != 10) {
+		return 0, fmt.Errorf("выберите срок: 1, 3, 5 или 10 лет")
+	}
+	return years, nil
+}
+func signLDAPCertificate(ca *x509.Certificate, key *ecdsa.PrivateKey, name string, pub any, years int) ([]byte, error) {
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, err
+	}
+	expiry := time.Now().AddDate(years, 0, 0)
+	if expiry.After(ca.NotAfter) {
+		expiry = ca.NotAfter
+	}
+	cert := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: name}, DNSNames: []string{name}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: expiry, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	der, err := x509.CreateCertificate(rand.Reader, cert, ca, pub, key)
+	if err != nil {
+		return nil, err
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+}
 func (s *Server) issueLDAPCertificate(w http.ResponseWriter, r *http.Request) error {
+	years, err := certificateYears(r.FormValue("years"))
+	if err != nil {
+		return err
+	}
 	if len(r.FormValue("csr")) > 64<<10 {
 		return fmt.Errorf("CSR не должен превышать 64 КБ")
 	}
@@ -368,22 +444,13 @@ func (s *Server) issueLDAPCertificate(w http.ResponseWriter, r *http.Request) er
 	if err != nil {
 		return err
 	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
-	if err != nil {
-		return err
-	}
-	expiry := time.Now().AddDate(1, 0, 0)
-	if expiry.After(ca.NotAfter) {
-		expiry = ca.NotAfter
-	}
-	cert := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: name}, DNSNames: []string{name}, NotBefore: time.Now().Add(-5 * time.Minute), NotAfter: expiry, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
-	der, err := x509.CreateCertificate(rand.Reader, cert, ca, pub, key)
+	leafPEM, err := signLDAPCertificate(ca, key, name, pub, years)
 	if err != nil {
 		return err
 	}
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
-	files := map[string][]byte{"ca.pem": caPEM, "cert.pem": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), "smb.conf.fragment": []byte("# Добавьте параметры в существующую секцию [global].\n# Пути задаются на контроллере после установки файлов.\n[global]\n  tls enabled = yes\n  tls cafile = /etc/samba/tls-sambaadm/ca.pem\n  tls certfile = /etc/samba/tls-sambaadm/cert.pem\n  tls keyfile = /etc/samba/tls-sambaadm/key.pem\n"), "README.txt": []byte("Установите ca.pem и cert.pem на контроллер в /etc/samba/tls-sambaadm с владельцем root:root и правами 0600. Если архив содержит key.pem, установите его туда же; иначе используйте закрытый ключ, для которого создан CSR. Сохраните исходные TLS-файлы и smb.conf. Добавьте параметры из smb.conf.fragment в существующий [global], проверьте testparm и перезапустите службу Samba. В меню сертификатов sambaadm нажмите «Доверять локальному УЦ» и проверьте LDAPS. Файлы на контроллере не меняются автоматически. Закрытый ключ нового сертификата выдаётся только в этом архиве; храните его приватно. Закрытый ключ УЦ остаётся на сервере sambaadm.\n")}
+	files := map[string][]byte{"ca.pem": caPEM, "cert.pem": leafPEM, "smb.conf.fragment": []byte("# Добавьте параметры в существующую секцию [global].\n# Пути задаются на контроллере после установки файлов.\n[global]\n  tls enabled = yes\n  tls cafile = /etc/samba/tls-sambaadm/ca.pem\n  tls certfile = /etc/samba/tls-sambaadm/cert.pem\n  tls keyfile = /etc/samba/tls-sambaadm/key.pem\n"), "README.txt": []byte("Установите ca.pem и cert.pem на контроллер в /etc/samba/tls-sambaadm с владельцем root:root и правами 0600. Если архив содержит key.pem, установите его туда же; иначе используйте закрытый ключ, для которого создан CSR. Сохраните исходные TLS-файлы и smb.conf. Добавьте параметры из smb.conf.fragment в существующий [global], проверьте testparm и перезапустите службу Samba. В меню сертификатов sambaadm нажмите «Доверять локальному УЦ» и проверьте LDAPS. Файлы на контроллере не меняются автоматически. Закрытый ключ нового сертификата выдаётся только в этом архиве; храните его приватно. Закрытый ключ УЦ остаётся на сервере sambaadm.\n")}
 	if len(keyPEM) > 0 {
 		files["key.pem"] = keyPEM
 	}

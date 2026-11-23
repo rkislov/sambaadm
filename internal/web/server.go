@@ -39,20 +39,22 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
-	backupMu    sync.Mutex
-	certMu      sync.Mutex
-	enrollMu    sync.Mutex
-	surveyMu    sync.Mutex
-	cfg         *config.Config
-	svcs        *service.Services
-	sessions    *auth.Store
-	rbac        *auth.RBAC
-	ldap        *ldapproto.Client
-	audit       *audit.Logger
-	tmpl        *template.Template
-	router      chi.Router
-	monitor     service.HostMonitor // Local host only; helpers may refer to a different server.
-	diagnostics *service.DiagnosticService
+	backupMu          sync.Mutex
+	certMu            sync.Mutex
+	certRolloutMu     sync.Mutex
+	certRolloutActive map[string]bool
+	enrollMu          sync.Mutex
+	surveyMu          sync.Mutex
+	cfg               *config.Config
+	svcs              *service.Services
+	sessions          *auth.Store
+	rbac              *auth.RBAC
+	ldap              *ldapproto.Client
+	audit             *audit.Logger
+	tmpl              *template.Template
+	router            chi.Router
+	monitor           service.HostMonitor // Local host only; helpers may refer to a different server.
+	diagnostics       *service.DiagnosticService
 }
 
 // New constructs the web server and router.
@@ -169,6 +171,8 @@ func (s *Server) buildRouter() chi.Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
+		r.Get("/certificates/rollouts", s.handleCertificateRollouts)
+		r.Post("/certificates/rollouts", s.handleCertificateRollouts)
 		r.Get("/backups", s.handleAPIObjectBackups)
 		r.Post("/backups", s.handleAPIObjectBackups)
 		r.Post("/backups/restore/plan", s.handleAPIDomainRestore)

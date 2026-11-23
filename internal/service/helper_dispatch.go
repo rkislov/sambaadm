@@ -75,6 +75,9 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 	if strings.HasPrefix(method, "sysvol.") {
 		return s.helperSYSVOL(ctx, cfg, strings.TrimPrefix(method, "sysvol."), raw)
 	}
+	if strings.HasPrefix(method, "certificate.") {
+		return helperCertificate(ctx, cfg, method, raw)
+	}
 	if method == "health" {
 		return map[string]any{"protocol": agent.Version, "credential_protocol": agent.CredentialVersion, "node": cfg.Helper.Node}, nil
 	}

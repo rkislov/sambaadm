@@ -77,7 +77,7 @@ func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 		{"POST", "/api/v1/users/alice/move"}, {"POST", "/api/v1/computers/pc/move"},
 		{"POST", "/api/v1/groups/Finance/members"}, {"DELETE", "/api/v1/groups/Finance/members"},
 		{"POST", "/api/v1/ou/move"}, {"POST", "/api/v1/subnets/delete"},
-		{"PUT", "/api/v1/domain/password-policy"}, {"POST", "/api/v1/domain/fsmo/seize"}, {"POST", "/api/v1/domain/level/raise"},
+		{"POST", "/api/v1/certificates/rollouts"}, {"PUT", "/api/v1/domain/password-policy"}, {"POST", "/api/v1/domain/fsmo/seize"}, {"POST", "/api/v1/domain/level/raise"},
 	}
 	s := testWorkspaceServer(t)
 	for _, route := range routes {
