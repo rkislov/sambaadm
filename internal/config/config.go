@@ -28,6 +28,7 @@ type Config struct {
 }
 
 type HelperServerConfig struct {
+	DNSConfig            string    `mapstructure:"dns_config"`
 	DomainRestoreEnabled bool      `mapstructure:"domain_restore_enabled"`
 	DomainRestoreRoot    string    `mapstructure:"domain_restore_root"`
 	TimeConfig           string    `mapstructure:"time_config"`

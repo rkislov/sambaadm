@@ -64,6 +64,17 @@ jobs:
       - name: Forest-loss recovery from a full cold backup into a new DC
         run: testdata/samba/test-domain-restore.sh
 
+  dns-routing-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Real DNS backend round trip and conditional forwarding below AD
+        run: sh testdata/samba/test-dns-routing.sh
+
   browser:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -95,6 +106,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/pso.cjs
       - name: GPO and RODC cards and diagnostics layout
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/admin-cards.cjs
+      - name: DNS delegation, multi-server forwarding and backend controls
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dns-routing.cjs
       - name: Share server selection
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/share-server.cjs
       - name: Group cards and delegation browser contracts

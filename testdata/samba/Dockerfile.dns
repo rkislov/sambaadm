@@ -1,0 +1,3 @@
+ARG SAMBAADM_DNS_BASE=sambaadm-dns-it-base
+FROM ${SAMBAADM_DNS_BASE}
+RUN apt-get update -qq && apt-get install -y --no-install-recommends bind9 bind9-utils dnsutils && rm -rf /var/lib/apt/lists/*

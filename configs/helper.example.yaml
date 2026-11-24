@@ -16,6 +16,8 @@ helper:
   backup_root: /var/lib/sambaadm-helper/backups
   state_dir: /var/lib/sambaadm-helper
   # Opt in to time changes only after verifying the service uses this file.
+  # Optional BIND configuration override; otherwise detected through rndc status.
+  dns_config: ""
   time_config: "" # /etc/chrony.conf or /etc/chrony/chrony.conf
   time_service: chronyd.service # chronyd.service or chrony.service
   admx_root: "" # Optional allowed root for local ADMX paths supplied by sambaadm.

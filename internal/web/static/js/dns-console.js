@@ -10,6 +10,7 @@
   tools.dataset.compactActions='2';search.type='search';search.placeholder=t('Поиск в текущем списке','Search current list');search.setAttribute('aria-label',search.placeholder);type.setAttribute('aria-label',t('Тип записи','Record type'));
   for(const v of ['ALL','A','AAAA','CNAME','NS','PTR','MX','SRV','TXT','SOA']){const o=el('option','',v==='ALL'?t('Все типы','All types'):v);o.value=v;type.append(o);}
   tools.append(search,type,button(t('Обновить записи','Refresh records'),()=>loadRecords(selected,owner)));
+  if(admin){const link=el('a','button-link','Делегирование и пересылка');link.href='/dns/routing';tools.append(link);}
   if(admin)tools.append(button(t('Новая запись','New record'),()=>onCreate(zones.find(z=>z.name===selected),owner)),button(t('Удалить зону','Delete zone'),()=>onDelete(zones.find(z=>z.name===selected))));
   const wrap=el('div','workspace-table'),table=el('table','dns-record-table'),head=el('tr'),body=el('tbody');
   for(const [key,label] of [['name',t('Имя','Name')],['type',t('Тип','Type')],['data',t('Данные','Data')],['ttl','TTL']]){const th=el('th');th.scope='col';th.dataset.sort=key;th.dataset.column=key;const b=button(label,()=>{direction=sort===key?-direction:1;sort=key;renderRows();});b.setAttribute('aria-label',label);th.append(b);head.append(th);}head.append(el('th','',t('Действия','Actions')));const thead=el('thead');thead.append(head);table.append(thead,body);wrap.append(table);

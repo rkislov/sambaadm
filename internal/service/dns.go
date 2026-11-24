@@ -7,6 +7,7 @@ import (
 	"github.com/miekg/dns"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/go-ldap/ldap/v3"
 
@@ -52,9 +53,10 @@ type UpdateDNSRecordInput struct {
 
 // DNSService manages AD-integrated DNS over native DNS RPC and LDAP.
 type DNSService struct {
-	ldap   *ldapproto.Client
-	audit  *audit.Logger
-	remote *adremote.Client
+	delegationMu sync.Mutex
+	ldap         *ldapproto.Client
+	audit        *audit.Logger
+	remote       *adremote.Client
 }
 
 // ListZones returns DNS zones through LDAP.

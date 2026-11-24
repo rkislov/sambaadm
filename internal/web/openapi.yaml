@@ -1929,6 +1929,229 @@
                             "required":
                                 - "subnet"
                                 - "site"
+    "/dns/routing/nodes":
+        "get":
+            "summary": "Зарегистрированные DNS helper"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+    "/dns/zones/{zone}/delegations":
+        "get":
+            "summary": "Делегирования поддоменов"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "put":
+            "summary": "Применить проверенное делегирование NS/glue"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/zones/{zone}/delegations/plan":
+        "post":
+            "summary": "Предпросмотр изменения делегирования"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "path"
+                  "name": "zone"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/forwarding":
+        "get":
+            "summary": "Правила условной пересылки выбранного BIND helper"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+        "put":
+            "summary": "Применить правила по revision и proposedRevision"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/forwarding/plan":
+        "post":
+            "summary": "Проверить правила BIND без изменения конфигурации"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/backend/plan":
+        "post":
+            "summary": "Предпросмотр установки и переключения DNS-бэкенда ALT"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/backend/start":
+        "post":
+            "summary": "Начать подтверждённое фоновое переключение DNS-бэкенда"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "header"
+                  "name": "X-CSRF-Token"
+                  "required": true
+                  "schema":
+                    "type": "string"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+    "/dns/backend/status":
+        "get":
+            "summary": "Журнал и состояние фонового задания DNS"
+            "responses":
+                "200":
+                    "description": "Результат операции"
+                "403":
+                    "description": "Требуются роль администратора и CSRF для изменений"
+                "409":
+                    "description": "Конфликт предпросмотра, неподдерживаемый бэкенд или ошибка настройки"
+            "parameters":
+                - "in": "query"
+                  "name": "node"
+                  "required": true
+                  "schema":
+                    "type": "string"
+                - "in": "query"
+                  "name": "id"
+                  "required": true
+                  "schema":
+                    "type": "string"
     "/dns/zones":
         "get":
             "summary": "DNSZones"
