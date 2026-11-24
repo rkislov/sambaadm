@@ -260,7 +260,7 @@
   }
   function normalizeSearch(text){return text.normalize('NFKC').toLocaleLowerCase().trim();}
   const bulkSelection=new Set();let visibleBulk=[];
-  const bulkBar=el('div','workspace-tools');const bulkCount=el('span','muted');
+  const bulkBar=el('div','workspace-tools bulk-actions');const bulkCount=el('span','muted');
   if(cfg===configs['/users']&&admin){
     const all=el('input');all.type='checkbox';all.setAttribute('aria-label','Выбрать всех показанных пользователей');const th=el('th');th.append(all);tr.prepend(th);all.addEventListener('change',()=>{for(const login of visibleBulk){if(all.checked&&bulkSelection.size<100)bulkSelection.add(login);else if(!all.checked)bulkSelection.delete(login);}renderRows();});
     bulkBar.append(bulkCount);for(const [kind,label] of [['enable','Включить'],['disable','Отключить'],['unlock','Разблокировать']])bulkBar.append(button(label,()=>openBulk(kind)));bulkBar.append(button('Снять выбор',()=>{bulkSelection.clear();all.checked=false;renderRows();}));listPanel.insertBefore(bulkBar,tableWrap);bulkBar.hidden=true;
