@@ -4,9 +4,9 @@
   const ru=document.documentElement.lang==='ru',t=(a,b)=>ru?a:b;
   const el=(tag,text='',cls='')=>{const e=document.createElement(tag);e.textContent=text;e.className=cls;return e;};
   const dialog=el('dialog','','workspace-dialog domain-search-dialog'),title=el('h2',t('Поиск в домене','Domain search')),form=el('form','', 'domain-search-form'),label=el('label',t('Имя, логин или имя компьютера','Name, login or computer name')),input=el('input'),submit=el('button',t('Найти','Search')),notice=el('p','','workspace-message'),results=el('div'),close=el('button',t('Закрыть','Close'));
-  dialog.setAttribute('aria-labelledby','domain-search-title');title.id='domain-search-title';input.type='search';input.required=true;input.minLength=2;input.maxLength=128;label.append(input);submit.type='submit';form.append(label,submit);notice.setAttribute('role','status');dialog.append(title,form,notice,results,close);document.body.append(dialog);
+  dialog.setAttribute('aria-labelledby','domain-search-title');title.id='domain-search-title';input.type='search';input.required=true;input.minLength=2;input.maxLength=128;input.placeholder=t('Начните вводить имя или логин','Enter a name or login');label.append(input);submit.type='submit';form.append(label,submit);notice.setAttribute('role','status');const header=el('div','','dialog-heading');close.className='dialog-dismiss';close.setAttribute('aria-label',t('Закрыть','Close'));header.append(title,close);dialog.append(header,form,notice,results);document.body.append(dialog);
   let controller,serial=0;
-  function cancel(){serial++;controller?.abort();dialog.close();trigger.focus();}
+  function cancel(){serial++;controller?.abort();submit.disabled=false;dialog.close();trigger.focus();}
   trigger.addEventListener('click',()=>{dialog.showModal();input.focus();});close.addEventListener('click',cancel);dialog.addEventListener('cancel',e=>{e.preventDefault();cancel();});
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!form.reportValidity())return;

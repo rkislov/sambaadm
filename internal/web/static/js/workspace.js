@@ -285,10 +285,10 @@
       const cell=el('td','workspace-actions');
       const actions=(cfg.actions||[]).filter(a=>allowed(a)&&(!a.when||a.when(row)));
       if(actions.length)addAction(cell,actions[0],row);
-      if(actions.length>1&&['/users','/groups','/computers','/ou','/shares','/printers'].includes(location.pathname)){
+      if(actions.length>1&&['/users','/groups','/computers','/ou','/shares','/printers','/gpo','/domain','/repl','/trusts'].includes(location.pathname)){
         const menu=el('details','row-actions'),summary=el('summary','','');
-        summary.textContent='⋯';summary.setAttribute('aria-label',t('Другие действия: ','More actions: ')+cfg.id(row));
-        const commands=el('div','row-action-items');actions.slice(1).forEach(a=>addAction(commands,a,row));
+        summary.textContent=t('Действия','Actions');summary.setAttribute('aria-label',t('Другие действия: ','More actions: ')+cfg.id(row));
+        const commands=el('div','row-action-items');if(cfg===configs['/gpo']&&ru){for(const [heading,pattern] of [['Настройка',/Редактор|Сценарии/],['Привязки и доставка',/Привязать|Отвязать|Доставить|Резервная/],['Доступ',/Делегирование|Права|Фильтрация/],['Диагностика',/SYSVOL/],['Удаление',/Удалить/]]){const items=actions.slice(1).filter(a=>pattern.test(a.label));if(items.length){commands.append(el('strong','row-action-heading',heading));items.forEach(a=>addAction(commands,a,row));}}}else actions.slice(1).forEach(a=>addAction(commands,a,row));
         menu.append(summary,commands);cell.append(menu);
         menu.addEventListener('toggle',()=>{if(menu.open)tbody.querySelectorAll('.row-actions[open]').forEach(other=>{if(other!==menu)other.open=false;});});
         menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;summary.focus();e.stopPropagation();}});
@@ -548,15 +548,15 @@
 
   async function openALTEditor(a,row) {
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
-    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title,el('p','',row.displayName||row.guid),el('p','muted',t('Административные шаблоны ADMX/ADML. Выберите раздел и папку слева, затем откройте параметр в списке. Применение политики проверяется на клиенте.','ADMX/ADML administrative templates. Select a configuration and folder, then open a setting in the list. Verify policy application on the client.')));
+    const title=el('h2','',a.label);title.id='operation-title';const header=dialog.querySelector('.workspace-dialog-close');header.classList.add('pso-dialog-header');header.prepend(title);dialog.append(el('p','muted',row.displayName||row.guid));
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');
     const toolbar=el('div','workspace-form policy-toolbar');
     const scopeSelect=el('select');scopeSelect.id='alt-scope';for(const [value,label] of [['Machine',t('Компьютер','Computer')],['User',t('Пользователь','User')]]){const o=el('option','',label);o.value=value;scopeSelect.append(o);}
     const scopeLabel=el('label','',t('Раздел политики','Policy scope'));scopeLabel.htmlFor=scopeSelect.id;
     const search=el('input');search.type='search';search.id='alt-search';search.placeholder=t('Название, описание или параметр','Name, description or parameter');const searchLabel=el('label','',t('Поиск политик','Search policies'));searchLabel.htmlFor=search.id;
     const category={value:'',disabled:false};
-    toolbar.append(scopeLabel,scopeSelect,searchLabel,search);toolbar.classList.add('policy-console-toolbar');
-    const content=el('div','policy-console-content');dialog.append(notice,toolbar,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    scopeSelect.hidden=true;toolbar.append(searchLabel,search);toolbar.classList.add('policy-console-toolbar');
+    const content=el('div','policy-console-content');dialog.append(notice,toolbar,content);dialog.showModal();
     const path=a.path(row);let models={},model,driveModel,mode='templates',driveDirty=false,selectedPolicy='',loading=0,controller=null;
     dialog.addEventListener('close',()=>controller?.abort(),{once:true});const consoleState={expanded:new Set(),status:'',sort:'label',direction:1,page:0,selected:''};
     const stateLabel=s=>({'enabled':t('Включено','Enabled'),'disabled':t('Отключено','Disabled'),'not-configured':t('Не настроено','Not configured'),'unsupported':t('Неподдерживаемое значение — только просмотр','Unsupported value — read only')}[s]||s);
@@ -565,10 +565,10 @@
       const oldTree=content.querySelector('.policy-console-tree');
       const scroll={dialog:dialog.scrollTop,tree:content.querySelector('.policy-console-tree')?.scrollTop||0};
       const oldList=content.querySelector('.policy-settings-scroll');if(oldList)consoleState.scroll=oldList.scrollTop;
-      content.replaceChildren(el('p','mono',t('Версия ','Version ')+model.version+' · '+(model.scope||scopeSelect.value)));
-      if(model.controller)content.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
-      if(model.templateSource)content.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
-      if(model.templatesImportedAt)content.append(el('p','muted',t('Локальный кэш шаблонов от ','Local template cache imported at ')+new Date(model.templatesImportedAt).toLocaleString(ru?'ru-RU':'en-GB')));
+      const sourceDetails=el('details','policy-source-details');sourceDetails.append(el('summary','','Источник шаблонов и версия'));content.replaceChildren(sourceDetails);sourceDetails.append(el('p','mono',t('Версия ','Version ')+model.version+' · '+(model.scope||scopeSelect.value)));
+      if(model.controller)sourceDetails.append(el('p','mono',t('Удалённый DC: ','Remote DC: ')+model.controller+' · SMB'));
+      if(model.templateSource)sourceDetails.append(el('p','mono',t('Шаблоны: ','Templates: ')+model.templateSource));
+      if(model.templatesImportedAt)sourceDetails.append(el('p','muted',t('Локальный кэш шаблонов от ','Local template cache imported at ')+new Date(model.templatesImportedAt).toLocaleString(ru?'ru-RU':'en-GB')));
       if(model.sectionDisabled||((model.scope||'Machine')==='Machine'&&model.machineDisabled))content.append(el('p','alert error',scopeSelect.value==='User'?t('Пользовательский раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The user section of this GPO is disabled.'):t('Машинный раздел этой GPO отключён. Настройки не применятся, пока раздел не будет включён.','The computer section of this GPO is disabled. Settings will not apply until it is enabled.')));
       const needle=search.value.toLocaleLowerCase();const matches=model.settings.filter(s=>(!category.value||window.sambaadmPolicyPath(s).some(c=>c.id===category.value))&&[s.label,s.id,s.description,s.key,...window.sambaadmPolicyPath(s).map(c=>c.label),...(s.fields||[]).map(f=>f.label+' '+f.value)].join(' ').toLocaleLowerCase().includes(needle));
       if(!matches.some(s=>s.id===selectedPolicy))selectedPolicy='';
