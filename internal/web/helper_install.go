@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -176,33 +177,22 @@ func (s *Server) handleHelperInstall(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		s.helperInstallMu.Lock()
 		defer s.helperInstallMu.Unlock()
-		dir, _ := s.installDir()
-		files, _ := os.ReadDir(dir)
-		jobs := []*helperInstallJob{}
-		for _, f := range files {
-			if !strings.HasSuffix(f.Name(), ".json") {
-				continue
-			}
-			j, e := s.readInstall(strings.TrimSuffix(f.Name(), ".json"))
-			if e != nil || j.Actor != actor {
-				continue
-			}
-			if j.Status == "running" && !s.helperInstallActive {
-				j.Status = "interrupted"
-				_ = s.saveInstall(j)
-			}
-			jobs = append(jobs, j)
+		page, pageSize, err := installPageQuery(r)
+		if err != nil {
+			writeJSON(w, 400, map[string]string{"error": err.Error()})
+			return
 		}
-		sort.Slice(jobs, func(i, k int) bool { return jobs[i].Created.After(jobs[k].Created) })
-		if len(jobs) > 20 {
-			jobs = jobs[:20]
+		jobs, total, pages, page, running, err := s.installPage(actor, page, pageSize)
+		if err != nil {
+			upstreamError(w, err)
+			return
 		}
 		packages := map[string]bool{}
 		for _, a := range []string{"x86_64", "aarch64"} {
 			_, e := s.helperPackage(a)
 			packages[a] = e == nil
 		}
-		writeJSON(w, 200, map[string]any{"jobs": jobs, "packages": packages, "version": helperInstallVersion()})
+		writeJSON(w, 200, map[string]any{"jobs": jobs, "packages": packages, "version": helperInstallVersion(), "page": page, "pageSize": pageSize, "total": total, "pages": pages, "running": running})
 		return
 	}
 	var in struct {
@@ -714,4 +704,136 @@ func installArchitecture(output string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("Не удалось определить поддерживаемую архитектуру по ответу SSH (нужна x86_64 или aarch64)")
+}
+
+func installPageQuery(r *http.Request) (page, size int, err error) {
+	page, size = 1, 10
+	for key, target := range map[string]*int{"page": &page, "pageSize": &size} {
+		if raw := r.URL.Query().Get(key); raw != "" {
+			n, e := strconv.Atoi(raw)
+			if e != nil || n < 1 || key == "pageSize" && n > 50 {
+				return 0, 0, fmt.Errorf("Укажите положительную страницу и размер от 1 до 50")
+			}
+			*target = n
+		}
+	}
+	return page, size, nil
+}
+
+// Read only metadata while scanning history; retain full logs for the requested
+// page only. The caller holds helperInstallMu while reconciling interrupted jobs.
+func (s *Server) installPage(actor string, page, size int) (jobs []*helperInstallJob, total, pages, actualPage int, running bool, err error) {
+	jobs = []*helperInstallJob{}
+	dir, e := s.installDir()
+	if e != nil {
+		err = e
+		return
+	}
+	files, e := os.ReadDir(dir)
+	if e != nil {
+		err = e
+		return
+	}
+	type metadata struct {
+		ID      string
+		Actor   string
+		Created time.Time
+		Status  string
+	}
+	records := []metadata{}
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ".json") {
+			continue
+		}
+		f, e := os.Open(filepath.Join(dir, file.Name()))
+		if e != nil {
+			continue
+		}
+		var m metadata
+		decoder := json.NewDecoder(f)
+		token, decodeErr := decoder.Token()
+		if decodeErr != nil || token != json.Delim('{') {
+			f.Close()
+			continue
+		}
+		// saveInstall writes header fields before nodes. Stop before the log
+		// arrays, so a history scan reads a small header rather than every log.
+		for decoder.More() {
+			key, keyErr := decoder.Token()
+			if keyErr != nil {
+				decodeErr = keyErr
+				break
+			}
+			if key == "nodes" {
+				break
+			}
+			var target any
+			switch key {
+			case "id":
+				target = &m.ID
+			case "actor":
+				target = &m.Actor
+			case "created":
+				target = &m.Created
+			case "status":
+				target = &m.Status
+			default:
+				target = new(json.RawMessage)
+			}
+			if decodeErr = decoder.Decode(target); decodeErr != nil {
+				break
+			}
+		}
+		e = decodeErr
+		f.Close()
+		if e != nil || m.Actor != actor || m.ID+".json" != file.Name() {
+			continue
+		}
+		if _, e = uuid.Parse(m.ID); e != nil {
+			continue
+		}
+		if m.Status == "running" && !s.helperInstallActive {
+			j, e := s.readInstall(m.ID)
+			if e != nil {
+				continue
+			}
+			j.Status = "interrupted"
+			if e = s.saveInstall(j); e != nil {
+				err = e
+				return
+			}
+			m.Status = j.Status
+		}
+		running = running || m.Status == "running"
+		records = append(records, m)
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Created.Equal(records[j].Created) {
+			return records[i].ID > records[j].ID
+		}
+		return records[i].Created.After(records[j].Created)
+	})
+	total = len(records)
+	pages = (total + size - 1) / size
+	if pages == 0 {
+		pages = 1
+	}
+	actualPage = page
+	if actualPage > pages {
+		actualPage = pages
+	}
+	start := (actualPage - 1) * size
+	end := start + size
+	if end > total {
+		end = total
+	}
+	for _, m := range records[start:end] {
+		j, e := s.readInstall(m.ID)
+		if e != nil {
+			err = e
+			return
+		}
+		jobs = append(jobs, j)
+	}
+	return
 }

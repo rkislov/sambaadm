@@ -101,6 +101,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/group-card.cjs
       - name: Helper SSH installer browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/helper-install.cjs
+      - name: Helper installation log pagination browser contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/helper-log-pagination.cjs
       - name: Shared compact action menus
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/compact-actions.cjs
       - name: Avatar upload and client resize

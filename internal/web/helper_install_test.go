@@ -108,3 +108,66 @@ func TestInstallArchitectureIgnoresShellNotices(t *testing.T) {
 		}
 	}
 }
+
+func TestHelperInstallHistoryPagesDoNotHideOldJobsOrOtherOwners(t *testing.T) {
+	s := testWorkspaceServer(t)
+	s.cfg.Server.EnrollmentDir = t.TempDir()
+	sess, _ := s.sessions.Create("owner", "cn=owner", auth.RoleAdmin)
+	s.helperInstallActive = true
+	ids := map[string]bool{}
+	for i := 0; i < 42; i++ {
+		actor := "owner"
+		if i >= 35 {
+			actor = "someone-else"
+		}
+		status := "complete"
+		if i == 0 {
+			status = "running"
+		}
+		j := &helperInstallJob{ID: uuid.NewString(), Actor: actor, Created: time.Date(2026, 11, 24, 10, 0, i, 0, time.UTC), Status: status, Nodes: []helperInstallNode{{Node: "dc.example.com", Logs: []string{"line"}}}}
+		if e := s.saveInstall(j); e != nil {
+			t.Fatal(e)
+		}
+		if actor == "owner" {
+			ids[j.ID] = true
+		}
+	}
+	get := func(query string) (int, struct {
+		Jobs                         []helperInstallJob
+		Page, PageSize, Total, Pages int
+		Running                      bool
+	}) { r := httptest.NewRequest("GET", "/api/v1/helper-install"+query, nil); r.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID}); w := httptest.NewRecorder(); s.Router().ServeHTTP(w, r); var result struct {
+		Jobs                         []helperInstallJob
+		Page, PageSize, Total, Pages int
+		Running                      bool
+	}; if w.Code == 200 {
+		if e := json.Unmarshal(w.Body.Bytes(), &result); e != nil {
+			t.Fatal(e)
+		}
+	}; return w.Code, result }
+	seen := map[string]bool{}
+	for _, query := range []string{"?page=1&pageSize=10", "?page=2&pageSize=10", "?page=3&pageSize=10", "?page=4&pageSize=10"} {
+		code, v := get(query)
+		if code != 200 || v.Total != 35 || v.Pages != 4 || !v.Running {
+			t.Fatal(code, v)
+		}
+		for _, j := range v.Jobs {
+			if !ids[j.ID] || seen[j.ID] {
+				t.Fatal("foreign or duplicated job", j.ID)
+			}
+			seen[j.ID] = true
+		}
+	}
+	if len(seen) != 35 {
+		t.Fatal("history truncated", len(seen))
+	}
+	code, last := get("?page=999&pageSize=10")
+	if code != 200 || last.Page != 4 || len(last.Jobs) != 5 {
+		t.Fatal(code, last)
+	}
+	for _, q := range []string{"?page=0", "?page=-1", "?page=word", "?pageSize=0", "?pageSize=51"} {
+		if code, _ := get(q); code != 400 {
+			t.Fatal(q, code)
+		}
+	}
+}
