@@ -17,13 +17,27 @@ base=pathlib.Path('/tmp/dns-backend-real');args=sys.argv[1:];unit=args[-1];pidfi
 def alive():
  try:return pathlib.Path('/proc/'+pidfile.read_text()+'/stat').read_text().split()[2]!='Z'
  except Exception:return False
+def group_alive(group):
+ for entry in pathlib.Path('/proc').iterdir():
+  if not entry.name.isdigit():continue
+  try:
+   if os.getpgid(int(entry.name))==group and (entry/'stat').read_text().split()[2]!='Z':return True
+  except (ProcessLookupError,FileNotFoundError,PermissionError):pass
+ return False
 def stop():
- if alive():
-  try:os.killpg(int(pidfile.read_text()),signal.SIGTERM)
-  except ProcessLookupError:pass
-  for _ in range(50):
-   if not alive():break
-   time.sleep(.1)
+ if not pidfile.exists():return
+ group=int(pidfile.read_text())
+ try:os.killpg(group,signal.SIGTERM)
+ except ProcessLookupError:return
+ for _ in range(200):
+  if not group_alive(group):return
+  time.sleep(.05)
+ try:os.killpg(group,signal.SIGKILL)
+ except ProcessLookupError:return
+ for _ in range(100):
+  if not group_alive(group):return
+  time.sleep(.05)
+ raise RuntimeError('service children did not stop: '+unit)
 def start():
  if alive():return
  command=['samba','-i','--no-process-group'] if unit=='samba.service' else ['named','-g','-u','bind','-c',str(base/'named.conf')]
