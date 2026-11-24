@@ -107,8 +107,11 @@ const server=http.createServer((req,res)=>{
   // Slow helper reads time out visibly and closing the modal aborts its GET.
   await dialog.locator('.workspace-dialog-close button[aria-label]').click();
   const held=[];await page.route('**/api/v1/gpo/*/alt-settings',route=>{held.push(route);});await page.clock.install();
+  // Only ADMX is delayed here. Let the independent drive response finish before
+  // advancing the clock, otherwise the test also aborts that fast request.
+  const drivesReady=page.waitForResponse(response=>response.url().endsWith('/drives')&&response.request().method()==='GET').then(response=>response.finished());
   await page.getByRole('button',{name:'Properties',exact:true}).first().click();await page.getByRole('button',{name:'Policy editor',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByRole('status').filter({hasText:'Loading'}).waitFor();
-  await page.clock.fastForward(126000);await dialog.getByRole('alert').filter({hasText:'Loading exceeded two minutes'}).waitFor();
+  await drivesReady;await page.clock.fastForward(126000);await dialog.getByRole('alert').filter({hasText:'Loading exceeded two minutes'}).waitFor();
   assert.equal(await dialog.getByLabel('Policy scope',{exact:true}).count(),0);assert.equal(await dialog.getByRole('button',{name:'User Configuration',exact:true}).isDisabled(),false);assert.equal(await dialog.getByLabel('Search policies',{exact:true}).isDisabled(),true);await Promise.all(held.splice(0).map(route=>route.abort().catch(()=>{})));
   await dialog.getByRole('button',{name:'Retry',exact:true}).click();await dialog.getByRole('status').filter({hasText:'Loading'}).waitFor();
   const cancelled=page.waitForEvent('requestfailed',{predicate:req=>req.url().includes('/alt-settings')});await dialog.locator('.workspace-dialog-close button[aria-label]').click();await cancelled;await Promise.all(held.splice(0).map(route=>route.abort().catch(()=>{})));
