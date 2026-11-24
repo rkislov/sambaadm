@@ -11,6 +11,7 @@ docker build -q -t sambaadm-dns-it-base testdata/samba >/dev/null
 docker build -q -f testdata/samba/Dockerfile.dns -t sambaadm-dns-it testdata/samba >/dev/null
 arch=$(docker image inspect sambaadm-dns-it --format '{{.Architecture}}')
 CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go test -c -o "$work/service.test" ./internal/service
+docker run --rm --entrypoint python3 -v "$PWD:/src:ro" sambaadm-dns-it /src/testdata/packaging/test-dns-bind-config.py
 docker run --rm --entrypoint python3 -v "$PWD:/src:ro" sambaadm-dns-it /src/testdata/packaging/test-dns-backend.py
 docker network create "$name" >/dev/null
 docker run -d --name "$name-upstream" --network "$name" --entrypoint python3 -v "$PWD:/src:ro" sambaadm-dns-it /src/testdata/samba/dns-upstream.py >/dev/null

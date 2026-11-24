@@ -46,6 +46,7 @@
   form.append(button('Предпросмотр',async()=>{result.replaceChildren();const input={target:target.value,reinstall:reinstall.checked},server=node.value,p=await api('/dns/backend/plan?node='+enc(server),'POST',input);if(id!==generation)return;preview(result,server+' · '+p.backend+' → '+p.target,p.steps.map((s,i)=>(i+1)+'. '+s).join('\n'));note(result,p.warning);const agree=checkbox(result,'Подтверждаю перезапуск DNS и Samba на этом DC'),start=button('Начать',async()=>{if(!agree.checked)throw Error('Подтвердите перезапуск');start.disabled=true;try{const job=await api('/dns/backend/start?node='+enc(server),'POST',{...input,revision:p.revision,confirm:true});localStorage.setItem('sambaadm-dns-backend:'+server,job.id);poll(job.id,server);}catch(e){start.disabled=false;throw e;}});result.append(start);}));
   node.onchange=()=>{clearTimeout(timer);log.textContent='';const job=localStorage.getItem(storageKey());if(job)poll(job,node.value);};target.onchange=()=>{if(target.value==='SAMBA_INTERNAL')reinstall.checked=false;reinstall.disabled=target.value==='SAMBA_INTERNAL';};if(node.value)node.onchange();
  }
- for(const b of document.querySelectorAll('[data-dns-tab]'))b.onclick=()=>tab(b.dataset.dnsTab);
- Promise.all([api('/dns/zones'),api('/dns/routing/nodes')]).then(([z,n])=>{zones=z;nodes=n||[];tab('delegations');}).catch(showError);
+ for(const b of document.querySelectorAll('[data-dns-tab]')){b.disabled=true;b.onclick=()=>tab(b.dataset.dnsTab);}
+ message.textContent='Загрузка DNS…';
+ Promise.all([api('/dns/zones'),api('/dns/routing/nodes')]).then(([z,n])=>{zones=z;nodes=n||[];for(const b of document.querySelectorAll('[data-dns-tab]'))b.disabled=false;tab('delegations');}).catch(showError);
 })();

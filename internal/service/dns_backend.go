@@ -18,6 +18,9 @@ import (
 //go:embed helper_dns_backend.py
 var dnsBackendWorker string
 
+//go:embed helper_dns_bind_config.py
+var dnsBindConfigWorker string
+
 type DNSBackendInput struct {
 	Target    string `json:"target"`
 	Reinstall bool   `json:"reinstall"`
@@ -187,9 +190,9 @@ func planDNSBackend(ctx context.Context, cfg *config.Config, in DNSBackendInput)
 	}
 	steps := []string{"Сохранить конфигурацию и состояние служб в закрытый каталог helper"}
 	if in.Target == "BIND9_DLZ" {
-		steps = append(steps, "Установить bind и bind-utils (переустановить при выбранной опции)")
+		steps = append(steps, "Обновить индексы настроенных репозиториев ALT и повторно проверить план пакетов", "Установить bind и bind-utils (переустановить при выбранной опции)")
 	}
-	steps = append(steps, "Остановить DNS и Samba на выбранном контроллере", "Запустить samba_upgradedns --dns-backend="+in.Target, "Проверить конфигурацию и запустить выбранный DNS-бэкенд", "Проверить SOA домена и SRV LDAP; при ошибке попытаться восстановить прежний бэкенд")
+	steps = append(steps, "Остановить DNS и Samba на выбранном контроллере", "Запустить samba_upgradedns --dns-backend="+in.Target, "Подготовить BIND для AD: chroot, Kerberos и сетевые параметры новой установки", "Проверить конфигурацию и запустить выбранный DNS-бэкенд", "Проверить SOA домена и SRV LDAP; при ошибке попытаться восстановить прежний бэкенд")
 	rev := configRevision(append(append(append([]byte{}, raw...), bindRaw...), []byte(services+in.Target+fmt.Sprint(in.Reinstall))...))
 	return &DNSBackendPlan{Backend: backend, Target: in.Target, Reinstall: in.Reinstall, Revision: rev, Steps: steps, Warning: "Будет кратковременный перерыв DNS и служб этого DC. AD-зоны сохраняются. Условные пересылки BIND не работают во встроенном DNS; конфигурация BIND сохраняется. Изменения выполняются только на выбранном DC.", SMBPath: smb, BindPath: bind, ProposedSMB: string(proposed), SMBHash: configRevision(raw), BindHash: configRevision(bindRaw)}, nil
 }
@@ -259,7 +262,7 @@ func helperDNSBackend(ctx context.Context, cfg *config.Config, method string, in
 	defer job.Close()
 	data, _ := json.Marshal(map[string]any{"id": id, "state": "queued", "log": []string{"Задание подготовлено"}, "created": time.Now().UTC()})
 	payload, _ := json.Marshal(map[string]any{"id": id, "plan": p, "smb": p.ProposedSMB, "actor": in.Actor, "stateDir": cfg.Helper.StateDir, "smbHash": p.SMBHash, "bindHash": p.BindHash})
-	for name, raw := range map[string][]byte{"status.json": data, "request.json": payload, "worker.py": []byte(dnsBackendWorker)} {
+	for name, raw := range map[string][]byte{"status.json": data, "request.json": payload, "worker.py": []byte(dnsBackendWorker), "helper_dns_bind_config.py": []byte(dnsBindConfigWorker)} {
 		f, e := job.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if e != nil {
 			return nil, e
