@@ -167,7 +167,19 @@ func planDNSBackend(ctx context.Context, cfg *config.Config, in DNSBackendInput)
 		}
 	}
 	if in.Target == "BIND9_DLZ" {
-		if output, e := runTimeCommand(ctx, "apt-get", "-s", "install", "bind", "bind-utils"); e != nil {
+		// APT may rebuild its cache even in simulation mode. Keep this inside
+		// StateDirectory instead of granting the helper global APT write access.
+		root, err := os.OpenRoot(cfg.Helper.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		err = root.MkdirAll("dns-apt-cache/archives/partial", 0700)
+		root.Close()
+		if err != nil {
+			return nil, err
+		}
+		cache := filepath.Join(cfg.Helper.StateDir, "dns-apt-cache")
+		if output, e := runTimeCommand(ctx, "apt-get", "-o", "Dir::Cache="+cache, "-s", "install", "bind", "bind-utils"); e != nil {
 			return nil, fmt.Errorf("пакеты BIND недоступны в настроенных репозиториях: %s", output)
 		} else if strings.Contains(output, "Remv ") || strings.Contains(output, "Inst samba") {
 			return nil, fmt.Errorf("план пакетов удаляет пакеты или обновляет Samba; сначала обновите систему отдельно")
