@@ -93,6 +93,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/user-login.cjs
       - name: PSO management and resultant user policy
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/pso.cjs
+      - name: Bulk user operations
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/user-bulk.cjs
       - name: Employee lifecycle wizard
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/employee.cjs
       - name: Web workspace contracts

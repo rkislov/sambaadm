@@ -259,15 +259,28 @@
     }).join('; ');
   }
   function normalizeSearch(text){return text.normalize('NFKC').toLocaleLowerCase().trim();}
+  const bulkSelection=new Set();let visibleBulk=[];
+  const bulkBar=el('div','workspace-tools');const bulkCount=el('span','muted');
+  if(cfg===configs['/users']&&admin){
+    const all=el('input');all.type='checkbox';all.setAttribute('aria-label','Выбрать всех показанных пользователей');const th=el('th');th.append(all);tr.prepend(th);all.addEventListener('change',()=>{for(const login of visibleBulk){if(all.checked&&bulkSelection.size<100)bulkSelection.add(login);else if(!all.checked)bulkSelection.delete(login);}renderRows();});
+    bulkBar.append(bulkCount);for(const [kind,label] of [['enable','Включить'],['disable','Отключить'],['unlock','Разблокировать']])bulkBar.append(button(label,()=>openBulk(kind)));bulkBar.append(button('Снять выбор',()=>{bulkSelection.clear();all.checked=false;renderRows();}));listPanel.insertBefore(bulkBar,tableWrap);bulkBar.hidden=true;
+  }
+  function openBulk(action){
+   if(!admin||!bulkSelection.size)return;lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Массовое изменение пользователей');title.id='operation-title';dialog.querySelector('.workspace-dialog-close').prepend(title);const body=el('div','bulk-report'),notice=el('p','workspace-message');dialog.append(notice,body);dialog.showModal();let plan;
+   const labels={ready:'Будет выполнено',blocked:'Недоступно',skipped:'Без изменений',done:'Выполнено',failed:'Ошибка',running:'Выполнялось',unknown:'Нужно проверить'};
+   function report(){body.replaceChildren(el('p','',({enable:'Включение',disable:'Отключение',unlock:'Разблокировка'})[plan.action]+' · Пользователей: '+plan.items.length));for(const item of plan.items){const row=el('div','bulk-result');row.append(el('strong','',item.login),el('span','',labels[item.state]||item.state),el('p','muted',item.message));body.append(row);}if(plan.state==='ready'){const form=el('form','workspace-form'),label=el('label','','Подтверждаю перечисленные изменения'),check=el('input');check.type='checkbox';check.required=true;label.prepend(check);const submit=el('button','btn-primary','Применить изменения');submit.type='submit';form.append(label,submit);form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;submit.disabled=true;message(notice,'Выполняем и проверяем результат каждого пользователя…');try{plan=await request('/users/bulk/'+plan.id+'/apply','POST',{revision:plan.revision,confirm:true});if(generation!==dialogGeneration)return;report();bulkSelection.clear();load();message(notice,'Операция завершена. Проверьте результаты ниже.');}catch(error){if(generation!==dialogGeneration)return;message(notice,error.message,true);body.append(button('Перечитать результат',async()=>{try{plan=await request('/users/bulk/'+plan.id);if(generation===dialogGeneration)report();}catch(e){message(notice,e.message,true);}}));}});body.append(form);}else{body.append(button('Скачать отчёт JSON',()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(plan,null,2)],{type:'application/json'}));const a=el('a');a.href=url;a.download='пользователи-'+plan.id+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));const retry=plan.items.filter(i=>['failed','unknown','running','ready'].includes(i.state));if(retry.length)body.append(button('Новый предпросмотр оставшихся',()=>{bulkSelection.clear();retry.forEach(i=>bulkSelection.add(i.login));openBulk(plan.action);}));}}
+   message(notice,'Подготавливаем предпросмотр…');request('/users/bulk','POST',{action,logins:[...bulkSelection]}).then(result=>{if(generation!==dialogGeneration)return;plan=result;report();message(notice,'Срок плана — 15 минут. Изменения проверяются отдельно для каждого пользователя.');}).catch(error=>{if(generation===dialogGeneration)message(notice,error.message,true);});
+  }
   function renderRows() {
     if(cfg===configs['/dns']){dnsConsole.setZones(rows);return;}
-    tbody.replaceChildren();let count=0;
+    tbody.replaceChildren();visibleBulk=[];let count=0;
     for(const row of rows) {
       if(selectedIDs && !selectedIDs.has((row.dn||'').toLowerCase()))continue;
       if(selectedObject && cfg.id(row)!==selectedObject)continue;
       if(search && !normalizeSearch(search).split(/\s+/).every(word=>normalizeSearch(JSON.stringify(row)).includes(word)))continue;
       if(tableTools&&!tableTools.matches(row,attributeValue))continue;
       count++;const r=el('tr');
+      if(cfg===configs['/users']&&admin){visibleBulk.push(row.samAccountName);const cell=el('td'),check=el('input');check.type='checkbox';check.checked=bulkSelection.has(row.samAccountName);check.setAttribute('aria-label','Выбрать пользователя '+row.samAccountName);check.addEventListener('change',()=>{if(check.checked&&bulkSelection.size<100)bulkSelection.add(row.samAccountName);else{bulkSelection.delete(row.samAccountName);check.checked=false;}bulkBar.hidden=!bulkSelection.size;bulkCount.textContent='Выбрано: '+bulkSelection.size+' (не более 100)';});cell.append(check);r.append(cell);}
       cfg.columns.forEach(([key])=>{const cell=el('td',key==='dn'?'mono':'',attributeValue(key,row[key])??value(key==='displayName'?(row[key]||row.name):row[key]));cell.dataset.column=key;r.append(cell);});
       const cell=el('td','workspace-actions');
       const actions=(cfg.actions||[]).filter(a=>allowed(a)&&(!a.when||a.when(row)));
@@ -284,7 +297,7 @@
       r.append(cell);tbody.append(r);
     }
     if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=(tableTools?.count()??cfg.columns.length)+1;const r=el('tr');r.append(cell);tbody.append(r);}
-    tableTools?.apply();
+    tableTools?.apply();if(cfg===configs['/users']&&admin){bulkBar.hidden=!bulkSelection.size;bulkCount.textContent='Выбрано: '+bulkSelection.size+' (не более 100)';}
     selection.textContent=(selectedDN||selectedObject||t('Все объекты','All objects'))+' · '+count;
   }
   document.addEventListener('click',event=>{tbody.querySelectorAll('.row-actions[open]').forEach(menu=>{if(!menu.contains(event.target))menu.open=false;});});
