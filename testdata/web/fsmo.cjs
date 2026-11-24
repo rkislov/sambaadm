@@ -14,6 +14,7 @@ const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://local
  await route.fulfill({json:result});});
  await page.goto('http://127.0.0.1:'+server.address().port+'/domain');await page.getByRole('status').filter({hasText:'Данные обновлены'}).waitFor();
  for(const operation of ['Передать роль','Захватить роль']) {
+  const action=page.getByRole('button',{name:operation,exact:true});if(!await action.isVisible())await page.locator('tbody .row-actions > summary').first().click();
   await page.getByRole('button',{name:operation,exact:true}).click();const dialog=page.getByRole('dialog');const target=dialog.getByLabel('Новый владелец (RWDC)',{exact:true});await target.waitFor();
   assert.equal(await target.inputValue(),'');assert.equal(await target.locator('option').count(),3);assert.equal(await target.locator('option[value="rodc.example.com"]').count(),0);
   assert.equal(await dialog.getByLabel('Роль',{exact:true}).getAttribute('readonly'),'');await dialog.getByText(/Текущий владелец: CN=NTDS Settings,CN=DC1/).waitFor();
