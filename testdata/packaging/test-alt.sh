@@ -6,7 +6,7 @@ repo=$(cd -- "$(dirname "$0")/../.." && pwd)
 binary=${1:?static native Linux binary required}
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/src" "$work/rpms"
-cp -a "$repo/packaging" "$repo/deploy" "$repo/docs" "$repo/LICENSE" "$repo/NOTICE" "$work/src/"
+cp -a "$repo/packaging" "$repo/deploy" "$repo/docs" "$repo/configs" "$repo/LICENSE" "$repo/NOTICE" "$work/src/"
 # Alter shipped examples between versions to exercise .rpmnew behavior.
 for version in 0.25.0 0.25.1 0.25.2; do
  if [[ $version == 0.25.2 ]]; then sed -i 's@^ExecStart=.*@ExecStart=/bin/false@' "$work/src/packaging/alt/sambaadm.service"; fi
