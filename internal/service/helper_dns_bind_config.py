@@ -1,5 +1,7 @@
 """Configure ALT BIND for AD without replacing unrelated BIND directives."""
 import ipaddress
+import hashlib
+import subprocess
 import pathlib
 import re
 import sys
@@ -58,6 +60,7 @@ def configure_alt_bind(smb,fresh,run,atomic,remember):
     options=pathlib.Path('/etc/bind/options.conf')
     remember(sysconfig);remember(options)
     run(['control','bind-chroot','disabled'])
+    run(['/etc/init.d/bind','rndc_keygen'])
     text=sysconfig.read_text()
     line='KRB5RCACHETYPE="none"'
     if re.search(r'(?m)^\s*KRB5RCACHETYPE\s*=',text):text=re.sub(r'(?m)^\s*KRB5RCACHETYPE\s*=.*$',line,text)
@@ -69,3 +72,19 @@ def configure_alt_bind(smb,fresh,run,atomic,remember):
         allowed='{ localhost; localnets; '+''.join(n+'; ' for n in networks)+'}'
         values.update({'listen-on':'{ any; }','listen-on-v6':'{ any; }','allow-query':'{ any; }','allow-recursion':allowed,'allow-query-cache':allowed,'forward':'first','forwarders':'{ '+''.join(a+'; ' for a in forwarders)+'}'})
     atomic(options,patch_bind_options(options.read_text(),values,remove_resolvconf=fresh).encode())
+
+
+def pristine_alt_bind_options():
+    """Recognize the packaged defaults after an interrupted first setup."""
+    options=pathlib.Path('/etc/bind/options.conf')
+    if not options.is_file():return False
+    result=subprocess.run(['rpm','-q','--dump','bind'],capture_output=True,text=True,timeout=15)
+    if result.returncode:return False
+    for line in result.stdout.splitlines():
+        fields=line.split()
+        if len(fields)<4:continue
+        if pathlib.Path(fields[0]).resolve()!=options.resolve():continue
+        expected=fields[3].lower()
+        algorithm='md5' if len(expected)==32 else 'sha256' if len(expected)==64 else None
+        return algorithm is not None and hashlib.new(algorithm,options.read_bytes()).hexdigest()==expected
+    return False

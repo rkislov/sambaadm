@@ -7,6 +7,8 @@ fake='''#!/usr/bin/python3
 import json,os,pathlib,sys
 name=pathlib.Path(sys.argv[0]).name; args=sys.argv[1:]; base=pathlib.Path(os.environ['DNS_TEST_DIR']); log=base/'commands';log.open('a').write(name+' '+' '.join(args)+'\\n')
 if name=='systemctl':
+ if (base/'failed').exists() and args[0] in ('stop','restart'):
+  assert json.loads((base/'job/status.json').read_text())['state']=='running','rollback became terminal too early'
  if args[0] in ('is-active','is-enabled'):sys.exit(0 if args[-1]=='samba.service' else 1)
  if args[0]=='restart' and os.environ.get('DNS_TEST_FAIL')=='1' and not (base/'failed').exists():(base/'failed').write_text('1');sys.exit(1)
 elif name=='testparm': print('EXAMPLE.TEST' if any('realm' in a for a in args) else 's3fs, rpc, dns')
@@ -36,7 +38,9 @@ for target,fail,stale,bad_plan in [('BIND9_DLZ',False,False,False),('SAMBA_INTER
    assert st['state']=='failed',st
    assert smb.read_bytes()==old and bind.read_bytes()==before,st
    if stale or bad_plan:assert 'samba_upgradedns' not in commands and 'systemctl stop' not in commands,commands
-   else:assert commands.count('samba_upgradedns')==2,commands
+   else:
+    assert commands.count('samba_upgradedns')==2,commands
+    assert st.get('rollback')=='completed',st
   else:
    assert st['state']=='completed',st
    assert '--dns-backend='+target in commands

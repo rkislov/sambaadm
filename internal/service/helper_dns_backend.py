@@ -1,6 +1,6 @@
 """Fixed ALT DNS backend migration worker. No shell or user-supplied commands."""
 import contextlib, fcntl, glob, grp, hashlib, json, re, os, pathlib, shutil, subprocess, sys, tempfile, time
-from helper_dns_bind_config import configure_alt_bind,ad_network_settings
+from helper_dns_bind_config import configure_alt_bind,ad_network_settings,pristine_alt_bind_options
 job = pathlib.Path(sys.argv[1])
 request = json.loads((job/'request.json').read_text())
 plan = request['plan']
@@ -31,7 +31,7 @@ smb=pathlib.Path(plan['smbPath']); bind=pathlib.Path(plan['bindPath'])
 old_smb=smb.read_bytes(); old_bind=bind.read_bytes() if bind.exists() else None
 old_bind_active=active('bind.service'); old_bind_enabled=enabled('bind.service');old_samba_enabled=enabled('samba.service')
 mutated=False
-fresh_bind=old_bind is None
+fresh_bind=old_bind is None or pristine_alt_bind_options()
 extra_files={}
 def remember(path):
     path=pathlib.Path(path)
@@ -113,7 +113,7 @@ try:
     if not checked:raise RuntimeError('После переключения недоступны SOA или SRV LDAP')
     state['state']='completed';save('DNS-бэкенд переключён. SOA домена и SRV LDAP отвечают.')
 except Exception as error:
-    save(str(error));state['state']='failed'
+    save(str(error));state['state']='running';state['phase']='rollback' if mutated else 'failed'
     if mutated:
         try:
             save('Попытка возврата к прежнему DNS-бэкенду')
@@ -126,8 +126,8 @@ except Exception as error:
             run(['systemctl','enable' if old_samba_enabled else 'disable','samba.service'])
             run(['systemctl','enable' if old_bind_enabled else 'disable','bind.service'])
             if old_bind_active:run(['systemctl','start','bind.service'])
-            save('Прежняя конфигурация и состояние BIND восстановлены; проверьте DNS.')
-        except Exception as rollback:save('Откат не завершён: '+str(rollback)+'. Резервные копии: '+str(job))
-    save()
+            state['rollback']='completed';save('Прежняя конфигурация и состояние BIND восстановлены; проверьте DNS.')
+        except Exception as rollback:state['rollback']='failed';save('Откат не завершён: '+str(rollback)+'. Резервные копии: '+str(job))
+    state['state']='failed';save()
 finally:
     state['finished']=time.time();save();fcntl.flock(lock,fcntl.LOCK_UN)
