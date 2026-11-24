@@ -1,19 +1,22 @@
 {{define "diagnostics/index.html"}}
 <!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/diagnostics.js" defer></script></head><body>
 {{template "nav" .}}
-<main class="container">
+<main class="container diagnostics-page">
 <h1>{{t .Lang "nav.diagnostics"}}</h1>
-<p>{{t .Lang "diagnostics.hint"}}</p>
-<form method="post" action="/diagnostics/run" hx-post="/diagnostics/run" hx-target="#diagnostic-report" hx-disabled-elt="find button" hx-indicator="#diagnostic-progress">
+<p class="diagnostics-intro">{{if eq .Lang "ru"}}Проверка подключения к домену, служб и доступа к групповым политикам.{{else}}Check domain connectivity, services and policy access.{{end}}</p>
+<section class="diagnostics-controls"><h2>{{if eq .Lang "ru"}}Параметры проверки{{else}}Check options{{end}}</h2>
+<form class="diagnostics-run-form" method="post" action="/diagnostics/run" hx-post="/diagnostics/run" hx-target="#diagnostic-report" hx-disabled-elt="find button" hx-indicator="#diagnostic-progress">
 <input type="hidden" name="csrf_token" value="{{.CSRF}}">
 <label>{{t .Lang "diagnostics.gpo"}}<select name="gpo" id="diagnostic-gpo"><option value="">{{t .Lang "diagnostics.no_gpo"}}</option></select></label>
 <button type="submit">{{t .Lang "diagnostics.run"}}</button>
 <span id="diagnostic-progress" class="htmx-indicator" role="status">{{t .Lang "diagnostics.running"}}</span>
 </form>
+<details class="diagnostics-help"><summary>{{if eq .Lang "ru"}}Что проверяется{{else}}What is checked{{end}}</summary><p>{{t .Lang "diagnostics.hint"}}</p></details></section>
 <section id="diagnostic-report" aria-live="polite">{{template "diagnostics/report" .}}</section>
 </main></body></html>
 {{end}}
 {{define "diagnostics/report"}}
+{{if not .Content}}{{if not .Error}}<div class="diagnostics-empty"><h2>{{if eq .Lang "ru"}}Проверки ещё не запускались{{else}}No checks run yet{{end}}</h2><p>{{if eq .Lang "ru"}}Нажмите «Запустить проверки». Здесь появится результат каждой проверки и рекомендации по найденным проблемам.{{else}}Run checks to see individual results and suggestions.{{end}}</p></div>{{end}}{{end}}
 {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 {{with .Content}}
 <p>{{t $.Lang "diagnostics.identity"}}: {{.ServiceUser}}{{if .GPO}} · GPO {{.GPO}}{{end}}</p>

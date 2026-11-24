@@ -165,6 +165,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
+		r.Use(s.shareNodeContext)
 		r.Get("/", s.handleDashboard)
 		r.Get("/users", s.handleWorkspace)
 		r.Get("/users/new", s.handleUserCreateForm)
@@ -207,6 +208,7 @@ func (s *Server) buildRouter() chi.Router {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
+		r.Use(s.shareNodeContext)
 		r.Get("/certificates/rollouts", s.handleCertificateRollouts)
 		r.Post("/certificates/rollouts", s.handleCertificateRollouts)
 		r.Get("/backups", s.handleAPIObjectBackups)
@@ -392,6 +394,7 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
 		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
 
+		r.Get("/share-servers", s.handleShareNodes)
 		r.Get("/shares", s.handleAPIShares)
 		r.Post("/shares", s.handleAPIShareCreate)
 		r.Get("/shares/{name}", s.handleAPIShareGet)
@@ -462,10 +465,11 @@ func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
 	lang := langFrom(r)
 	sess := sessionFrom(r)
 	pd := pageData{
-		Title:   i18n.T(lang, titleKey),
-		Lang:    lang,
-		Content: content,
-		Active:  r.URL.Path,
+		Title:    i18n.T(lang, titleKey),
+		HostNode: r.URL.Query().Get("node"),
+		Lang:     lang,
+		Content:  content,
+		Active:   r.URL.Path,
 	}
 	if sess != nil {
 		pd.SSOUser = sess.AuthMethod == "kerberos"
@@ -480,6 +484,7 @@ func (s *Server) page(r *http.Request, titleKey string, content any) pageData {
 }
 
 type pageData struct {
+	HostNode       string
 	SSOEnabled     bool
 	SSOAuto        bool
 	SSOUser        bool

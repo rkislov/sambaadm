@@ -3775,6 +3775,11 @@
             "summary": "Применить подтверждённый массовый план"
             "description": "Только admin. POST требует CSRF. Предпросмотр: action=enable|disable|unlock, logins от 1 до 100. Выполнение: revision, confirm:true. Проверяйте state каждого элемента items; 200 не означает успех всех записей. План действует 15 минут."
             "responses": {"200": {"description": "План с результатом каждого пользователя"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно прав или CSRF"}, "409": {"description": "План устарел или уже выполнялся"}}
+    "/share-servers":
+        "get":
+            "summary": "Серверы общих папок"
+            "description": "Зарегистрированные helper и сервер по умолчанию. Запросы /shares и /acl принимают query-параметр node. Выбор действует на текущий запрос; неизвестный или недоступный сервер не подменяется другим узлом."
+            "responses": {"200": {"description": "Объект nodes: список имён, default: имя сервера по умолчанию"}, "401": {"description": "Требуется вход"}}
 "components":
     "securitySchemes":
         "cookieAuth":

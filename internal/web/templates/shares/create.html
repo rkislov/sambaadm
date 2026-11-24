@@ -3,11 +3,12 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
-  <script src="/static/js/host-admin.js" defer></script>
+  <script src="/static/js/host-admin.js?v=20261124-node1" defer></script>
 </head>
 <body>
   {{template "nav" .}}
   <main class="container">
+{{if .HostNode}}<p class="share-node-banner">Сервер: <strong>{{.HostNode}}</strong></p>{{end}}
     <h1>{{t .Lang "shares.create"}}</h1>
     <p class="muted">{{t .Lang "shares.hint"}}</p>
     <section id="share-wizard" class="form-card form-wide"></section>
@@ -15,7 +16,7 @@
     {{template "shares/tips" .}}
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
-    <form method="post" action="/shares" class="form-card form-wide" id="share-create-form">
+    <form method="post" action="/shares{{if .HostNode}}?node={{urlquery .HostNode}}{{end}}" class="form-card form-wide" id="share-create-form">
       {{if .CSRF}}<input type="hidden" name="csrf_token" value="{{.CSRF}}">{{end}}
 
       <fieldset class="preset-box">

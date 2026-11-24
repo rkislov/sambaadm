@@ -496,8 +496,11 @@ func (s *ShareService) ConfigPath() string { return s.cfg.SMBConf }
 func (s *ShareService) SharesRoot() string { return s.cfg.SharesRoot }
 
 func (s *ShareService) validatePath(path string) error {
+	return s.validatePathContext(context.Background(), path)
+}
+func (s *ShareService) validatePathContext(ctx context.Context, path string) error {
 	if s.helpers != nil {
-		return s.helpers.Call(context.Background(), s.helpers.Config.HostNode, "shares.validate-path", HostOperation{Path: path}, nil)
+		return s.hostCall(ctx, "shares.validate-path", HostOperation{Path: path}, nil)
 	}
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("path must be absolute: %s", path)

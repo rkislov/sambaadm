@@ -32,7 +32,7 @@ func (s *Services) PlanShare(ctx context.Context, in ShareWizardInput) (*ShareWi
 	if s.Helpers != nil {
 		resolve = func(ctx context.Context, name string) (string, error) {
 			var out string
-			e := s.Helpers.Call(ctx, s.Helpers.Config.HostNode, "nss.group", HostOperation{Name: name}, &out)
+			e := s.Helpers.Call(ctx, HostNode(ctx, s.Helpers.Config.HostNode), "nss.group", HostOperation{Name: name}, &out)
 			return out, e
 		}
 	}
@@ -112,7 +112,7 @@ func (s *Services) planShare(ctx context.Context, in ShareWizardInput, resolve f
 		plan.Input.DefaultACL = plan.Input.ACL
 	}
 	if in.Path != "" {
-		if e := s.Shares.validatePath(in.Path); e != nil {
+		if e := s.Shares.validatePathContext(ctx, in.Path); e != nil {
 			return nil, e
 		}
 	}

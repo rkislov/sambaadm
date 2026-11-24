@@ -82,7 +82,7 @@
         confirmLabel:t('Подтверждаю доставку всех политик домена','I confirm distribution of all domain policies'),
         submitLabel:t('Начать доставку','Start distribution')
       }),{label:t('Почему применяется GPO','Why a GPO applies'),method:'GET',explain:true},view(t('Ссылки на контейнер','Container links'),'/gpo/links',[dn('container')]),{label:t('Область действия','Scope and inheritance'),method:'GET',scope:true},action(t('Восстановить в новую GPO','Restore as new GPO'),'POST','/gpo/restore',[text('name','Имя новой политики','New policy name'),text('path','Абсолютный каталог копии policy/{GUID} на узле helper','Absolute backup policy/{GUID} directory on helper node',{absolutePath:true,placeholder:'/var/lib/sambaadm-helper/backups/manual/policy/{GUID}'})],{confirm:true})],
-      actions:[view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),
+      actions:[{...view(t('Свойства','Properties'),r=>'/gpo/'+enc(gpoID(r))),gpoCard:true},
  {label:t('Согласованность SYSVOL','SYSVOL consistency'),method:'GET',consistency:true},
  {label:t('Исправление SYSVOL','Repair SYSVOL'),method:'PUT',repair:true},
  {label:t('Делегирование LDAP/SYSVOL','LDAP/SYSVOL delegation'),method:'PUT',fullDelegation:true},
@@ -115,7 +115,7 @@
       toolbar:[action(t('Перечитать конфигурацию Samba','Reload Samba configuration'),'POST','/shares/reload',[],{confirm:true}),view(t('Права каталога','Directory permissions'),'/acl',[text('path','Путь на сервере','Path on server')]),
         action(t('Изменить права каталога','Change directory permissions'),'POST','/acl',[text('path','Путь на сервере','Path on server'),text('owner','Владелец user:group','Owner user:group',{optional:true}),text('mode','Режим например 0770','Mode e.g. 0770',{optional:true}),text('acl','POSIX ACL','POSIX ACL',{optional:true}),text('defaultAcl','ACL по умолчанию','Default ACL',{optional:true}),text('recursive','Рекурсивно','Recursive',{type:'checkbox'}),text('defaultRecursive','Рекурсивно для ACL по умолчанию','Recursive default ACL',{type:'checkbox'}),text('clearAcl','Очистить ACL','Clear ACL',{type:'checkbox'}),text('clearDefault','Очистить ACL по умолчанию','Clear default ACL',{type:'checkbox'}),text('removeAcl','Удалить запись ACL','Remove ACL entry',{optional:true}),text('copyToDefault','Скопировать ACL в наследуемый','Copy to default ACL',{type:'checkbox'}),text('xattrName','Имя расширенного атрибута','Extended attribute name',{optional:true}),text('xattrValue','Значение расширенного атрибута','Extended attribute value',{optional:true}),text('xattrRemove','Удалить расширенный атрибут','Remove extended attribute',{optional:true})],{confirm:true})],
       actions:[{label:t('Права и ACL','Access and ACL'),method:'GET',href:r=>'/shares/'+enc(r.name)+'/acl'},
-        view(t('Свойства','Properties'),r=>'/shares/'+enc(r.name)),action(t('Параметр Samba','Samba parameter'),'POST',r=>'/shares/'+enc(r.name)+'/param',[text('key','Параметр','Parameter',{list:'samba-parameters',placeholder:'read only'}),text('value','Значение','Value',{optional:true})],{sambaParam:true,help:t('Изменяет параметр выбранной секции в smb.conf на сервере sambaadm и перечитывает конфигурацию Samba. Например: read only = yes — только чтение; browseable = no — скрыть из списка; valid users = @Finance — разрешить группе. Права файловой системы настраиваются в «Права и ACL».','Updates this share section in smb.conf on the sambaadm host and reloads Samba configuration. Examples: read only = yes; browseable = no; valid users = @Finance. Configure filesystem permissions under Access and ACL.')}),remove(r=>'/shares/'+enc(r.name))]},
+        view(t('Свойства','Properties'),r=>'/shares/'+enc(r.name)),action(t('Параметр Samba','Samba parameter'),'POST',r=>'/shares/'+enc(r.name)+'/param',[text('key','Параметр','Parameter',{list:'samba-parameters',placeholder:'read only'}),text('value','Значение','Value',{optional:true})],{sambaParam:true,help:t('Изменяет параметр выбранной секции в smb.conf на выбранном сервере и перечитывает конфигурацию Samba. Например: read only = yes — только чтение; browseable = no — скрыть из списка; valid users = @Finance — разрешить группе. Права файловой системы настраиваются в «Права и ACL».','Updates this share section in smb.conf on the selected server and reloads Samba configuration. Examples: read only = yes; browseable = no; valid users = @Finance. Configure filesystem permissions under Access and ACL.')}),remove(r=>'/shares/'+enc(r.name))]},
     '/printers':{title:t('Принтеры','Printers'),endpoint:'/printers',id:r=>r.name,
       columns:[['name',t('Имя','Name')],['printerName',t('Очередь','Queue')],['path',t('Путь','Path')]],
       create:{label:t('Добавить принтер','Add printer'),href:'/printers/new',method:'POST'},actions:[remove(r=>'/printers/'+enc(r.name))]}
@@ -151,10 +151,12 @@
     return b;
   }
   function message(node, content, error = false) { node.textContent=content;node.className='workspace-message'+(error?' error':'');node.setAttribute('role',error?'alert':'status'); }
+  let shareNode=new URLSearchParams(location.search).get('node')||'';
+  function sharePath(path){if(cfg!==configs['/shares']||!shareNode)return path;const url=new URL(path,location.origin);if(url.pathname.startsWith('/shares')||url.pathname==='/acl'){url.searchParams.set('node',shareNode);return url.pathname+url.search;}return path;}
   async function request(path, method = 'GET', body, options = {}) {
     const headers = {'Accept':'application/json'};
     if (method !== 'GET') {headers['Content-Type']='application/json';headers['X-CSRF-Token']=document.querySelector('meta[name="csrf-token"]')?.content || '';}
-    const response=await fetch(api+path,{method,headers,signal:options.signal,credentials:'same-origin',body:body === undefined ? undefined : JSON.stringify(body)});
+    const response=await fetch(api+(path==='/share-servers'?path:sharePath(path)),{method,headers,signal:options.signal,credentials:'same-origin',body:body === undefined ? undefined : JSON.stringify(body)});
     if(response.status===401) throw new Error(t('Сессия истекла. Войдите снова.','Session expired. Sign in again.'));
     const type=response.headers.get('content-type')||'';
     if(!type.includes('application/json')) throw new Error(t('Сервер вернул неожиданный ответ. Обновите страницу.','Unexpected server response. Reload this page.'));
@@ -209,7 +211,7 @@
     if(!allowed(a)||a.when&&!a.when(row))return;
     // Samba LDAP fallback can return GPOs without a GUID. Do not send a fabricated identifier.
     if(cfg===configs['/gpo'] && row && !row.guid && !a.run)return;
-    if(a.href){const link=el('a','btn',a.label);link.href=typeof a.href==='function'?a.href(row):a.href;parent.append(link);return;}
+    if(a.href){const link=el('a','btn',a.label);link.href=sharePath(typeof a.href==='function'?a.href(row):a.href);parent.append(link);return;}
     parent.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));
   }
   tools.append(button(t('Обновить','Refresh'),()=>load()));
@@ -221,6 +223,12 @@
   }
   if(cfg===configs['/users']&&admin){listTools.querySelector('.btn-primary')?.classList.remove('btn-primary');listTools.prepend(button('Мастер сотрудника',()=>openEmployee(),'btn-primary'));}
   listTools.hidden=!listTools.childElementCount;
+  if(cfg===configs['/shares']){listTools.hidden=false;const label=el('label','share-server-picker','Сервер общих папок'),select=el('select'),note=el('span','muted');select.setAttribute('aria-label','Сервер общих папок');label.append(select);listTools.prepend(label);const initial=el('option','',shareNode||'Текущий сервер');initial.value=shareNode;select.append(initial);label.append(note);
+   function links(){for(const link of listTools.querySelectorAll('a'))link.href=sharePath(new URL(link.href).pathname);}
+   select.addEventListener('change',()=>{shareNode=select.value;const url=new URL(location.href);if(shareNode)url.searchParams.set('node',shareNode);else url.searchParams.delete('node');history.replaceState(null,'',url);rows=[];selectedObject='';selectedDN='';selectedIDs=null;renderRows();links();load();});
+   request('/share-servers').then(data=>{if(!Array.isArray(data.nodes))throw Error('Неверный список серверов');if(!shareNode)shareNode=data.default||'';select.replaceChildren();for(const name of data.nodes.length?[...data.nodes].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})):['']){const option=el('option','',name||'Локальный сервер sambaadm');option.value=name;select.append(option);}if(![...select.options].some(o=>o.value===shareNode)){const unavailable=el('option','',shareNode+' — недоступен');unavailable.value=shareNode;select.append(unavailable);}select.value=shareNode;select.disabled=data.nodes.length<2;links();}).catch(error=>{note.textContent='Список серверов недоступен: '+error.message;});
+  }
+
   const views=el('div','console-tree-children');
   const operations=el('div','console-tree-children');
   for(const operation of cfg.toolbar||[]){
@@ -285,15 +293,15 @@
       const cell=el('td','workspace-actions');
       const actions=(cfg.actions||[]).filter(a=>allowed(a)&&(!a.when||a.when(row)));
       if(actions.length)addAction(cell,actions[0],row);
-      if(actions.length>1&&['/users','/groups','/computers','/ou','/shares','/printers','/gpo','/domain','/repl','/trusts'].includes(location.pathname)){
+      if(cfg!==configs['/gpo']&&actions.length>1&&['/users','/groups','/computers','/ou','/shares','/printers','/gpo','/domain','/repl','/trusts'].includes(location.pathname)){
         const menu=el('details','row-actions'),summary=el('summary','','');
         summary.textContent=t('Действия','Actions');summary.setAttribute('aria-label',t('Другие действия: ','More actions: ')+cfg.id(row));
-        const commands=el('div','row-action-items');if(cfg===configs['/gpo']&&ru){for(const [heading,pattern] of [['Настройка',/Редактор|Сценарии/],['Привязки и доставка',/Привязать|Отвязать|Доставить|Резервная/],['Доступ',/Делегирование|Права|Фильтрация/],['Диагностика',/^(Согласованность|Исправление)/],['Удаление',/Удалить/]]){const items=actions.slice(1).filter(a=>pattern.test(a.label));if(items.length){commands.append(el('strong','row-action-heading',heading));items.forEach(a=>addAction(commands,a,row));}}}else actions.slice(1).forEach(a=>addAction(commands,a,row));
+        const commands=el('div','row-action-items');actions.slice(1).forEach(a=>addAction(commands,a,row));
         menu.append(summary,commands);cell.append(menu);
         menu.addEventListener('toggle',()=>{if(menu.open)tbody.querySelectorAll('.row-actions[open]').forEach(other=>{if(other!==menu)other.open=false;});});
         menu.addEventListener('keydown',e=>{if(e.key==='Escape'){menu.open=false;summary.focus();e.stopPropagation();}});
       }
-      if(!cell.querySelector('.row-actions'))actions.slice(1).forEach(a=>addAction(cell,a,row));
+      if(cfg!==configs['/gpo']&&!cell.querySelector('.row-actions'))actions.slice(1).forEach(a=>addAction(cell,a,row));
       r.append(cell);tbody.append(r);
     }
     if(!count){const cell=el('td','muted',t('Объекты не найдены','No objects found'));cell.colSpan=(tableTools?.count()??cfg.columns.length)+1;const r=el('tr');r.append(cell);tbody.append(r);}
@@ -697,6 +705,7 @@
   }
   async function openOperation(a,row) {
     if(a.run)return a.run(row);
+    if(a.gpoCard)return openGPOCard(row);
     if(a.dnsEditor)return openDNSEditor(row,a.prefill?.(row)?.name||'@');
     if(a.explain)return openPolicyExplain();
     if(a.scope)return openScope();
@@ -717,7 +726,7 @@
     if(a.passwordPolicy){lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','',t('Парольная политика домена','Domain password policy'));title.id='operation-title';const content=el('div');dialog.append(title,content,button(t('Закрыть','Close'),closeOperation));dialog.showModal();return window.sambaadmPasswordPolicy({container:content,admin,current:()=>generation===dialogGeneration,load:()=>request('/domain/password-policy'),save:body=>request('/domain/password-policy','PUT',body)});}
     if(!a.returnTo)lastFocus=document.activeElement;
     const generation=++dialogGeneration;resetDialog();
-    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);
+    const title=el('h2','',a.label);title.id='operation-title';dialog.append(title);if(cfg===configs['/shares'])dialog.append(el('p','share-node-banner','Сервер: '+(shareNode||'локальный sambaadm')));
     if(row)dialog.append(el('p','mono',a.objectLabel?a.objectLabel(row):(cfg.id(row)||row.dn||'')));
     if(a.fsmo&&row)dialog.append(el('p','mono',t('Текущий владелец: ','Current owner: ')+(row.owner||t('Не определён','Unknown'))));
     if(a.warning)dialog.append(el('p','alert error',a.warning));
@@ -923,12 +932,21 @@
     topologyTable(output,rows,[['time',t('Время','Time')],['account',t('Учётная запись','Account')],['controller',t('Контроллер','Controller')],['client',t('Клиент','Client')],['status',t('Результат','Result')],['service',t('Служба и протокол','Service and protocol')]]);
   }
 
+  async function openGPOCard(row){
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();const title=el('h2','','Свойства политики');title.id='operation-title';const header=dialog.querySelector('.workspace-dialog-close');header.classList.add('pso-dialog-header');header.prepend(title);const notice=el('p','workspace-message'),body=el('section','gpo-property-card');dialog.append(notice,body);dialog.showModal();message(notice,'Чтение свойств политики…');
+    try{const data=await request('/gpo/'+enc(gpoID(row)));if(generation!==dialogGeneration)return;const fields=typeof data==='string'?Object.fromEntries(data.split(/\r?\n/).map(line=>{const colon=line.indexOf(':');return colon<0?null:[line.slice(0,colon).trim(),line.slice(colon+1).trim()];}).filter(Boolean)):data;
+      body.append(el('h3','gpo-property-name',fields.displayName||row.displayName||gpoID(row)));
+      const info=el('dl','gpo-property-summary');const version=Number(fields.versionNumber),flags=Number(fields.flags);for(const [label,value] of [['Идентификатор',gpoID(row)],['Конфигурация компьютера',fields.flags===undefined?'Нет данных':flags&2?'Отключена':'Включена'],['Конфигурация пользователя',fields.flags===undefined?'Нет данных':flags&1?'Отключена':'Включена'],['Версия компьютера',Number.isFinite(version)?String(version&65535):'Нет данных'],['Версия пользователя',Number.isFinite(version)?String(version>>>16):'Нет данных']])info.append(el('dt','',label),el('dd','',value));body.append(info);
+      const groups=el('div','gpo-property-actions');const items=configs['/gpo'].actions.slice(1).filter(a=>allowed(a)&&(!a.when||a.when(row)));const taken=new Set();for(const [heading,pattern] of [['Настройка',/Редактор|Сценарии/],['Привязки и доставка',/Привязать|Отвязать|Доставить|Резервная/],['Доступ',/Делегирование|Права|Фильтрация/],['Диагностика',/^(Согласованность|Исправление)/],['Удаление политики',/Удалить/]]){const section=heading.startsWith('Удаление')?el('details','gpo-card-danger'):el('section','gpo-card-action-group');section.append(el(heading.startsWith('Удаление')?'summary':'h4','',heading));for(const action of items.filter(a=>pattern.test(a.label))){taken.add(action);section.append(button(action.label,()=>{openOperation(action,row);const bar=dialog.querySelector('.workspace-dialog-close');if(bar)bar.prepend(button('К свойствам политики',()=>openGPOCard(row)));},action.danger?'danger':action.editor?'btn-primary':''));}if(section.childElementCount>1)groups.append(section);}for(const action of items.filter(a=>!taken.has(a)))groups.append(button(action.label,()=>openOperation(action,row)));body.append(groups);
+      const technical=el('details','gpo-property-technical');technical.append(el('summary','','Технические атрибуты'),el('pre','mono',typeof data==='string'?data:JSON.stringify(data,null,2)));body.append(technical);message(notice,'');
+    }catch(error){if(generation===dialogGeneration){message(notice,error.message,true);body.append(button('Повторить чтение',()=>openGPOCard(row)));}}
+  }
   async function openRODC() {
-    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0;
+    lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();let serial=0,activeTab='permissions';
     const title=el('h2','',t('Кэш RODC','RODC cache'));title.id='operation-title';
     const notice=el('p','workspace-message'),controller=el('select'),body=el('section');controller.setAttribute('aria-label',t('Контроллер RODC','RODC controller'));
     const pick=el('label','',t('Контроллер RODC','RODC controller'));pick.append(controller);
-    dialog.append(title,el('p','alert',t('Назначения относятся только к выбранному RODC. Запрет имеет приоритет над разрешением. Удаление разрешения и запрет не стирают уже закэшированный пароль.','Assignments apply only to the selected RODC. Deny takes precedence. Removing permission or denying caching does not erase an already cached password.')),pick,notice,body,button(t('Закрыть','Close'),closeOperation));dialog.showModal();
+    const header=dialog.querySelector('.workspace-dialog-close');header.classList.add('pso-dialog-header');header.prepend(title);body.className='rodc-body';const refreshButton=button(t('Обновить списки RODC','Refresh RODC lists'),refresh);const picker=el('div','rodc-controller-bar');picker.append(pick,refreshButton);dialog.append(picker,notice,body);dialog.showModal();
     const active=current=>generation===dialogGeneration&&current===serial;
     try {
       const dcs=await request('/sites/controllers');if(generation!==dialogGeneration)return;
@@ -942,37 +960,41 @@
       const endpoint='/sites/controllers/'+enc(host)+'/rodc';message(notice,t('Чтение политики и списков RODC…','Reading RODC policy and lists…'));
       try {
         const model=await request(endpoint);if(!active(current))return;
-        body.append(el('p','',t('Контроллер: ','Controller: ')+model.controller.dns+' · '+t('Площадка: ','Site: ')+model.controller.site),el('p','muted',t('Источник LDAP: ','LDAP source: ')+model.source),button(t('Обновить списки RODC','Refresh RODC lists'),refresh));
+        const help=el('details','rodc-source');help.append(el('summary','',t('Источник данных и правила кэширования','Data source and caching rules')),el('p','',t('Источник LDAP: ','LDAP source: ')+model.source),el('p','',t('Назначения относятся только к выбранному RODC. Уже закэшированные пароли не стираются при удалении разрешения или запрете.','Assignments apply only to the selected RODC. Existing cached passwords are not erased by removing permission or denying caching.')));body.append(help);
+        const tabs=el('nav','workspace-tools workspace-tabs rodc-tabs');tabs.setAttribute('aria-label',t('Разделы кэша RODC','RODC cache sections'));const panels={permissions:el('section'),cache:el('section'),preload:el('section')};const labels=[['permissions',t('Разрешения','Permissions')],['cache',t('Кэш и обращения','Cache and authentications')],['preload',t('Заполнить кэш','Preload cache')]];for(const [key,label] of labels){const control=button(label,()=>{activeTab=key;showTab();});control.dataset.rodcTab=key;tabs.append(control);}function showTab(){for(const [key,panel] of Object.entries(panels))panel.hidden=key!==activeTab;for(const control of tabs.children)control.setAttribute('aria-pressed',String(control.dataset.rodcTab===activeTab));}body.append(tabs,...Object.values(panels));showTab();
+        panels.permissions.append(el('p','rodc-rule',t('Запрет важнее разрешения. Изменение назначений не удаляет уже сохранённые пароли.','Deny takes precedence. Changing assignments does not erase existing cached passwords.')));
+        function principals(parent,list,operation){const container=el('div','rodc-principals');if(!list.length)container.append(el('p','muted',t('Записей нет','No entries')));for(const item of list){const row=el('div','rodc-principal'),identity=el('div','rodc-principal-name');identity.append(el('strong','',item.name||cnLabel(item.dn)),el('span','rodc-kind',({group:t('Группа','Group'),user:t('Пользователь','User'),computer:t('Компьютер','Computer')}[item.kind]||t('Объект','Object'))));const path=el('details','rodc-path');path.append(el('summary','',t('Путь в каталоге','Directory path')),el('p','mono',item.dn));identity.append(path);row.append(identity);if(operation&&admin)row.append(button(t('Убрать назначение','Remove assignment'),()=>preview({operation,principal:item.dn})));container.append(row);}parent.append(container);}function cnLabel(dn){return dn?.split(',')[0]||'—';}
+
         const result=el('section');result.setAttribute('aria-live','polite');
         const columns=[['name',t('Учётная запись','Account')],['kind',t('Тип','Type')],['dn','DN']];
         for(const [label,list,operation] of [[t('Разрешено кэширование','Caching allowed'),model.allowed,'remove-allow'],[t('Запрещено кэширование','Caching denied'),model.denied,'remove-deny']]) {
-          body.append(el('h3','',label));topologyTable(body,list,columns,[{method:'PUT',label:t('Убрать назначение','Remove assignment'),run:p=>preview({operation,principal:p.dn})}]);
+          const section=el('section','rodc-list-section');section.append(el('h3','',label+' · '+list.length));principals(section,list,operation);panels.permissions.append(section);
         }
         const policy=el('form','workspace-form'),principal=el('input'),mode=el('select'),options=el('datalist');options.id='rodc-principal-options';principal.setAttribute('list',options.id);principal.required=true;principal.setAttribute('aria-label',t('DN учётной записи или группы','Account or group DN'));
         const principalLabel=el('label','',t('DN учётной записи или группы','Account or group DN'));principalLabel.append(principal);
         for(const [val,label] of [['allow',t('Разрешить кэширование','Allow caching')],['deny',t('Запретить кэширование','Deny caching')]]){const o=el('option','',label);o.value=val;mode.append(o);}mode.setAttribute('aria-label',t('Назначение PRP','PRP assignment'));
-        const run=el('button','',t('Предпросмотр назначения','Preview assignment'));run.type='submit';policy.append(principalLabel,mode,run,options);policy.addEventListener('change',()=>result.replaceChildren());policy.addEventListener('submit',e=>{e.preventDefault();if(policy.reportValidity())preview({operation:mode.value,principal:principal.value.trim()});});body.append(policy);
-        body.append(el('h3','',t('Пароли закэшированы на этом RODC','Passwords cached on this RODC')),el('p','muted',t('По msDS-RevealedUsers / msDS-RevealedList на выбранном источнике LDAP; данные могут запаздывать. Пароли и хэши не запрашиваются.','From msDS-RevealedUsers / msDS-RevealedList on the LDAP source; replication may lag. No passwords or hashes are requested.')));topologyTable(body,model.cached,columns);
-        body.append(el('h3','',t('Учётные записи, проходившие через RODC','Accounts authenticated through RODC')),el('p','muted',t('Источник — msDS-AuthenticatedToAccountlist. Это список без времени и неудачных попыток; пустой список не доказывает отсутствие входов.','Source: msDS-AuthenticatedToAccountlist. This list has no times or failed attempts; an empty list does not prove no logins occurred.')));topologyTable(body,model.authenticated,columns);
+        const run=el('button','',t('Предпросмотр назначения','Preview assignment'));run.type='submit';policy.append(principalLabel,mode,run,options);policy.addEventListener('change',()=>result.replaceChildren());policy.addEventListener('submit',e=>{e.preventDefault();if(policy.reportValidity())preview({operation:mode.value,principal:principal.value.trim()});});const assignment=el('details','rodc-assignment');assignment.append(el('summary','',t('Добавить разрешение или запрет','Add an allow or deny assignment')),policy);if(admin)panels.permissions.append(assignment);
+        panels.cache.append(el('h3','',t('Пароли закэшированы на этом RODC','Passwords cached on this RODC')),el('p','muted',t('По msDS-RevealedUsers / msDS-RevealedList на выбранном источнике LDAP; данные могут запаздывать. Пароли и хэши не запрашиваются.','From msDS-RevealedUsers / msDS-RevealedList on the LDAP source; replication may lag. No passwords or hashes are requested.')));principals(panels.cache,model.cached);
+        panels.cache.append(el('h3','',t('Учётные записи, проходившие через RODC','Accounts authenticated through RODC')),el('p','muted',t('Источник — msDS-AuthenticatedToAccountlist. Это список без времени и неудачных попыток; пустой список не доказывает отсутствие входов.','Source: msDS-AuthenticatedToAccountlist. This list has no times or failed attempts; an empty list does not prove no logins occurred.')));principals(panels.cache,model.authenticated);
         const preload=el('form','workspace-form'),accounts=el('select');accounts.multiple=true;accounts.size=6;accounts.required=true;accounts.setAttribute('aria-label',t('Учётные записи для заполнения кэша','Accounts to preload'));const al=el('label','',t('Выберите пользователей и компьютеры для заполнения кэша','Select users and computers to preload'));al.append(accounts);
-        const pre=el('button','',t('Предпросмотр заполнения кэша','Preview cache preload'));pre.type='submit';pre.disabled=!model.preloadAvailable;preload.append(al,pre);preload.addEventListener('change',()=>result.replaceChildren());preload.addEventListener('submit',e=>{e.preventDefault();if(preload.reportValidity())preview({operation:'preload',accounts:Array.from(accounts.selectedOptions,o=>o.value)});});body.append(el('h3','',t('Принудительное заполнение кэша','Preload cache')),preload);
-        if(!model.preloadAvailable)body.append(el('p','alert',t('Для этого RODC не настроен helper заполнения кэша. Настройте helpers.nodes на сервере sambaadm и установите helper на RODC.','No preload helper configured for this RODC. Configure helpers.nodes on sambaadm and install the helper on the RODC.')));
+        const pre=el('button','',t('Предпросмотр заполнения кэша','Preview cache preload'));pre.type='submit';pre.disabled=!model.preloadAvailable;preload.append(al,pre);preload.addEventListener('change',()=>result.replaceChildren());preload.addEventListener('submit',e=>{e.preventDefault();if(preload.reportValidity())preview({operation:'preload',accounts:Array.from(accounts.selectedOptions,o=>o.value)});});panels.preload.append(el('h3','',t('Принудительное заполнение кэша','Preload cache')),preload);
+        if(!model.preloadAvailable)panels.preload.append(el('p','alert',t('Для этого RODC не настроен helper заполнения кэша. Настройте helpers.nodes на сервере sambaadm и установите helper на RODC.','No preload helper configured for this RODC. Configure helpers.nodes on sambaadm and install the helper on the RODC.')));
         body.append(result);
-        message(notice,t('Данные RODC загружены','RODC data loaded'));
+        message(notice,'');
         const lookups=await Promise.allSettled([request('/users'),request('/computers'),request('/groups')]);if(!active(current))return;
         for(let i=0;i<lookups.length;i++){const lookup=lookups[i];if(lookup.status!=='fulfilled'){body.append(el('p','muted',t('Не удалось загрузить один из списков выбора; назначение доступно по DN.','One selection list could not be loaded; assignment remains available by DN.')));continue;}for(const p of lookup.value){if(!p.dn)continue;const o=el('option','',p.samAccountName||p.name||p.dn);o.value=p.dn;options.append(o);if(i<2){const a=o.cloneNode(true);accounts.append(a);}}}
         async function preview(input) {
-          result.replaceChildren();controller.disabled=true;for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;
+          result.replaceChildren();controller.disabled=refreshButton.disabled=true;for(const c of body.querySelectorAll('button,input,select'))c.disabled=true;
           try{const plan=await request(endpoint,'POST',input);if(!active(current))return;
             result.append(el('h3','',t('Предпросмотр RODC','RODC preview')),el('p','',plan.controller+' ← '+plan.source),el('p','',({allow:t('Разрешить кэширование','Allow caching'),deny:t('Запретить кэширование','Deny caching'),'remove-allow':t('Убрать разрешение','Remove allow assignment'),'remove-deny':t('Убрать запрет','Remove deny assignment'),preload:t('Заполнить кэш','Preload cache')}[plan.operation]||plan.operation)+(plan.principal?.dn?' · '+plan.principal.dn:'')));
             const decisions={allowed:t('Разрешено','Allowed'),denied:t('Запрещено','Denied'),unknown:t('Неизвестно — заблокировано','Unknown — blocked')};if(plan.accounts.length)topologyTable(result,plan.accounts.map(a=>({...a,decision:decisions[a.decision]||a.decision,reason:({'Matched the deny policy':t('Совпадение с запретом PRP','Matched the deny policy'),'Full security token or deny membership is unavailable':t('Недоступен полный токен или состав запрещённых групп','Full security token or deny membership is unavailable'),'Matched the allow policy; deny takes precedence':t('Есть разрешение PRP; запреты проверены','Matched the allow policy; deny takes precedence'),'No allow policy matches this account':t('Нет разрешающего назначения PRP','No allow policy matches this account'),'Allow membership is unavailable':t('Недоступен состав разрешённых групп','Allow membership is unavailable'),'Invalid tokenGroups':t('Некорректный токен групп','Invalid tokenGroups')}[a.reason]||a.reason)})),[['name',t('Учётная запись','Account')],['dn','DN'],['decision',t('Решение PRP','PRP decision')],['reason',t('Причина','Reason')]]);
             const form=el('form','workspace-form'),check=el('input');check.type='checkbox';check.required=true;const label=el('label','',t('Подтверждаю выбранный RODC и операцию','Confirm the selected RODC and operation'));label.prepend(check);const apply=el('button','',t('Применить к выбранному RODC','Apply to selected RODC'));apply.type='submit';form.append(label,apply);result.append(form);result.scrollIntoView({block:'start'});
-            form.addEventListener('submit',async e=>{e.preventDefault();if(!active(current)||!form.reportValidity())return;apply.disabled=true;controller.disabled=true;
+            form.addEventListener('submit',async e=>{e.preventDefault();if(!active(current)||!form.reportValidity())return;apply.disabled=true;controller.disabled=refreshButton.disabled=true;
               try{const done=await request(endpoint,'PUT',{...input,preview:plan.preview});if(!active(current))return;await refresh();if(generation!==dialogGeneration)return;
                 const summary=el('section');if(done.accounts.length)topologyTable(summary,done.accounts.map(a=>({...a,status:({preloaded:t('Кэш заполнен','Preloaded'),blocked:t('Заблокировано','Blocked'),failed:t('Не выполнено','Failed'),unconfirmed:t('Результат не подтверждён','Unconfirmed')}[a.status]||a.status)})),[['dn','DN'],['status',t('Результат','Result')],['error',t('Подробности','Details')]]);body.prepend(summary);message(notice,t('Операция завершена; проверьте результаты по учётным записям','Operation completed; check individual account results'));
-              }catch(err){if(active(current)){result.replaceChildren();message(notice,err.message,true);}}finally{if(generation===dialogGeneration)controller.disabled=false;}
+              }catch(err){if(active(current)){result.replaceChildren();message(notice,err.message,true);}}finally{if(generation===dialogGeneration)controller.disabled=refreshButton.disabled=false;}
             });
-          }catch(err){if(active(current))message(notice,err.message,true);}finally{if(active(current)){controller.disabled=false;for(const c of body.querySelectorAll('button,input,select'))c.disabled=false;pre.disabled=!model.preloadAvailable;}}
+          }catch(err){if(active(current))message(notice,err.message,true);}finally{if(active(current)){controller.disabled=refreshButton.disabled=false;for(const c of body.querySelectorAll('button,input,select'))c.disabled=false;pre.disabled=!model.preloadAvailable;}}
         }
       }catch(err){if(active(current))message(notice,err.message,true);}
     }

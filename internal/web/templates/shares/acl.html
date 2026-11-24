@@ -7,6 +7,7 @@
 <body>
   {{template "nav" .}}
   <main class="container">
+{{if .HostNode}}<p class="share-node-banner">Сервер: <strong>{{.HostNode}}</strong></p>{{end}}
     <h1>{{t .Lang "shares.acl"}}</h1>
     {{template "shares/tips" .}}
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
@@ -22,7 +23,7 @@
     <section class="perm-section">
       <h2>{{t $.Lang "shares.section.samba"}}</h2>
       <p class="field-hint">{{t $.Lang "shares.access.hint"}}</p>
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="samba">
         {{with .Share}}
@@ -92,7 +93,7 @@
     <section class="perm-section">
       <h2>{{t $.Lang "shares.acl.edit"}}</h2>
       <p class="field-hint">{{t $.Lang "shares.acl.edit.hint"}}</p>
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="fs">
         <label>{{t $.Lang "shares.field.owner"}} <input name="owner" value="{{with .ACL}}{{.Owner}}{{if .Group}}:{{.Group}}{{end}}{{end}}"></label>
@@ -154,7 +155,7 @@
       <p class="muted">{{t $.Lang "common.no_data"}}</p>
       {{end}}
       {{end}}
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl" class="form-card form-wide">
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="xattr">
         <label>{{t $.Lang "shares.xattr.name"}} <input name="xattr_name" placeholder="user.comment"></label>
@@ -165,7 +166,7 @@
     </section>
     {{end}}
     {{end}}
-    <p><a href="/shares">← {{t .Lang "nav.shares"}}</a></p>
+    <p><a href="/shares{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}">← {{t .Lang "nav.shares"}}</a></p>
   </main>
   <footer class="footer"><span>sambaadm · Samba4 AD</span></footer>
 </body>

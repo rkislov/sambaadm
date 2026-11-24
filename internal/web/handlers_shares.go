@@ -79,7 +79,7 @@ func (s *Server) handleShareCreatePost(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "shares/create.html", pd)
 		return
 	}
-	http.Redirect(w, r, "/shares", http.StatusSeeOther)
+	http.Redirect(w, r, shareURL(r, "/shares"), http.StatusSeeOther)
 }
 
 func (s *Server) handleShareACL(w http.ResponseWriter, r *http.Request) {
@@ -200,7 +200,7 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.Redirect(w, r, "/shares/"+url.PathEscape(name)+"/acl", http.StatusSeeOther)
+	http.Redirect(w, r, shareURL(r, "/shares/"+url.PathEscape(name)+"/acl"), http.StatusSeeOther)
 }
 
 func formOn(r *http.Request, name string) bool {
