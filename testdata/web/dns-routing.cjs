@@ -8,8 +8,8 @@ await page.route('**/api/v1/**',async route=>{const request=route.request(),u=ne
  if(p==='/dns/zones')json=[{name:'ipr.loc'}];else if(p==='/dns/routing/nodes')json=['dc1.ipr.loc','dc2.ipr.loc'];
  else if(p.endsWith('/delegations/plan')){plans.push(body);json={domain:'app.ipr.loc',revision:'old',proposedRevision:'new',changes:[{name:'app',type:'NS',data:'ns.app.ipr.loc'}],warning:'NS и glue реплицируются через AD.'};}
  else if(p.endsWith('/delegations')){if(request.method()==='PUT')writes.push({p,body});json={delegations:[],revision:'old'};}
- else if(p==='/dns/forwarding'&&request.method()==='GET')json=node==='dc2.ipr.loc'&&blocked?{editable:false,warning:'BIND не поддерживает запрос'}:{editable:true,path:'/etc/bind/named.conf',revision:'r',rules:[{domain:node==='dc1.ipr.loc'?'keep-one.test':'keep-two.test',servers:['192.0.2.1'],mode:'only'}]};
- else if(p==='/dns/forwarding/plan'){plans.push({node,body});json={revision:'r',proposedRevision:'next',before:'Старые правила',proposed:body.rules.map(r=>r.domain).join('\n')};}
+ else if(p==='/dns/forwarding'&&request.method()==='GET')json={editable:true,path:'/etc/bind/named.conf',revision:'r',rules:[{domain:node==='dc1.ipr.loc'?'keep-one.test':'keep-two.test',servers:['192.0.2.1'],mode:'only'}]};
+ else if(p==='/dns/forwarding/plan'){if(node==='dc2.ipr.loc'&&blocked){await route.fulfill({status:409,json:{error:'BIND недоступен'}});return;}plans.push({node,body});json={revision:'r',proposedRevision:'next',before:'Старые правила',proposed:body.rules.map(r=>r.domain).join('\n')};}
  else if(p==='/dns/forwarding'&&request.method()==='PUT'){writes.push({node,body});json={backup:'/private/backup',status:{}};}
  else if(p==='/dns/backend/plan')json={backend:'BIND9_DLZ',target:body.target,revision:'backend-r',steps:['Остановить DNS и Samba','Проверить SOA и SRV'],warning:'Правила BIND сохраняются, но перестанут действовать.'};
  else if(p==='/dns/backend/start'){writes.push({p,body});json={id:'a'.repeat(32),state:'queued'};}
