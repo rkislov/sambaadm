@@ -50,4 +50,13 @@ func TestIntegrationBulkUsers(t *testing.T) {
 	if e != nil || p.State != "completed" {
 		t.Fatal(p, e)
 	}
+	p, e = s.BulkPreview(ctx, "unlock", []string{"bulk-one", "bulk-two"}, actor)
+	if e != nil {
+		t.Fatal(e)
+	}
+	p, e = s.BulkApply(ctx, p.ID, p.Revision, actor)
+	if e != nil || p.State != "completed" {
+		t.Fatal(p, e)
+	}
+
 }

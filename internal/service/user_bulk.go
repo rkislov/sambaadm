@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"os"
 	"path/filepath"
+	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/pki"
 	"strconv"
 	"strings"
@@ -201,6 +202,10 @@ func (s *EmployeeService) BulkApply(ctx context.Context, id, revision string, ac
 				return fmt.Errorf("запись выполнена, но результат не прочитан: %w", e)
 			}
 			if p.Action == "unlock" {
+				after, e = s.ldap.SearchOne(ctx, ldapproto.SearchOptions{Filter: "(objectGUID=" + ldap.EscapeFilter(string(after.GetRawAttributeValue("objectGUID"))) + ")", Attributes: []string{"lockoutTime"}})
+				if e != nil {
+					return e
+				}
 				if after.GetAttributeValue("lockoutTime") != "0" {
 					return ErrEmployeeConflict
 				}
