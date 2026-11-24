@@ -33,6 +33,7 @@ const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://local
  dialog=page.getByRole('dialog');await dialog.getByText('Example setting',{exact:true}).waitFor();
  await dialog.locator('.workspace-dialog-close button').click();
  await page.screenshot({path:path.join(dir,'model-workspace.png'),fullPage:true});
+ await scenarioRow.locator('.compact-action-menu > summary').click();
  await scenarioRow.getByRole('button',{name:'Обновить расчёт',exact:true}).click();
  dialog=page.getByRole('dialog');
  assert.equal(await dialog.getByLabel('Пользователь или его OU',{exact:true}).inputValue(),user);
@@ -41,6 +42,7 @@ const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://local
  await dialog.getByText('Прогноз рассчитан',{exact:true}).waitFor();
  await dialog.locator('.workspace-dialog-close button').click();
  assert.equal(await scenarioRow.count(),1);
+ await scenarioRow.locator('.compact-action-menu > summary').click();
  await scenarioRow.getByRole('button',{name:'Убрать из списка',exact:true}).click();
  await scenarioRow.waitFor({state:'detached'});
  await visit('/dns');await page.locator('.dns-console-tree').getByText('Зоны прямого просмотра',{exact:true}).waitFor();await page.locator('.dns-console-tree').getByText('Зоны обратного просмотра',{exact:true}).waitFor();

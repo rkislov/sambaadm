@@ -251,6 +251,7 @@ function domain(count){
   await send({endpoint:'/repl/connections',method:'POST',payload:{source:'dc0.example.com',destination:'dc3.example.com'}});
   assert.equal(await selector.inputValue(),'replication');
   const connection=dialog.getByRole('row').filter({hasText:'dc0.example.com'}).filter({hasText:'dc3.example.com'});
+  await connection.locator('.compact-action-menu > summary').click();
   await connection.getByRole('button',{name:'Удалить',exact:true}).click();
   await send({endpoint:'/repl/connections/manual',method:'DELETE',payload:{revision:'2'}});
   await connection.waitFor({state:'detached'});
@@ -262,6 +263,7 @@ function domain(count){
   await send({endpoint:'/sites/links',method:'POST',payload:{name:'New-WAN',sites:['site0','site1'],cost:100,interval:180}});
   assert.equal(await selector.inputValue(),'sites');
   const linkRow=dialog.getByRole('row').filter({hasText:'New-WAN'});
+  await linkRow.locator('.compact-action-menu > summary').click();
   await linkRow.getByRole('button',{name:'Удалить',exact:true}).click();
   await send({endpoint:'/sites/links/New-WAN',method:'DELETE',payload:{revision:'3'}});
   await linkRow.waitFor({state:'detached'});
