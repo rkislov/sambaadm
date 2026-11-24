@@ -7,7 +7,7 @@
   let zones=[],selected='',owner='@',serial=0,records=[],page=0,sort='name',direction=1,controller=null;const names=new Map(),expanded=new Set(),collator=new Intl.Collator(ru?'ru':'en',{numeric:true});
   sidebar.classList.add('dns-console-tree');main.classList.add('dns-console-main');main.replaceChildren();
   const heading=el('h2'),location=el('p','muted'),tools=el('div','dns-console-tools'),search=el('input'),type=el('select'),notice=el('p','workspace-message');
-  search.type='search';search.placeholder=t('Поиск в текущем списке','Search current list');search.setAttribute('aria-label',search.placeholder);type.setAttribute('aria-label',t('Тип записи','Record type'));
+  tools.dataset.compactActions='2';search.type='search';search.placeholder=t('Поиск в текущем списке','Search current list');search.setAttribute('aria-label',search.placeholder);type.setAttribute('aria-label',t('Тип записи','Record type'));
   for(const v of ['ALL','A','AAAA','CNAME','NS','PTR','MX','SRV','TXT','SOA']){const o=el('option','',v==='ALL'?t('Все типы','All types'):v);o.value=v;type.append(o);}
   tools.append(search,type,button(t('Обновить записи','Refresh records'),()=>loadRecords(selected,owner)));
   if(admin)tools.append(button(t('Новая запись','New record'),()=>onCreate(zones.find(z=>z.name===selected),owner)),button(t('Удалить зону','Delete zone'),()=>onDelete(zones.find(z=>z.name===selected))));

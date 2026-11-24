@@ -93,6 +93,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/user-login.cjs
       - name: PSO management and resultant user policy
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/pso.cjs
+      - name: Shared compact action menus
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/compact-actions.cjs
       - name: Avatar upload and client resize
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/self-photo.cjs
       - name: Compact controls and complete policy tree

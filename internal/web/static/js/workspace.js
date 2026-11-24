@@ -219,7 +219,7 @@
     addAction(target,cfg.create);
     if(target.childElementCount>before)target.lastElementChild.classList.add('btn-primary');
   }
-  if(cfg===configs['/users']&&admin)listTools.prepend(button('Мастер сотрудника',()=>openEmployee(),'btn-primary'));
+  if(cfg===configs['/users']&&admin){listTools.querySelector('.btn-primary')?.classList.remove('btn-primary');listTools.prepend(button('Мастер сотрудника',()=>openEmployee(),'btn-primary'));}
   listTools.hidden=!listTools.childElementCount;
   const views=el('div','console-tree-children');
   const operations=el('div','console-tree-children');
@@ -503,7 +503,7 @@
     lastFocus=document.activeElement;const generation=++dialogGeneration;resetDialog();
     const title=el('h2','',t('Карточка пользователя','User profile'));title.id='operation-title';
     const notice=el('p','workspace-message');notice.setAttribute('aria-live','polite');const body=el('div');
-    const tabs=el('div','workspace-tools');let activeTab=a.passwordPolicyInfo?'password-policy':a.loginDiagnostics?'login':'profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));const extendedTab=button(t('Расширенные атрибуты','Extended attributes'),()=>selectTab('extended'));const loginTab=button('Диагностика входа',()=>selectTab('login'));const policyTab=button('Парольная политика пользователя',()=>selectTab('password-policy'));tabs.append(profileTab,extendedTab,groupsTab,loginTab,policyTab,button(t('Перезагрузить карточку','Reload profile'),refresh),button(t('Закрыть','Close'),closeOperation));dialog.append(title,notice,tabs,body);dialog.showModal();
+    const tabs=el('div','workspace-tools');let activeTab=a.passwordPolicyInfo?'password-policy':a.loginDiagnostics?'login':'profile';const profileTab=button(t('Атрибуты','Attributes'),()=>selectTab('profile'));const groupsTab=button(t('Группы','Groups'),()=>selectTab('groups'));const extendedTab=button(t('Расширенные атрибуты','Extended attributes'),()=>selectTab('extended'));const loginTab=button('Диагностика входа',()=>selectTab('login'));const policyTab=button('Парольная политика пользователя',()=>selectTab('password-policy'));tabs.classList.add('workspace-tabs');tabs.setAttribute('aria-label','Разделы карточки пользователя');tabs.append(profileTab,extendedTab,groupsTab,loginTab,policyTab);const header=dialog.querySelector('.workspace-dialog-close');header.classList.add('pso-dialog-header');header.prepend(title);header.insertBefore(button(t('Обновить','Refresh'),refresh),header.lastElementChild);dialog.append(notice,tabs,body);dialog.showModal();
     function selectTab(tab){activeTab=tab;policyTab.setAttribute('aria-pressed',String(tab==='password-policy'));if(tab==='password-policy'&&!body.querySelector('[data-profile-tab=password-policy]')){const panel=el('section');panel.dataset.profileTab='password-policy';body.append(panel);window.sambaadmEffectivePasswordPolicy({container:panel,request,path,current:()=>generation===dialogGeneration,onManage:admin?id=>openPSOManager(id,()=>openUserCard({...a,passwordPolicyInfo:true},row)):null});}for(const part of body.children)part.hidden=part.dataset.profileTab!==tab;profileTab.setAttribute('aria-pressed',String(tab==='profile'));groupsTab.setAttribute('aria-pressed',String(tab==='groups'));extendedTab.setAttribute('aria-pressed',String(tab==='extended'));loginTab.setAttribute('aria-pressed',String(tab==='login'));if(tab==='login'&&!body.querySelector('[data-profile-tab=login]')){const panel=el('section');panel.dataset.profileTab='login';body.append(panel);window.sambaadmUserLogin({container:panel,request,path,canUnlock:helpdesk,current:()=>generation===dialogGeneration,onChanged:load});}}
     const path='/users/'+enc(row.samAccountName);let profile;
     async function refresh(){message(notice,t('Загрузка…','Loading…'));body.replaceChildren();try{const user=await request(path);if(generation!==dialogGeneration)return;profile=user;render();message(notice,'');}catch(e){if(generation===dialogGeneration)message(notice,e.message,true);}}
@@ -529,7 +529,7 @@
       if(admin){const save=el('button','',t('Сохранить расширенные атрибуты','Save extended attributes'));save.type='submit';extraForm.append(save);extraForm.addEventListener('submit',async e=>{e.preventDefault();if(!extraForm.reportValidity())return;const changes={};for(const [key,input] of extraControls)if(!input.disabled&&input.value!==(profile.attributes?.[key]?.[0]||''))changes[key]=input.value;if(!Object.keys(changes).length){message(notice,t('Нет изменений','No changes'));return;}save.disabled=true;try{const updated=await request(path,'PUT',{revision:profile.revision,attributes:changes});if(generation!==dialogGeneration)return;profile=updated;render();message(notice,t('Атрибуты сохранены','Attributes saved'));await load();}catch(err){if(generation!==dialogGeneration)return;message(notice,err.message,true);save.disabled=err.status===409;}});}
       extended.append(extraForm,el('h3','',t('Учётная запись и LDAP-атрибуты (просмотр)','Account and LDAP attributes (read only)')),el('p','muted',t('Даты показаны в часовом поясе браузера; исходное значение LDAP можно раскрыть. Права безопасности и делегирование этим редактором не изменяются.','Dates use the browser time zone; expand to see the raw LDAP value. This editor does not modify security permissions or delegation.')));
       describe({cn:profile.name||'',...(profile.attributes||{})},extended);
-      const account=el('div','workspace-tools');cfg.actions.slice(1).filter(action=>!action.loginDiagnostics).forEach(action=>addAction(account,action,profile));attributes.append(account);
+      const account=el('div','workspace-tools');account.dataset.compactActions='1';cfg.actions.slice(1).filter(action=>!action.loginDiagnostics).forEach(action=>addAction(account,action,profile));attributes.append(account);
       const groups=el('section');groups.dataset.profileTab='groups';groups.append(el('h3','',t('Группы пользователя','User groups')),el('p','muted',t('Прямое членство и основная группа. Вложенные группы здесь не перечисляются.','Direct memberships and primary group. Nested memberships are not listed.')));body.append(groups);
       let knownGroups=new Set();
       const groupNotice=el('p','workspace-message');groupNotice.setAttribute('aria-live','polite');const members=el('div');groups.append(groupNotice,members);
@@ -1371,7 +1371,7 @@
     }
     filter.value=category;
     controls.append(filter);
-    const commands=el('div','workspace-tools');
+    const commands=el('div','workspace-tools');commands.dataset.compactActions='1';
     const list=el('div');
     parent.append(heading,controls,commands,list);
     function render(){
@@ -1487,7 +1487,7 @@
     sidebar.setAttribute('aria-label',t('Сайты и службы','Sites and services'));
     const heading=el('h2');
     const breadcrumb=el('p','muted');
-    const commands=el('div','workspace-tools');
+    const commands=el('div','workspace-tools');commands.dataset.compactActions='1';
     const searchBox=el('input');
     searchBox.type='search';
     searchBox.placeholder=t('Поиск в текущем списке','Search current list');
@@ -1610,7 +1610,7 @@
       breadcrumb.textContent=[sites,...(site?[site.name]:[]),...(kind==='links'?[transportLabel]:[]),...(['sites','site'].includes(kind)?[]:[title])].join(' / ');
       breadcrumb.hidden=kind==='sites';
       heading.textContent=title;
-      commands.replaceChildren();
+      commands.replaceChildren();commands.dataset.compactActions=kind==='site'?'2':'1';
       searchBox.hidden=kind==='site';
       if(kind==='sites'){
         addAction(commands,action(t('Создать сайт','New Site'),'POST','/sites',[name()]));
@@ -1655,7 +1655,7 @@
   }
   function topologyTable(parent,rows,columns,actions=[]){
     const wrap=el('div','workspace-table');const table=el('table');const head=el('tr');columns.forEach(c=>head.append(el('th','',c[1])));if(actions.length)head.append(el('th','',t('Операции','Actions')));table.append(head);
-    for(const row of rows){const tr=el('tr',row.modelConflict?'policy-model-conflict':'');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td');for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))addAction(td,a,row);}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
+    for(const row of rows){const tr=el('tr',row.modelConflict?'policy-model-conflict':'');columns.forEach(([key])=>tr.append(el('td','',Array.isArray(row[key])?row[key].join('; '):value(row[key]))));if(actions.length){const td=el('td','workspace-actions');td.dataset.compactActions='1';for(const a of actions){if(allowed(a)&&(!a.when||a.when(row)))addAction(td,a,row);}tr.append(td);}table.append(tr);}wrap.append(table);parent.append(wrap);if(!rows.length)parent.append(el('p','muted',t('Нет объектов','No objects')));
   }
   function replicationResult(row) {
     const raw=String(row.result??'').trim();
