@@ -28,6 +28,7 @@ mkdir -p %buildroot/usr/bin %buildroot/lib/systemd/system
 mkdir -p %buildroot/etc/sambaadm-helper %buildroot/var/lib/sambaadm-helper
 mkdir -p %buildroot/var/lib/sambaadm-helper/backups
 mkdir -p %buildroot/var/log/sambaadm-helper %buildroot/usr/share/doc/sambaadm-helper
+mkdir -p %buildroot/srv/samba
 install -m755 %{payload_dir}/sambaadm-helper %buildroot/usr/bin/sambaadm-helper
 install -m644 %{payload_dir}/sambaadm-helper.service %buildroot/lib/systemd/system/sambaadm-helper.service
 install -m600 %{payload_dir}/helper-config.yaml %buildroot/etc/sambaadm-helper/config.yaml
@@ -58,4 +59,5 @@ if [ -d /run/systemd/system ]; then systemctl daemon-reload || :; fi
 %dir %attr(0700,root,root) /var/lib/sambaadm-helper
 %dir %attr(0700,root,root) /var/lib/sambaadm-helper/backups
 %dir %attr(0700,root,root) /var/log/sambaadm-helper
+%dir %attr(0750,root,root) /srv/samba
 /usr/share/doc/sambaadm-helper
