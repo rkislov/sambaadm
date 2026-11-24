@@ -163,7 +163,7 @@ func discoveredConfig(ctx context.Context, realm, dc, user, group, ca string, al
 	if ca != "" && !filepath.IsAbs(ca) {
 		return nil, fmt.Errorf("для CA требуется абсолютный путь")
 	}
-	cfg := map[string]any{"server": map[string]string{"listen": "127.0.0.1:8080", "enrollment_dir": "/var/lib/sambaadm/enrollment"},
+	cfg := map[string]any{"server": map[string]string{"listen": "0.0.0.0:8080", "enrollment_dir": "/var/lib/sambaadm/enrollment"},
 		"ldap":  map[string]any{"uri": "ldaps://" + target + ":636", "base_dn": base, "ca_cert": ca, "allow_legacy_cn": allowLegacyCN, "bind": map[string]string{"type": "simple", "user": bind, "password_env": "SAMBAADM_PASSWORD"}},
 		"auth":  map[string]any{"roles": map[string][]string{"admins": {admins}}},
 		"audit": map[string]string{"file": "/var/log/sambaadm/audit.log"}, "logging": map[string]string{"file": "/var/log/sambaadm/events.log"}}

@@ -53,7 +53,7 @@ func TestDiscoveredConfigFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.LDAP.URI != "ldaps://dc1.corp.example:636" || cfg.LDAP.BaseDN != "DC=corp,DC=example" || cfg.LDAP.Bind.User != "svc@corp.example" || cfg.LDAP.CACert != "/etc/domain-ca.pem" || cfg.Server.Listen != "127.0.0.1:8080" || cfg.Server.EnrollmentDir == "" || cfg.Auth.Roles.Admins[0] != "CN=Operators,DC=corp,DC=example" {
+	if cfg.LDAP.URI != "ldaps://dc1.corp.example:636" || cfg.LDAP.BaseDN != "DC=corp,DC=example" || cfg.LDAP.Bind.User != "svc@corp.example" || cfg.LDAP.CACert != "/etc/domain-ca.pem" || cfg.Server.Listen != "0.0.0.0:8080" || cfg.Server.EnrollmentDir == "" || cfg.Auth.Roles.Admins[0] != "CN=Operators,DC=corp,DC=example" {
 		t.Fatalf("unexpected configuration: %+v", cfg)
 	}
 	if err := writeDiscoveredConfig(path, []byte("replacement")); !errors.Is(err, os.ErrExist) {
