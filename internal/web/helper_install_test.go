@@ -95,3 +95,16 @@ func TestHelperRegistrationStagedUntilCommit(t *testing.T) {
 		t.Fatal(c, e)
 	}
 }
+
+func TestInstallArchitectureIgnoresShellNotices(t *testing.T) {
+	for _, output := range []string{"SAMBAADM_ARCH=x86_64\n", "shell: locale warning\nSAMBAADM_ARCH=x86_64\r\n"} {
+		if v, e := installArchitecture(output); e != nil || v != "x86_64" {
+			t.Fatal(v, e)
+		}
+	}
+	for _, output := range []string{"x86_64", "SAMBAADM_ARCH=unknown\n", "SAMBAADM_ARCH=x86_64; id"} {
+		if _, e := installArchitecture(output); e == nil {
+			t.Fatal("unmarked or unsafe architecture accepted")
+		}
+	}
+}

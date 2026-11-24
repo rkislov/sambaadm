@@ -553,11 +553,14 @@ func (s *Server) installOneHelper(ctx context.Context, j *helperInstallJob, i in
 		return fmt.Errorf("SSH: %w", e)
 	}
 	defer client.Close()
-	output, e := bootstrap.Run(ctx, client, "uname -m")
+	output, e := bootstrap.Run(ctx, client, "printf '\\nSAMBAADM_ARCH=%s\\n' \"$(uname -m)\"")
 	if e != nil {
 		return fmt.Errorf("Не удалось определить архитектуру: %w", e)
 	}
-	arch := strings.TrimSpace(output)
+	arch, e := installArchitecture(output)
+	if e != nil {
+		return e
+	}
 	pkg, e := s.helperPackage(arch)
 	if e != nil {
 		return e
@@ -698,4 +701,17 @@ func verifyInstalledHelper(ctx context.Context, client *agent.Client, node strin
 		}
 	}
 	return last
+}
+
+func installArchitecture(output string) (string, error) {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "SAMBAADM_ARCH=") {
+			value := strings.TrimPrefix(line, "SAMBAADM_ARCH=")
+			if value == "x86_64" || value == "aarch64" {
+				return value, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("Не удалось определить поддерживаемую архитектуру по ответу SSH (нужна x86_64 или aarch64)")
 }
