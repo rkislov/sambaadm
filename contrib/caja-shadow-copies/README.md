@@ -14,7 +14,7 @@
 Из каталога, в котором лежит RPM, выполните с правами администратора:
 
 ```sh
-apt-get install ./caja-smb-previous-versions-0.1.0-alt1.noarch.rpm
+apt-get install ./caja-smb-previous-versions-0.1.1-alt1.noarch.rpm
 ```
 
 APT подберёт Caja, загрузчик расширений, PyGObject, GVfs SMB и smbclient
@@ -45,6 +45,31 @@ install -Dm644 sambaadm_previous_versions.py \
 Kerberos; при необходимости проверьте билет командой `klist`.
 Поддерживаются подключения `smb://` по имени сервера без учётных данных
 в URI. Для уже смонтированных локальных путей (`file://`) меню отсутствует.
+
+## Автоматический выбор источника: Windows, ZFS, LVM
+
+Расширение автоматически запрашивает общий механизм SMB Previous Versions
+через `smbclient allinfo` (FSCTL_SRV_ENUMERATE_SNAPSHOTS). Windows VSS,
+Samba с ZFS и Samba с LVM используют одинаковые метки `@GMT-…`.
+Переключатель типа сервера и отдельные клиентские команды ZFS/LVM не нужны.
+Открытие и копирование используют один и тот же исторический SMB-путь.
+В диалоге указан общий протокол, а не предположительный тип дисковой системы.
+
+SMB не раскрывает реализацию снимков: отличить ZFS от LVM или уверенно
+определить Windows по списку версий невозможно. Даже имя файловой системы,
+объявленное сервером, может быть настроено администратором. Расширение
+определяет доступность истории по ответу сервера, а не по имени хоста.
+Отдельно показываются неподдерживаемая операция, отказ в перечислении и
+ошибка соединения. Пустой ответ не считается доказательством поддержки:
+`smbclient` может молча пропустить перечисление при невозможности открыть объект.
+
+На Windows Server включите Shadow Copies для тома с общей папкой и создайте
+снимок. Доступ к истории должен работать под той же доменной учётной записью.
+Для Samba снимки ZFS/LVM должны быть опубликованы сервером через
+`shadow_copy2` или совместимый модуль. Одного наличия снимка на сервере
+недостаточно. LVM-снимки требуется смонтировать и настроить `shadow:snapdir`,
+формат имён и сопоставление путей; расширение не создаёт и не монтирует их.
+Другие серверы/NAS поддерживаются, если предоставляют тот же SMB-механизм.
 
 ## Samba и ZFS
 
@@ -108,6 +133,11 @@ UTC это или локальное время. Для включения сн�
    на конкретной версии GVfs. Результаты на Windows и в Caja фиксируются
    отдельно.
 
-Источники: [shadow_copy2](https://www.samba.org/samba/docs/current/man-html/vfs_shadow_copy2.8.html),
+Источники: [SMB Previous Versions](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/c631e497-9a47-4537-9817-8af2a4834d03),
+[shadow_copy2](https://www.samba.org/samba/docs/current/man-html/vfs_shadow_copy2.8.html),
 [acl_xattr](https://www.samba.org/samba/docs/current/man-html/vfs_acl_xattr.8.html),
 [python-caja](https://github.com/mate-desktop/python-caja).
+
+## Скачать готовый пакет
+
+[Инструкция и RPM плагина Caja](https://github.com/rkislov/sambaadm/blob/main/docs/caja-plugin.md) · [Выпуск 0.1.1 и контрольные суммы](https://github.com/rkislov/sambaadm/releases/tag/caja-v0.1.1)

@@ -29,4 +29,5 @@
 {{if .Content.Helpers}}<ul>{{range .Content.Helpers}}<li><code>{{.}}</code></li>{{end}}</ul>{{else}}<p class="muted">Зарегистрированных узлов нет.</p>{{end}}
 <a class="btn" href="/settings/helpers">Подключить helper или продлить сертификат</a></section>
 </div>
-</main></body></html>{{end}}
+</main>{{template "footer" .}}
+</body></html>{{end}}

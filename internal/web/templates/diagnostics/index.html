@@ -13,7 +13,8 @@
 </form>
 <details class="diagnostics-help"><summary>{{if eq .Lang "ru"}}Что проверяется{{else}}What is checked{{end}}</summary><p>{{t .Lang "diagnostics.hint"}}</p></details></section>
 <section id="diagnostic-report" aria-live="polite">{{template "diagnostics/report" .}}</section>
-</main></body></html>
+</main>{{template "footer" .}}
+</body></html>
 {{end}}
 {{define "diagnostics/report"}}
 {{if not .Content}}{{if not .Error}}<div class="diagnostics-empty"><h2>{{if eq .Lang "ru"}}Проверки ещё не запускались{{else}}No checks run yet{{end}}</h2><p>{{if eq .Lang "ru"}}Нажмите «Запустить проверки». Здесь появится результат каждой проверки и рекомендации по найденным проблемам.{{else}}Run checks to see individual results and suggestions.{{end}}</p></div>{{end}}{{end}}

@@ -11,9 +11,7 @@
     {{if .Flash}}<div class="alert">{{.Flash}}</div>{{end}}
     {{block "content" .}}{{end}}
   </main>
-  <footer class="footer">
-    <span>sambaadm · Samba4 AD</span>
-  </footer>
+  {{template "footer" .}}
 </body>
 </html>
 {{end}}

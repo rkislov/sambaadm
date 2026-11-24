@@ -50,4 +50,5 @@ systemctl enable --now sambaadm-helper</pre>
 <p>Для SYSVOL создайте <code>/etc/sambaadm-helper/domain.password</code> с паролем служебной записи и правами <code>0600</code>. Затем перезапустите sambaadm на управляющем сервере.</p>
 <p class="muted">Повторная регистрация того же DNS-имени выпускает новый сертификат. Обновите файлы на узле и перезапустите helper.</p></section>
 </details>{{else}}<section class="setup-card"><h2>Регистрация ещё не включена</h2><p>Укажите <code>server.enrollment_dir</code> в конфигурации управляющего сервера и перезапустите sambaadm.</p></section>{{end}}
-</main></body></html>{{end}}
+</main>{{template "footer" .}}
+</body></html>{{end}}

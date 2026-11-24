@@ -51,7 +51,7 @@ jobs:
           cp docs/quick-install.md dist/sambaadm-quick-install.md
           cp docs/admin-guide/sambaadm-admin-guide.docx "dist/sambaadm-admin-guide-${VERSION#v}.docx"
           cp docs/user-guide/sambaadm-user-guide.docx "dist/sambaadm-user-guide-${VERSION#v}.docx"
-          tar -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs configs deploy
+          tar -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs configs deploy contrib/caja-shadow-copies
       - name: Verify static Linux binaries
         run: |
           for binary in dist/sambaadm-linux-* dist/sambaadm-helper-linux-*; do
@@ -105,7 +105,7 @@ jobs:
             sh packaging/alt/build-install-kit.sh "$version" "$arch" dist
           done
           cd dist
-          sha256sum sambaadm-* > SHA256SUMS
+          sha256sum sambaadm-* caja-smb-previous-versions-*.rpm > SHA256SUMS
           sha256sum -c SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:

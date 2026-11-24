@@ -1,3 +1,3 @@
 {{define "self.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/self.js?v=20261124-photo1" defer></script></head><body>{{template "nav" .}}<main class="container"><div id="self-profile" data-role="{{.Role}}"></div></main><footer class="footer">sambaadm</footer></body></html>
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/self.js?v=20261124-photo1" defer></script></head><body>{{template "nav" .}}<main class="container"><div id="self-profile" data-role="{{.Role}}"></div></main>{{template "footer" .}}</body></html>
 {{end}}

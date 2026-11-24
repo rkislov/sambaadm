@@ -50,6 +50,7 @@
     <a href="/audit" class="{{navClass .Active "/audit"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/></svg></span><span>{{t .Lang "nav.audit"}}</span></a>
     {{if canAdmin .Role}}<a href="/diagnostics" class="{{navClass .Active "/diagnostics"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3 16 5-5 4 4 9-11M15 4h6v6M3 21h18"/></svg></span><span>{{t .Lang "nav.diagnostics"}}</span></a>{{end}}
     <a href="/settings" class="{{navClass .Active "/settings"}}"><span class="nav-tile-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></svg></span><span>{{t .Lang "nav.settings"}}</span></a>
+    <a href="https://github.com/rkislov/sambaadm/blob/main/docs/caja-plugin.md" target="_blank" rel="noopener noreferrer"><span class="nav-tile-icon">▣</span><span>Плагин Caja</span></a>
   </nav></details>
   <div class="user">
     <span><a href="/me">{{.User}}</a> <small>({{.Role}})</small>{{if .SSOUser}}<small class="session-identity">Kerberos SSO · SYSVOL: служебная запись</small>{{end}}{{if .HelperSession}}<small class="session-identity">SYSVOL: текущая сессия</small>{{end}}{{if .SkipLDAPVerify}}<small class="session-identity">LDAP: проверка сертификата отключена</small>{{end}}</span>
@@ -60,4 +61,8 @@
   </div>
   {{end}}
 </header>
+{{end}}
+
+{{define "footer"}}
+<footer class="footer"><span>sambaadm · Samba4 AD</span> · <a href="https://github.com/rkislov/sambaadm/blob/main/docs/caja-plugin.md" target="_blank" rel="noopener noreferrer">Плагин Caja · Предыдущие версии SMB</a></footer>
 {{end}}

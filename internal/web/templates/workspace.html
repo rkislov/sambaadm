@@ -3,6 +3,6 @@
 <body>{{template "nav" .}}
 <main class="container workspace" id="workspace" data-module="{{.Content.Module}}" data-role="{{.Role}}" data-base-dn="{{.Content.BaseDN}}">
  <noscript><p>Для управления объектами включите JavaScript / Enable JavaScript to manage objects.</p></noscript>
-</main><footer class="footer">sambaadm · Samba4 AD</footer>
+</main>{{template "footer" .}}
 </body></html>
 {{end}}

@@ -1,5 +1,5 @@
 Name: caja-smb-previous-versions
-Version: 0.1.0
+Version: 0.1.1
 Release: alt1
 Summary: Previous versions of SMB files and directories in Caja
 License: Apache-2.0
@@ -37,5 +37,9 @@ install -Dpm644 %SOURCE2 %buildroot%_docdir/%name/LICENSE
 %_docdir/%name
 
 %changelog
+* Thu Nov 19 2026 SambaADM contributors <https://github.com/rkislov/sambaadm> 0.1.1-alt1
+- Detect SMB snapshot query failures for Windows VSS and Samba ZFS/LVM shares.
+- Document automatic protocol selection and server prerequisites.
+
 * Mon Nov 16 2026 SambaADM contributors <https://github.com/rkislov/sambaadm> 0.1.0-alt1
 - Package the SMB Previous Versions extension for Caja.

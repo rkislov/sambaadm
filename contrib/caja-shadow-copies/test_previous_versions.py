@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from sambaadm_previous_versions import SMBPath, list_versions, parse_versions
+from sambaadm_previous_versions import SMBPath, interpret_discovery, list_versions, parse_versions
 
 
 class PreviousVersionsTests(unittest.TestCase):
@@ -14,6 +14,41 @@ class PreviousVersionsTests(unittest.TestCase):
             "@GMT-2026.13.16-03.00.00\ncreate_time: invalid\n"
         )
         self.assertEqual(result, ["@GMT-2026.11.16-07.30.00", "@GMT-2026.11.16-05.30.00"])
+
+    def test_common_protocol_discovers_versions_without_backend_configuration(self):
+        # Windows VSS and Samba shadow_copy2 return the same @GMT namespace.
+        for backend in ("Windows VSS", "Samba ZFS", "Samba LVM"):
+            with self.subTest(backend=backend):
+                result = interpret_discovery(
+                    "create_time: current\n@GMT-2026.11.16-07.30.00\ncreate_time: old\n", "")
+                self.assertEqual(result.versions, ("@GMT-2026.11.16-07.30.00",))
+
+    def test_unsupported_snapshots_are_detected_in_either_stream(self):
+        for status in ("NOT_SUPPORTED", "NOT_IMPLEMENTED", "INVALID_DEVICE_REQUEST", "INVALID_LEVEL"):
+            for stream in ("stdout", "stderr"):
+                with self.subTest(status=status, stream=stream):
+                    output = dict(stdout="create_time: current\n", stderr="")
+                    output[stream] += f"NT_STATUS_{status} getting shadow copy data for \\file\n"
+                    with self.assertRaisesRegex(RuntimeError, "не предоставляет"):
+                        interpret_discovery(**output)
+
+    def test_denied_enumeration_is_not_an_empty_list(self):
+        with self.assertRaisesRegex(RuntimeError, "Нет прав"):
+            interpret_discovery("create_time: current\n",
+                                "NT_STATUS_ACCESS_DENIED getting shadow copy data for file")
+
+    def test_empty_output_does_not_claim_snapshot_support(self):
+        with self.assertRaisesRegex(RuntimeError, "Снимки могут отсутствовать"):
+            interpret_discovery("create_time: current\n", "")
+
+    def test_optional_metadata_and_missing_historical_paths_do_not_hide_versions(self):
+        result = interpret_discovery(
+            "NT_STATUS_NOT_SUPPORTED getting alt name for file\n"
+            "create_time: current\n@GMT-2026.11.16-07.30.00\ncreate_time: old\n"
+            "@GMT-2026.11.16-06.30.00\n",
+            "NT_STATUS_NOT_SUPPORTED getting streams for file\n"
+            "pathinfo(@GMT-2026.11.16-06.30.00\\file) failed: NT_STATUS_OBJECT_NAME_NOT_FOUND")
+        self.assertEqual(result.versions, ("@GMT-2026.11.16-07.30.00",))
 
     def test_selection_encodes_smb_path_and_uses_kerberos(self):
         target = SMBPath.parse("smb://fs.test/Public/Files/report%20draft.txt")

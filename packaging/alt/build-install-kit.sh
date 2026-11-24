@@ -13,5 +13,5 @@ mkdir "$kit"
 for pkg in sambaadm sambaadm-helper; do
   cp "$dist/$pkg-$version-alt1.$arch.rpm" "$kit/$pkg.rpm"
 done
-cp "$root/deploy/sambaadm-setup" "$root/deploy/sambaadm-renew-certificates" "$root/deploy/configure-server.sh" "$root/deploy/setup-alt.sh" "$root/docs/alt-install.md" "$root/docs/quick-install.md" "$root/docs/helper.md" "$root/docs/certificates.md" "$root/docs/session-credentials.md" "$kit/"
+cp "$root/deploy/sambaadm-setup" "$root/deploy/sambaadm-renew-certificates" "$root/deploy/configure-server.sh" "$root/deploy/setup-alt.sh" "$root/docs/alt-install.md" "$root/docs/quick-install.md" "$root/docs/caja-plugin.md" "$root/docs/helper.md" "$root/docs/certificates.md" "$root/docs/session-credentials.md" "$kit/"
 tar -czf "$dist/$name.tar.gz" -C "$tmp" "$name"

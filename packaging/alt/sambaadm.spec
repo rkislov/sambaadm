@@ -45,7 +45,7 @@ install -m644 %{payload_dir}/sambaadm.service %buildroot/lib/systemd/system/samb
 install -m640 %{payload_dir}/config.yaml %buildroot/etc/sambaadm/config.yaml
 install -m600 %{payload_dir}/env %buildroot/etc/sambaadm/env
 install -m644 %{payload_dir}/config.yaml %buildroot/usr/share/doc/sambaadm/config.example.yaml
-install -m644 %{payload_dir}/LICENSE %{payload_dir}/NOTICE %{payload_dir}/alt-install.md %{payload_dir}/quick-install.md %buildroot/usr/share/doc/sambaadm/
+install -m644 %{payload_dir}/LICENSE %{payload_dir}/NOTICE %{payload_dir}/alt-install.md %{payload_dir}/quick-install.md %{payload_dir}/caja-plugin.md %buildroot/usr/share/doc/sambaadm/
 
 %pre
 set -e

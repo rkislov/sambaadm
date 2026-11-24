@@ -79,7 +79,51 @@ def parse_versions(output):
     return sorted(versions, reverse=True)
 
 
-def list_versions(target):
+@dataclass(frozen=True)
+class VersionDiscovery:
+    versions: tuple
+    # SMB exposes timestamps, not the server's snapshot implementation.
+    protocol: str = "SMB Previous Versions (Windows VSS / Samba ZFS / LVM)"
+
+
+def interpret_discovery(stdout, stderr, returncode=0):
+    # allinfo may exit successfully even when the FSCTL failed. Inspect both
+    # streams, but do not mistake optional stream/alternate-name failures or
+    # missing historical files for a failed snapshot enumeration.
+    output = stdout + "\n" + stderr
+    failures = re.findall(r"(NT_STATUS_\w+) getting shadow copy data", output)
+    if failures:
+        status = failures[0]
+        if status in {"NT_STATUS_NOT_SUPPORTED", "NT_STATUS_NOT_IMPLEMENTED",
+                      "NT_STATUS_INVALID_DEVICE_REQUEST", "NT_STATUS_INVALID_LEVEL"}:
+            raise RuntimeError(
+                "Ресурс не предоставляет предыдущие версии по SMB. "
+                "На Windows включите теневые копии общего тома; на Samba "
+                "настройте публикацию снимков ZFS/LVM через shadow_copy2."
+            )
+        if status == "NT_STATUS_ACCESS_DENIED":
+            raise RuntimeError("Нет прав на перечисление предыдущих версий этого ресурса.")
+        raise RuntimeError(f"Не удалось запросить предыдущие версии по SMB ({status}).")
+    if returncode:
+        raise RuntimeError(
+            "SMB не вернул список снимков. Проверьте билет Kerberos "
+            "и подключение к серверу."
+        )
+    versions = parse_versions(stdout)
+    if not any(line.startswith("create_time:") for line in stdout.splitlines()):
+        raise RuntimeError("Не удалось прочитать объект через SMB. Проверьте доступ и билет Kerberos.")
+    if not versions:
+        # smbclient silently skips the FSCTL if opening the current object
+        # fails. An empty allinfo result cannot prove snapshot support.
+        raise RuntimeError(
+            "Доступных предыдущих версий не найдено. Снимки могут отсутствовать, "
+            "не содержать этот объект или быть недоступны. Проверьте права "
+            "и публикацию теневых копий на сервере."
+        )
+    return VersionDiscovery(tuple(versions))
+
+
+def discover_versions(target):
     client = shutil.which("smbclient")
     if not client:
         raise RuntimeError("Установите smbclient для запроса предыдущих версий.")
@@ -89,15 +133,12 @@ def list_versions(target):
                                 timeout=30, check=False)
     except subprocess.TimeoutExpired as error:
         raise RuntimeError("Сервер не ответил на запрос предыдущих версий.") from error
-    versions = parse_versions(result.stdout)
-    if result.returncode or re.search(r"NT_STATUS_\w+ getting shadow copy data", result.stderr):
-        raise RuntimeError(
-            "SMB не вернул список снимков. Проверьте билет Kerberos "
-            "и поддержку предыдущих версий на сервере."
-        )
-    if not versions and not any(line.startswith("create_time:") for line in result.stdout.splitlines()):
-        raise RuntimeError("Не удалось прочитать объект через SMB. Проверьте доступ и билет Kerberos.")
-    return versions
+    return interpret_discovery(result.stdout, result.stderr, result.returncode)
+
+
+def list_versions(target):
+    """Compatibility wrapper for callers that only need snapshot tokens."""
+    return list(discover_versions(target).versions)
 
 
 try:
@@ -157,14 +198,16 @@ if gi is not None:
                 if cancellation.is_cancelled():
                     return
                 try:
-                    versions = future.result()
+                    discovery = future.result()
+                    versions = discovery.versions
                 except (OSError, RuntimeError) as error:
                     status.set_text(str(error))
                     return
                 if not versions:
                     status.set_text("Для этого объекта предыдущих версий не найдено.")
                     return
-                status.set_text(f"Доступных снимков: {len(versions)}. Время указано по настройкам АРМ.")
+                status.set_text(f"Источник: {discovery.protocol}.\n"
+                                f"Доступных снимков: {len(versions)}. Время указано по настройкам АРМ.")
                 choices = Gtk.ComboBoxText()
                 for version in versions:
                     choices.append(version, snapshot_time(version).astimezone().strftime("%d.%m.%Y %H:%M:%S %Z"))
@@ -182,7 +225,7 @@ if gi is not None:
                     buttons.pack_start(copy_button, False, False, 0)
                 area.show_all()
 
-            future = EXECUTOR.submit(list_versions, target)
+            future = EXECUTOR.submit(discover_versions, target)
             future.add_done_callback(lambda result: GLib.idle_add(loaded, result))
             dialog.connect("destroy", lambda _widget: future.cancel())
 
