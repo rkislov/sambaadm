@@ -384,7 +384,7 @@ func (w *dnsConfigOutput) Write(p []byte) (int, error) {
 	return n, e
 }
 func runDNSCommand(ctx context.Context, name string, args ...string) (string, error) {
-	if name != "named-checkconf" || len(args) == 0 || args[0] != "-p" {
+	if name != "testparm" && (name != "named-checkconf" || len(args) == 0 || args[0] != "-p") {
 		return runTimeCommand(ctx, name, args...)
 	}
 	executable := ""
@@ -396,19 +396,27 @@ func runDNSCommand(ctx context.Context, name string, args ...string) (string, er
 		}
 	}
 	if executable == "" {
-		return "", fmt.Errorf("named-checkconf недоступен")
+		return "", fmt.Errorf("%s недоступен", name)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, executable, args...)
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
 	cmd.WaitDelay = time.Second
-	var output dnsConfigOutput
+	return dnsCommandOutput(cmd)
+}
+
+// Value-producing commands must never mix diagnostics into configuration data.
+func dnsCommandOutput(cmd *exec.Cmd) (string, error) {
+	var output, diagnostics dnsConfigOutput
 	cmd.Stdout = &output
-	cmd.Stderr = &output
-	e := cmd.Run()
-	if output.truncated {
-		return "", fmt.Errorf("развёрнутая конфигурация BIND превышает 1 МиБ")
+	cmd.Stderr = &diagnostics
+	err := cmd.Run()
+	if output.truncated || diagnostics.truncated {
+		return "", fmt.Errorf("вывод DNS-команды превышает 1 МиБ")
 	}
-	return output.String(), e
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(diagnostics.String()))
+	}
+	return strings.TrimSpace(output.String()), nil
 }

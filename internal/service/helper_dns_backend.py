@@ -10,10 +10,10 @@ def save(message=None):
     state['log'] = state['log'][-400:]
     tmp = job/'status.tmp'
     tmp.write_text(json.dumps(state,ensure_ascii=False)); tmp.chmod(0o600); tmp.replace(job/'status.json')
-def run(args, timeout=60, check=True):
+def run(args, timeout=60, check=True, value_only=False):
     save('> '+' '.join(args))
-    result=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,errors='replace',timeout=timeout,env={**os.environ,'LC_ALL':'C','PATH':'/usr/sbin:/usr/bin:/sbin:/bin'})
-    for line in result.stdout.splitlines()[-60:]: save(line[:500])
+    result=subprocess.run(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE if value_only else subprocess.STDOUT,text=True,errors='replace',timeout=timeout,env={**os.environ,'LC_ALL':'C','PATH':'/usr/sbin:/usr/bin:/sbin:/bin'})
+    for line in (result.stdout+('\n'+result.stderr if value_only else '')).splitlines()[-60:]: save(line[:500])
     if check and result.returncode: raise RuntimeError('Ошибка команды: '+args[0])
     return result.stdout.strip()
 def atomic(path, data):
@@ -101,7 +101,7 @@ try:
     run(['systemctl','restart','samba.service'])
     if plan['target']=='BIND9_DLZ':run(['systemctl','enable','--now','bind.service'])
     else:run(['systemctl','disable','bind.service'])
-    realm=run(['testparm','-s','--parameter-name=realm',str(smb)]).splitlines()[-1].lower()
+    realm=run(['testparm','-s','--parameter-name=realm',str(smb)],value_only=True).lower()
     checked=False
     for _ in range(20):
         try:

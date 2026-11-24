@@ -110,11 +110,11 @@ func planDNSBackend(ctx context.Context, cfg *config.Config, in DNSBackendInput)
 	if e != nil || !strings.Contains(strings.ToLower(string(osRelease)), "altlinux") {
 		return nil, fmt.Errorf("мастер переключения DNS пока поддерживает ALT Linux")
 	}
-	role, e := runTimeCommand(ctx, "testparm", "-s", "--parameter-name=server role")
+	role, e := runDNSCommand(ctx, "testparm", "-s", "--parameter-name=server role")
 	if e != nil || !strings.Contains(strings.ToLower(role), "active directory domain controller") {
 		return nil, fmt.Errorf("узел должен быть контроллером Samba AD")
 	}
-	services, e := runTimeCommand(ctx, "testparm", "-s", "--parameter-name=server services")
+	services, e := runDNSCommand(ctx, "testparm", "-s", "--parameter-name=server services")
 	if e != nil {
 		return nil, e
 	}
