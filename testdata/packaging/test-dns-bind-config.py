@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 import pathlib,sys
 sys.path.insert(0,str(pathlib.Path(__file__).resolve().parents[2]/'internal/service'))
-from helper_dns_bind_config import patch_bind_options,normalize_forwarders
+from helper_dns_bind_config import patch_bind_options,normalize_forwarders,ad_validation_exceptions
 before='''// options { fake; } in a comment
 options {
  directory "/etc/bind/zone";
@@ -29,3 +29,9 @@ for invalid in ['options { listen-on { any; };','options {}; options {};','zone 
 assert normalize_forwarders(['10.10.1.14'])==['10.10.1.14']
 assert normalize_forwarders('10.10.1.14 127.0.0.1')==['10.10.1.14']
 print('PASS ALT BIND patch: safe braces/comments/strings, preserve unrelated settings, reject ambiguous config')
+
+assert ad_validation_exceptions('options {dnssec-validation auto; validate-except {\"other.internal\";};};','IPR.LOC')=='{ \"ipr.loc\"; \"other.internal\"; }'
+for invalid in ['.','loc','foo;bad.loc']:
+ try:ad_validation_exceptions('options {};',invalid)
+ except ValueError:pass
+ else:raise AssertionError('broad/invalid DNSSEC exception accepted')

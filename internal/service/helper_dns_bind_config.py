@@ -6,28 +6,46 @@ import pathlib
 import re
 import sys
 
-def patch_bind_options(text, values, remove_resolvconf=False):
+def bind_options_statements(text):
     pattern=r'//[^\n]*|\#[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\])*"|[A-Za-z0-9_.:/-]+|[{};]|[^\s]'
     tokens=[m for m in re.finditer(pattern,text,re.S) if not m.group().startswith(('//','#','/*'))]
     starts=[i for i,t in enumerate(tokens[:-1]) if t.group()=='options' and tokens[i+1].group()=='{']
     if len(starts)!=1:raise ValueError('BIND: требуется один явный блок options')
-    first=starts[0]+2;depth=0;statement=first;remove=[];end=None
+    first=starts[0]+2;depth=0;statement=first;items=[];end=None
     for i in range(first,len(tokens)):
         word=tokens[i].group()
-        if word=='{' :depth+=1
+        if word=='{':depth+=1
         elif word=='}':
             if depth==0:end=tokens[i].start();break
             depth-=1
         elif word==';' and depth==0:
-            key=tokens[statement].group()
-            included=key=='include' and remove_resolvconf and any('resolvconf-options.conf' in t.group() for t in tokens[statement:i])
-            if key in values or included:remove.append((tokens[statement].start(),tokens[i].end()))
+            items.append((tokens[statement].group(),tokens[statement].start(),tokens[i].end(),[t.group() for t in tokens[statement+1:i]]))
             statement=i+1
     if end is None:raise ValueError('BIND: блок options не закрыт')
+    return end,items
+
+def patch_bind_options(text,values,remove_resolvconf=False):
+    end,items=bind_options_statements(text)
+    remove=[(a,b) for key,a,b,tokens in items if key in values or key=='include' and remove_resolvconf and any('resolvconf-options.conf' in t for t in tokens)]
     proposed='\n'+''.join('    '+key+' '+value+';\n' for key,value in values.items())
     out=text[:end]+proposed+text[end:]
     for a,b in reversed(remove):out=out[:a]+out[b:]
     return out
+
+def ad_validation_exceptions(text,domain):
+    domain=domain.strip().lower().rstrip('.')
+    if len(domain)>253 or len(domain.split('.'))<2 or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',label) for label in domain.split('.')):
+        raise ValueError('Некорректный DNS-домен AD для локального исключения DNSSEC')
+    _,items=bind_options_statements(text);existing=[]
+    for key,a,b,tokens in items:
+        if key!='validate-except':continue
+        for token in tokens:
+            if token in ['{','}',';']:continue
+            value=token[1:-1] if token.startswith('"') else token
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+',value):raise ValueError('Нестандартное существующее исключение DNSSEC требует проверки')
+            existing.append(value.lower().rstrip('.') or '.')
+    names=sorted(set(existing+[domain]))
+    return '{ '+''.join('"'+name+'"; ' for name in names)+'}'
 
 def ad_network_settings(smb):
     for directory in ['/usr/lib64/samba-dc','/usr/lib/samba-dc']:
@@ -67,6 +85,8 @@ def configure_alt_bind(smb,fresh,run,atomic,remember):
     else:text=text.rstrip()+'\n'+line+'\n'
     atomic(sysconfig,text.encode())
     values={'tkey-gssapi-keytab':'"/var/lib/samba/bind-dns/dns.keytab"','minimal-responses':'yes'}
+    domain=run(['testparm','-s','--parameter-name=realm',str(smb)],value_only=True)
+    values['validate-except']=ad_validation_exceptions(options.read_text(),domain)
     if fresh:
         networks,forwarders=ad_network_settings(smb)
         allowed='{ localhost; localnets; '+''.join(n+'; ' for n in networks)+'}'
