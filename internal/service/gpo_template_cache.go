@@ -101,7 +101,11 @@ func (s *GPOService) templateCacheKey(share *sysvolShare, domain string) (string
 	}
 	nodes := ""
 	if s.helpers != nil {
-		nodes = fmt.Sprintf("%v/%s", s.helpers.Config.Nodes, s.helpers.Config.HostNode)
+		cfg, e := s.helpers.Configuration()
+		if e != nil {
+			return "", e
+		}
+		nodes = fmt.Sprintf("%v/%s", cfg.Nodes, cfg.HostNode)
 	}
 	return fmt.Sprintf("%x", sha256.Sum256([]byte("category-tree-v2\x00"+domain+"\x00"+share.node+"\x00"+s.gpoCfg.ADMXPath+"\x00"+nodes+"\x00"+identity))), nil
 }

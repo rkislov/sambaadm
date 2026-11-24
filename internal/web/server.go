@@ -40,23 +40,25 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
-	kerberos          http.Handler
-	backupMu          sync.Mutex
-	certMu            sync.Mutex
-	certRolloutMu     sync.Mutex
-	certRolloutActive map[string]bool
-	enrollMu          sync.Mutex
-	surveyMu          sync.Mutex
-	cfg               *config.Config
-	svcs              *service.Services
-	sessions          *auth.Store
-	rbac              *auth.RBAC
-	ldap              *ldapproto.Client
-	audit             *audit.Logger
-	tmpl              *template.Template
-	router            chi.Router
-	monitor           service.HostMonitor // Local host only; helpers may refer to a different server.
-	diagnostics       *service.DiagnosticService
+	kerberos            http.Handler
+	backupMu            sync.Mutex
+	certMu              sync.Mutex
+	certRolloutMu       sync.Mutex
+	certRolloutActive   map[string]bool
+	enrollMu            sync.Mutex
+	helperInstallMu     sync.Mutex
+	helperInstallActive bool
+	surveyMu            sync.Mutex
+	cfg                 *config.Config
+	svcs                *service.Services
+	sessions            *auth.Store
+	rbac                *auth.RBAC
+	ldap                *ldapproto.Client
+	audit               *audit.Logger
+	tmpl                *template.Template
+	router              chi.Router
+	monitor             service.HostMonitor // Local host only; helpers may refer to a different server.
+	diagnostics         *service.DiagnosticService
 }
 
 // New constructs the web server and router.
@@ -245,6 +247,13 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/templates/import", s.handleAPITemplateImport)
 		r.Get("/directory/tree", s.handleAPIDirectoryTree)
 		r.Get("/groups/{name}", s.handleAPIGroupGet)
+		r.Put("/groups/{name}", s.handleGroupUpdate)
+		r.Get("/groups/{name}/details", s.handleGroupDetails)
+		r.Post("/groups/{name}/membership", s.handleGroupMembershipChange)
+		r.Delete("/groups/{name}/membership", s.handleGroupMembershipChange)
+		r.Get("/groups/{name}/access", s.handleGroupAccess)
+		r.Post("/groups/{name}/access", s.handleGroupAccessChange)
+		r.Put("/groups/{name}/access", s.handleGroupAccessChange)
 		r.Get("/groups/{name}/members", s.handleAPIGroupMembers)
 		r.Post("/groups/{name}/members", s.handleAPIGroupMemberAdd)
 		r.Delete("/groups/{name}/members", s.handleAPIGroupMemberRemove)
@@ -394,6 +403,9 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
 		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
 
+		r.Get("/helper-install", s.handleHelperInstall)
+		r.Post("/helper-install", s.handleHelperInstall)
+		r.Post("/helper-install/package", s.handleHelperPackage)
 		r.Get("/share-servers", s.handleShareNodes)
 		r.Get("/shares", s.handleAPIShares)
 		r.Post("/shares", s.handleAPIShareCreate)

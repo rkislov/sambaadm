@@ -59,6 +59,7 @@ RPM_ARCH ?= amd64
 RPM_IMAGE ?= sambaadm-rpm-builder:p10
 rpm-alt:
 	@mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(RPM_ARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-helper-linux-$(RPM_ARCH) ./cmd/sambaadm-helper
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(RPM_ARCH) go build -trimpath -ldflags "$(LDFLAGS)" -o dist/sambaadm-linux-$(RPM_ARCH) ./cmd/sambaadm
 	docker build --platform linux/$(RPM_ARCH) -t $(RPM_IMAGE)-$(RPM_ARCH) -f packaging/alt/Dockerfile .
 	docker run --rm --platform linux/$(RPM_ARCH) -v "$(CURDIR):/src" $(RPM_IMAGE)-$(RPM_ARCH) bash packaging/alt/build-rpm.sh $(VERSION) /src/dist/sambaadm-linux-$(RPM_ARCH) /src/dist

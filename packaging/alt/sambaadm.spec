@@ -34,6 +34,8 @@ mkdir -p %buildroot/usr/libexec %buildroot/usr/bin %buildroot/usr/sbin %buildroo
 mkdir -p %buildroot/etc/sambaadm %buildroot/usr/share/doc/sambaadm
 mkdir -p %buildroot/var/lib/sambaadm %buildroot/var/log/sambaadm
 mkdir -p %buildroot/var/lib/sambaadm-packages %buildroot/var/cache/sambaadm-packages
+mkdir -p %buildroot/usr/share/sambaadm/helper-packages
+install -m644 %{payload_dir}/helper.rpm %buildroot/usr/share/sambaadm/helper-packages/sambaadm-helper-%{version}-%{release}.%{_arch}.rpm
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
 install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
 install -m755 %{payload_dir}/sambaadm-setup %buildroot/usr/sbin/sambaadm-setup
@@ -72,6 +74,8 @@ fi
 %files
 %defattr(-,root,root)
 /usr/bin/sambaadm
+%dir /usr/share/sambaadm
+/usr/share/sambaadm/helper-packages
 /usr/sbin/sambaadm-package
 /usr/sbin/sambaadm-setup
 /usr/sbin/sambaadm-renew-certificates

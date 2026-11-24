@@ -9,9 +9,14 @@ arch=$(uname -m)
 case $arch in x86_64|aarch64) ;; *) echo "Unsupported architecture $arch" >&2; exit 2;; esac
 file "$binary" | grep -q 'statically linked' || { echo 'Expected a static Linux ELF binary.' >&2; exit 1; }
 case $arch in x86_64) file "$binary" | grep -q 'x86-64';; aarch64) file "$binary" | grep -q 'ARM aarch64';; esac
+case $arch in x86_64) helper_arch=amd64;; aarch64) helper_arch=arm64;; esac
+helper_binary="$repo/dist/sambaadm-helper-linux-$helper_arch"
+[[ -s $helper_binary ]] || { echo 'Build the matching helper binary with make release or make rpm-alt first.' >&2; exit 1; }
+bash "$repo/packaging/alt/build-helper-rpm.sh" "$version" "$helper_binary" "$out"
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 mkdir -p "$work"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS,payload} "$out"
 cp "$binary" "$work/payload/sambaadm"
+cp "$out/sambaadm-helper-$version-alt1.$arch.rpm" "$work/payload/helper.rpm"
 cp "$repo/packaging/alt/"{sambaadm.service,config.yaml,env} "$work/payload/"
 cp "$repo/deploy/sambaadm-prepare-logs" "$work/payload/"
 cp "$repo/deploy/sambaadm-setup" "$repo/deploy/sambaadm-renew-certificates" "$work/payload/"

@@ -32,7 +32,11 @@ func (s *Server) timePageNodes() []string {
 	var nodes []string
 	c := s.timeClient()
 	if c.Helpers != nil {
-		for _, n := range c.Helpers.Config.Nodes {
+		cfg, e := c.Helpers.Configuration()
+		if e != nil {
+			return nil
+		}
+		for _, n := range cfg.Nodes {
 			nodes = append(nodes, n.Name)
 		}
 	}

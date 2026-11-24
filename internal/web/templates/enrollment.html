@@ -1,9 +1,21 @@
 {{define "enrollment.html"}}
-<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/certificates.js" defer></script></head>
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<script src="/static/js/certificates.js" defer></script><script src="/static/js/helper-install.js?v=20261124-install1" defer></script></head>
 <body>{{template "nav" .}}<main class="container setup-page">
 <a href="/settings/certificates">← Сертификаты и подключения</a>
 <h1>Подключение helper</h1><p class="muted">Подготовьте узел, зарегистрируйте его и установите комплект подключения.</p>
 {{if .Content}}
+<section class="setup-card helper-installer" data-helper-install>
+<h2>Установить helper на контроллеры</h2>
+<p class="muted">Выберите узлы, проверьте ключи SSH и введите учётные данные. Установка выполняется последовательно; для каждого узла сохраняется журнал и проверяется подписанный запрос по HTTPS. Пароли используются только во время задачи и не сохраняются.</p>
+<p class="workspace-message" data-install-notice role="status"></p>
+<form data-install-plan><div class="helper-install-heading"><h3>Контроллеры домена</h3><button type="button" data-install-select-all>Выбрать все / снять выбор</button></div><div class="helper-install-controllers" data-install-controllers></div><div class="helper-install-toolbar"><label>Порт SSH<input name="port" type="number" min="1" max="65535" value="22" required></label><button type="submit" class="btn-primary">Проверить SSH</button></div></form>
+<section data-install-keys></section>
+<form method="post" action="/api/v1/helper-install" data-install-credentials hidden autocomplete="off"><div class="setup-fields"><label>Логин SSH<input name="user" value="user" required maxlength="128" autocomplete="off"></label><label>Пароль SSH<input name="password" type="password" required maxlength="1024" autocomplete="new-password"></label><label>Пароль для su -<input name="rootPassword" type="password" maxlength="1024" autocomplete="new-password"></label></div><p class="muted">Учётные данные применяются ко всем выбранным узлам. Сверьте SHA-256 ключей SSH через доверенную консоль контроллеров. После установки порт HTTPS helper — 8444.</p><label class="helper-install-choice"><input name="confirm" type="checkbox" required>Подтверждаю ключи SSH, установку или обновление helper и перезапуск его службы на выбранных узлах.</label><details class="helper-install-advanced"><summary>Перепривязка существующего helper</summary><label class="helper-install-choice"><input name="replace" type="checkbox">Заменить существующую регистрацию и ключи доверия этой панелью. Прежняя конфигурация будет сохранена на узле; связь с прежней панелью может прекратиться.</label></details><button type="submit" class="btn-primary">Установить и привязать</button></form>
+<p class="muted" data-install-packages></p><details class="helper-install-advanced"><summary>Пакет для другой архитектуры</summary><form method="post" action="/api/v1/helper-install/package" data-install-upload enctype="multipart/form-data"><label>RPM sambaadm-helper той же версии, что панель<input name="package" type="file" accept=".rpm" required></label><button type="submit">Добавить пакет</button></form></details>
+<h3>Журнал установки и привязки</h3><div data-install-jobs></div>
+</section>
+
+<details class="helper-install-manual"><summary>Ручная установка и регистрация через ZIP</summary>
 <details class="setup-card"><summary>Существующий ключ: подготовка CSR на узле</summary><section aria-labelledby="prepare-title"><h2 id="prepare-title"><span class="setup-number">1</span> Подготовьте управляемый узел</h2>
 <p>Выполните от root на сервере, где установлен helper. Закрытый ключ останется на этом узле.</p>
 <pre id="helper-command" class="setup-command" tabindex="0">install -d -m 0700 /etc/sambaadm-helper
@@ -37,5 +49,5 @@ fi
 systemctl enable --now sambaadm-helper</pre>
 <p>Для SYSVOL создайте <code>/etc/sambaadm-helper/domain.password</code> с паролем служебной записи и правами <code>0600</code>. Затем перезапустите sambaadm на управляющем сервере.</p>
 <p class="muted">Повторная регистрация того же DNS-имени выпускает новый сертификат. Обновите файлы на узле и перезапустите helper.</p></section>
-{{else}}<section class="setup-card"><h2>Регистрация ещё не включена</h2><p>Укажите <code>server.enrollment_dir</code> в конфигурации управляющего сервера и перезапустите sambaadm.</p></section>{{end}}
+</details>{{else}}<section class="setup-card"><h2>Регистрация ещё не включена</h2><p>Укажите <code>server.enrollment_dir</code> в конфигурации управляющего сервера и перезапустите sambaadm.</p></section>{{end}}
 </main></body></html>{{end}}

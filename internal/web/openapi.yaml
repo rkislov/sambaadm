@@ -200,6 +200,12 @@
                   "schema":
                     "type": "string"
     "/groups/{name}":
+        "put":
+            "summary": "Сохранить описание, тип и область группы"
+            "description": "Только admin, CSRF. Обязательны revision, scope, category, confirm:true. Встроенные группы не меняют тип и область. Глобальная ↔ локальная область изменяется через универсальную; ограничения состава проверяет DC."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "required": ["revision", "scope", "category", "confirm"], "properties": {"revision": {"type": "string", "pattern": "^[0-9]+$"}, "description": {"type": "string", "maxLength": 1024}, "scope": {"type": "string", "enum": ["global", "domain-local", "universal"]}, "category": {"type": "string", "enum": ["security", "distribution"]}, "confirm": {"type": "boolean", "enum": [true]}}}}}}
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
         "get":
             "summary": "Group Get"
             "responses":
@@ -3780,6 +3786,54 @@
             "summary": "Серверы общих папок"
             "description": "Зарегистрированные helper и сервер по умолчанию. Запросы /shares и /acl принимают query-параметр node. Выбор действует на текущий запрос; неизвестный или недоступный сервер не подменяется другим узлом."
             "responses": {"200": {"description": "Объект nodes: список имён, default: имя сервера по умолчанию"}, "401": {"description": "Требуется вход"}}
+    "/groups/{name}/details":
+        "get":
+            "summary": "Карточка группы"
+            "description": "Тип, область, прямые/вложенные/основные участники и родительские группы текущего домена. Членство не является эффективным доступом."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+    "/groups/{name}/membership":
+        "post":
+            "summary": "Изменить прямое членство"
+            "description": "Только admin и CSRF. Обязательны revision, memberDN, confirm:true. Проверяются конфликт версии и цикл вложения. DELETE не меняет primaryGroupID."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+        "delete":
+            "summary": "Изменить прямое членство"
+            "description": "Только admin и CSRF. Обязательны revision, memberDN, confirm:true. Проверяются конфликт версии и цикл вложения. DELETE не меняет primaryGroupID."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+    "/groups/{name}/access":
+        "get":
+            "summary": "Права и делегирование группы"
+            "description": "GET читает DACL; POST формирует предпросмотр по revision, principal и profile=read|manage-members; PUT требует тот же запрос, preview и confirm:true. Остальные ACE сохраняются; WRITE_DAC/WRITE_OWNER не выдаются."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+        "post":
+            "summary": "Права и делегирование группы"
+            "description": "GET читает DACL; POST формирует предпросмотр по revision, principal и profile=read|manage-members; PUT требует тот же запрос, preview и confirm:true. Остальные ACE сохраняются; WRITE_DAC/WRITE_OWNER не выдаются."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+        "put":
+            "summary": "Права и делегирование группы"
+            "description": "GET читает DACL; POST формирует предпросмотр по revision, principal и profile=read|manage-members; PUT требует тот же запрос, preview и confirm:true. Остальные ACE сохраняются; WRITE_DAC/WRITE_OWNER не выдаются."
+            "parameters": [{"in": "path", "name": "name", "required": true, "schema": {"type": "string"}}]
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+    "/helper-install":
+        "get":
+            "summary": "Установка helper на выбранные контроллеры"
+            "description": "Только admin. GET возвращает пакеты и собственные задания. POST требует CSRF: action=probe, nodes (1–16 уникальных DNS-имён DC), port (по умолчанию 22); action=start, id плана, user, password, rootPassword, confirm:true, replace (по умолчанию false). Подтверждение принимает полученные ключи SSH. Срок плана 15 минут. Пароли не сохраняются и не возвращаются; после прерывания требуется новый план. Приём задания возвращает 202, результат проверяйте по status и nodes[].phase."
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+        "post":
+            "summary": "Установка helper на выбранные контроллеры"
+            "description": "Только admin. GET возвращает пакеты и собственные задания. POST требует CSRF: action=probe, nodes (1–16 уникальных DNS-имён DC), port (по умолчанию 22); action=start, id плана, user, password, rootPassword, confirm:true, replace (по умолчанию false). Подтверждение принимает полученные ключи SSH. Срок плана 15 минут. Пароли не сохраняются и не возвращаются; после прерывания требуется новый план. Приём задания возвращает 202, результат проверяйте по status и nodes[].phase."
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+            "requestBody": {"required": true, "content": {"application/json": {"schema": {"type": "object", "properties": {"password": {"type": "string", "format": "password", "writeOnly": true, "maxLength": 1024}, "rootPassword": {"type": "string", "format": "password", "writeOnly": true, "maxLength": 1024}}}}}}
+    "/helper-install/package":
+        "post":
+            "summary": "Добавить RPM helper другой архитектуры"
+            "description": "Только admin, CSRF. multipart/form-data, поле package, до 64 МиБ. Принимается sambaadm-helper той же версии, что панель, release alt1, архитектура x86_64/aarch64."
+            "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
 "components":
     "securitySchemes":
         "cookieAuth":

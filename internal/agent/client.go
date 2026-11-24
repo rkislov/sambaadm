@@ -35,27 +35,38 @@ type Config struct {
 }
 type Client struct {
 	Config      Config
+	LoadConfig  func() (Config, error)
+	keyPath     string
 	mu          sync.Mutex
 	key         ed25519.PrivateKey
 	httpClients map[string]*http.Client
 }
 
-func (c *Client) signingKey() (ed25519.PrivateKey, error) {
+func (c *Client) Configuration() (Config, error) {
+	if c.LoadConfig != nil {
+		return c.LoadConfig()
+	}
+	return c.Config, nil
+}
+
+func (c *Client) signingKey(path string) (ed25519.PrivateKey, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.key == nil {
-		key, e := LoadPrivate(c.Config.PrivateKey)
+	if c.key == nil || c.keyPath != path {
+		key, e := LoadPrivate(path)
 		if e != nil {
 			return nil, e
 		}
 		c.key = key
+		c.keyPath = path
 	}
 	return c.key, nil
 }
 func (c *Client) httpClient(node *Node) (*http.Client, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if client := c.httpClients[node.Name]; client != nil {
+	cacheKey := node.Name + "|" + node.Endpoint + "|" + node.CACert
+	if client := c.httpClients[cacheKey]; client != nil {
 		return client, nil
 	}
 	tc := &tls.Config{MinVersion: tls.VersionTLS13}
@@ -77,12 +88,19 @@ func (c *Client) httpClient(node *Node) (*http.Client, error) {
 	if c.httpClients == nil {
 		c.httpClients = map[string]*http.Client{}
 	}
-	c.httpClients[node.Name] = client
+	c.httpClients[cacheKey] = client
 	return client, nil
 }
 
 func (c *Client) Has(name string) bool {
-	for _, n := range c.Config.Nodes {
+	cfg, e := c.Configuration()
+	if e != nil {
+		return false
+	}
+	if name == "" {
+		name = cfg.HostNode
+	}
+	for _, n := range cfg.Nodes {
 		if strings.EqualFold(n.Name, name) {
 			return true
 		}
@@ -90,17 +108,24 @@ func (c *Client) Has(name string) bool {
 	return false
 }
 func (c *Client) Call(ctx context.Context, name, method string, in, out any) error {
+	cfg, e := c.Configuration()
+	if e != nil {
+		return e
+	}
+	if name == "" {
+		name = cfg.HostNode
+	}
 	var node *Node
-	for i := range c.Config.Nodes {
-		if strings.EqualFold(c.Config.Nodes[i].Name, name) {
-			node = &c.Config.Nodes[i]
+	for i := range cfg.Nodes {
+		if strings.EqualFold(cfg.Nodes[i].Name, name) {
+			node = &cfg.Nodes[i]
 			break
 		}
 	}
 	if node == nil {
 		return fmt.Errorf("no sambaadm-helper configured for node %q", name)
 	}
-	key, e := c.signingKey()
+	key, e := c.signingKey(cfg.PrivateKey)
 	if e != nil {
 		return fmt.Errorf("load sambaadm-helper signing key: %w", e)
 	}

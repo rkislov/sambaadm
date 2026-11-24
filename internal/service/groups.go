@@ -12,25 +12,39 @@ import (
 	ldapproto "sambaadm/internal/ldap"
 )
 
-var ErrGroupMemberInput = errors.New("invalid group member")
+var ErrGroupMemberInput = errors.New("некорректный участник группы")
 
 func (s *GroupService) validateMember(ctx context.Context, groupDN, memberDN string) error {
 	dn, err := ldap.ParseDN(memberDN)
 	if err != nil || len(dn.RDNs) == 0 {
-		return fmt.Errorf("%w: a user, group or computer DN is required", ErrGroupMemberInput)
+		return fmt.Errorf("%w: требуется DN пользователя, группы или компьютера", ErrGroupMemberInput)
 	}
 	group, err := ldap.ParseDN(groupDN)
 	if err != nil {
 		return err
 	}
 	if group.EqualFold(dn) {
-		return fmt.Errorf("%w: a group cannot be its own member", ErrGroupMemberInput)
+		return fmt.Errorf("%w: группа не может входить в саму себя", ErrGroupMemberInput)
 	}
-	_, err = s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: memberDN, Scope: ldapproto.ScopeBase(), Filter: "(|(objectClass=user)(objectClass=group))", Attributes: []string{"objectClass"}})
+	entry, err := s.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: memberDN, Scope: ldapproto.ScopeBase(), Filter: "(|(objectClass=user)(objectClass=group))", Attributes: []string{"objectClass"}})
 	if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
-		return fmt.Errorf("%w: select an existing user, group or computer; OU and containers cannot be members", ErrGroupMemberInput)
+		return fmt.Errorf("%w: выберите существующего пользователя, группу или компьютер; OU и контейнеры не могут быть участниками", ErrGroupMemberInput)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	for _, class := range entry.GetAttributeValues("objectClass") {
+		if strings.EqualFold(class, "group") {
+			cycle, e := s.ldap.Search(ctx, ldapproto.SearchOptions{BaseDN: memberDN, Scope: ldapproto.ScopeBase(), Filter: "(&(objectClass=group)(member:" + groupChain + ":=" + ldap.EscapeFilter(groupDN) + "))", Attributes: []string{"1.1"}, MaxEntries: 1})
+			if e != nil {
+				return e
+			}
+			if len(cycle) > 0 {
+				return fmt.Errorf("%w: вложение создаёт цикл членства", ErrGroupMemberInput)
+			}
+		}
+	}
+	return nil
 }
 
 // Group is a security/distribution group.
@@ -39,6 +53,11 @@ type Group struct {
 	SAMAccountName string   `json:"samAccountName"`
 	Description    string   `json:"description,omitempty"`
 	Members        []string `json:"members,omitempty"`
+	Revision       string   `json:"revision"`
+	Scope          string   `json:"scope"`
+	Category       string   `json:"category"`
+	GroupType      int64    `json:"groupType"`
+	Builtin        bool     `json:"builtin"`
 }
 
 // CreateGroupInput holds parameters for creating a group.
@@ -46,6 +65,8 @@ type CreateGroupInput struct {
 	Name        string `json:"name"`
 	OU          string `json:"ou,omitempty"`
 	Description string `json:"description,omitempty"`
+	Scope       string `json:"scope,omitempty"`
+	Category    string `json:"category,omitempty"`
 }
 
 // GroupService manages AD groups.
@@ -91,13 +112,17 @@ func (s *GroupService) Create(ctx context.Context, in CreateGroupInput, actor, i
 	if name == "" {
 		return nil, fmt.Errorf("name is required")
 	}
+	gt, err := encodeGroupType(in.Scope, in.Category)
+	if err != nil {
+		return nil, err
+	}
 	parent := DefaultUsersOU(in.OU, s.ldap.BaseDN())
 	dn := BuildDN("CN", name, parent)
 	attrs := []ldap.Attribute{
 		{Type: ldapproto.AttrObjectClass, Vals: []string{"top", "group"}},
 		{Type: ldapproto.AttrCN, Vals: []string{name}},
 		{Type: ldapproto.AttrSAMAccountName, Vals: []string{name}},
-		{Type: ldapproto.AttrGroupType, Vals: []string{ldapproto.GroupTypeGlobalSecurity}},
+		{Type: ldapproto.AttrGroupType, Vals: []string{gt}},
 	}
 	if in.Description != "" {
 		attrs = append(attrs, ldap.Attribute{Type: ldapproto.AttrDescription, Vals: []string{in.Description}})
@@ -183,10 +208,13 @@ func (s *GroupService) find(ctx context.Context, name string) (*ldap.Entry, erro
 }
 
 func entryToGroup(e *ldap.Entry) Group {
-	return Group{
+	g := Group{
 		DN:             e.DN,
 		SAMAccountName: e.GetAttributeValue(ldapproto.AttrSAMAccountName),
 		Description:    e.GetAttributeValue(ldapproto.AttrDescription),
 		Members:        e.GetAttributeValues(ldapproto.AttrMember),
+		Revision:       e.GetAttributeValue("uSNChanged"),
 	}
+	g.GroupType, g.Scope, g.Category, g.Builtin = decodeGroupType(e.GetAttributeValue("groupType"))
+	return g
 }

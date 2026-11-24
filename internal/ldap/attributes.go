@@ -49,7 +49,7 @@ var (
 	}, UserProfileAttrs...)
 	GroupAttrs = []string{
 		AttrCN, AttrSAMAccountName, AttrDescription, AttrMember,
-		AttrObjectGUID, AttrObjectSID, AttrWhenCreated,
+		AttrObjectGUID, AttrObjectSID, AttrWhenCreated, AttrGroupType, AttrMemberOf, "uSNChanged",
 	}
 	ComputerAttrs = []string{
 		AttrCN, AttrSAMAccountName, AttrDNSHostName, AttrOperatingSystem,

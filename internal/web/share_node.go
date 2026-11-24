@@ -18,7 +18,12 @@ func (s *Server) shareNodeContext(next http.Handler) http.Handler {
 		if node != "" {
 			found := ""
 			if s.svcs != nil && s.svcs.Helpers != nil {
-				for _, n := range s.svcs.Helpers.Config.Nodes {
+				cfg, e := s.svcs.Helpers.Configuration()
+				if e != nil {
+					writeJSON(w, 502, map[string]string{"error": "Не удалось прочитать реестр helper"})
+					return
+				}
+				for _, n := range cfg.Nodes {
 					if strings.EqualFold(n.Name, node) {
 						found = n.Name
 						break
@@ -38,8 +43,13 @@ func (s *Server) handleShareNodes(w http.ResponseWriter, r *http.Request) {
 	nodes := []string{}
 	defaultNode := ""
 	if s.svcs != nil && s.svcs.Helpers != nil {
-		defaultNode = s.svcs.Helpers.Config.HostNode
-		for _, n := range s.svcs.Helpers.Config.Nodes {
+		cfg, e := s.svcs.Helpers.Configuration()
+		if e != nil {
+			writeJSON(w, 502, map[string]string{"error": "Не удалось прочитать реестр helper"})
+			return
+		}
+		defaultNode = cfg.HostNode
+		for _, n := range cfg.Nodes {
 			nodes = append(nodes, n.Name)
 		}
 	}

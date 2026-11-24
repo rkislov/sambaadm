@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"sambaadm/internal/audit"
 	"sambaadm/internal/auth"
+	"sambaadm/internal/config"
 	ldapproto "sambaadm/internal/ldap"
 	"sambaadm/internal/pki"
 	"sambaadm/internal/service"
@@ -109,7 +110,11 @@ var serveCmd = &cobra.Command{
 		}
 		defer auditLog.Close()
 
-		svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword, GPO: cfg.GPO, Samba: cfg.Samba, Helpers: &agent.Client{Config: cfg.Helpers}})
+		helperClient := &agent.Client{Config: cfg.Helpers}
+		if cfg.Server.EnrollmentDir != "" {
+			helperClient.LoadConfig = func() (agent.Config, error) { return config.ManagedHelpers(cfg.Server.EnrollmentDir) }
+		}
+		svcs := service.NewWithOptions(ldapClient, auditLog, service.ServiceOptions{Username: cfg.LDAP.Bind.User, Password: cfg.BindPassword, GPO: cfg.GPO, Samba: cfg.Samba, Helpers: helperClient})
 		sessions := auth.NewStore(cfg.Auth.SessionTTL)
 		rbac := auth.NewRBAC(cfg.Auth.Roles)
 

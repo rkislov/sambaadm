@@ -57,10 +57,8 @@ func (s *FullBackupService) configured(controller string) error {
 	if s.Sites == nil || s.Sites.helpers == nil {
 		return topologyBad("registered helper required")
 	}
-	for _, n := range s.Sites.helpers.Config.Nodes {
-		if strings.EqualFold(n.Name, controller) {
-			return nil
-		}
+	if s.Sites.helpers.Has(controller) {
+		return nil
 	}
 	return topologyBad("controller must have a registered helper")
 }

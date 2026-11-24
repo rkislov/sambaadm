@@ -18,7 +18,11 @@ func (s *Server) fullBackupClient() *service.FullBackupService {
 func (s *Server) fullBackupNodes() []string {
 	out := []string{}
 	if s.svcs != nil && s.svcs.Helpers != nil {
-		for _, n := range s.svcs.Helpers.Config.Nodes {
+		cfg, e := s.svcs.Helpers.Configuration()
+		if e != nil {
+			return out
+		}
+		for _, n := range cfg.Nodes {
 			out = append(out, n.Name)
 		}
 	}
