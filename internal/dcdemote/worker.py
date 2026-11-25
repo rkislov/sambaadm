@@ -186,7 +186,13 @@ def restore_host(v,m,lp):
     try:_,current=db.dns_lookup(v['node'])
     except RuntimeError as e:
         if not e.args or e.args[0]!=9714:raise
+        # A removed AD DNS node can retain records while dnsTombstoned=TRUE.
+        # Read it directly so unrelated record types survive restoration.
         current=[]
+        if not absent(db,m['hostDN']):
+            row=one(db,m['hostDN'],['dnsRecord'])
+            current=[ndr_unpack(dnsp.DnssrvRpcRecord,bytes(raw)) for raw in row.get('dnsRecord',[])]
+            current=[record for record in current if record.wType!=0]
     addresses=[ndr_unpack(dnsp.DnssrvRpcRecord,base64.b64decode(x)) for x in m['hostRecords']]
     combined=list(current)
     from samba.ndr import ndr_pack
@@ -194,6 +200,9 @@ def restore_host(v,m,lp):
     for record in addresses:
         if (record.wType,str(record.data)) not in known:combined.append(record);known.add((record.wType,str(record.data)))
     db.dns_replace(v['node'],combined)
+    change=ldb.Message();change.dn=ldb.Dn(db,m['hostDN']);change['dnsTombstoned']=ldb.MessageElement('FALSE',ldb.FLAG_MOD_REPLACE,'dnsTombstoned');db.modify(change)
+    _,actual=db.dns_lookup(v['node'])
+    if not {(r.wType,str(r.data)) for r in addresses}.issubset({(r.wType,str(r.data)) for r in actual}):raise RuntimeError('Не подтверждено восстановление адресных DNS-записей члена домена')
     if m.get('krbtgt') and not absent(db,m['krbtgt']):
         # Native Samba demotion can leave this dedicated RODC account behind.
         links=db.search(base=str(db.domain_dn()),scope=ldb.SCOPE_SUBTREE,expression='(msDS-KrbTgtLink='+ldb.binary_encode(m['krbtgt'])+')',attrs=['objectGUID','userAccountControl'])
@@ -325,7 +334,7 @@ def execute(v,folder,config,save,state,ledger,resume):
         m=plan['metadata'];lp,db=bindings();source=remote(v,lp)
         import base64
         from samba.ndr import ndr_pack
-        _,records=source.dns_lookup(v['node']);m['hostRecords']=[base64.b64encode(ndr_pack(r)).decode() for r in records if r.wType in [1,28]]
+        host_dn,records=source.dns_lookup(v['node']);m['hostDN']=str(host_dn);m['hostRecords']=[base64.b64encode(ndr_pack(r)).decode() for r in records if r.wType in [1,28]]
         if not m['hostRecords']:raise RuntimeError('На партнёре отсутствуют адресные DNS-записи сервера')
         if m.get('krbtgt'):m['krbtgtGUID']=bytes(one(source,m['krbtgt'],['objectGUID'])['objectGUID'][0]).hex()
         ledger['metadata']=m;save()
