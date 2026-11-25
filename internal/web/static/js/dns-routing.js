@@ -30,11 +30,40 @@
   card.append(form,targets,list,result);panel.append(card);let state=null,loadID=0;
   const domain=field(form,'Домен пересылки (например app.ipr.loc)'),servers=field(form,'IP-адреса DNS-серверов через пробел'),mode=select(form,'Если целевые DNS недоступны',[['only','Возвращать ошибку — только указанные серверы'],['first','Пробовать обычное рекурсивное разрешение']]);
   note(card,'Правило действует на домен и все вложенные имена. Для поддомена собственной AD-зоны сначала создайте делегирование на первой вкладке. Правила BIND не реплицируются через AD: выберите серверы доставки. Остальные правила каждого сервера сохраняются.');
-  const checks=new Map();targets.append(el('strong','','Доставить на серверы:'));for(const n of nodes){const c=checkbox(targets,n);c.disabled=true;c.checked=false;checks.set(n,c);}targets.append(button('Выбрать все',()=>{for(const c of checks.values())if(!c.disabled)c.checked=true;result._ticket=null;result.replaceChildren();}));invalidate(form,result);targets.addEventListener('change',()=>result.replaceChildren());
+  const checks=new Map();targets.append(el('strong','','Доставить на серверы:'));for(const n of nodes){const c=checkbox(targets,n);c.disabled=true;c.checked=false;checks.set(n,c);}targets.append(button('Выбрать все',()=>{for(const c of checks.values())if(!c.disabled)c.checked=true;result._ticket=null;result.replaceChildren();}));invalidate(form,result);targets.addEventListener('change',()=>{result._ticket=null;result.replaceChildren();});
   async function load(){const seq=++loadID;result.replaceChildren();state=await api('/dns/forwarding?node='+enc(source.value));if(id!==generation||seq!==loadID)return;list.replaceChildren();if(!state.editable){note(list,state.warning||'Пересылка недоступна. Проверьте DNS-бэкенд и обновите helper.');return;}note(list,'BIND · '+source.value+' · '+state.path);if(!state.rules.length)note(list,'Управляемых правил нет. Правила, заданные вне sambaadm, сохраняются.');for(const r of state.rules){const row=el('div','dns-routing-row'),desc=el('span');desc.append(el('strong','',r.domain),el('small','',r.servers.join(', ')+' · '+(r.mode==='only'?'Только пересылка':'С рекурсивным резервом')));row.append(desc,button('Настроить',()=>{domain.value=r.domain;servers.value=r.servers.join(' ');mode.value=r.mode;result.replaceChildren();}),button('Удалить',()=>plan(true,r.domain)));list.append(row);}}
-  async function plan(remove=false,target){const ticket=Symbol();result._ticket=ticket;result.replaceChildren();const selected=[...checks].filter(([,c])=>c.checked).map(([n])=>n);if(!selected.length)throw Error('Выберите хотя бы один сервер');const name=(target||domain.value).trim().toLowerCase().replace(/\.$/,'');if(!name)throw Error('Укажите домен');const rule={domain:name,servers:servers.value.split(/[\s,]+/).filter(Boolean),mode:mode.value},plans=[];let failed=false;
-   for(const node of selected){try{const current=await api('/dns/forwarding?node='+enc(node));if(!current.editable)throw Error(current.warning||'BIND недоступен');const rules=current.rules.filter(r=>r.domain!==name);if(!remove)rules.push(rule);const p=await api('/dns/forwarding/plan?node='+enc(node),'POST',{rules,revision:current.revision});if(id!==generation||result._ticket!==ticket)return;preview(result,node+' · предпросмотр','Было:\n'+(p.before||'Нет управляемых правил')+'\nСтанет:\n'+p.proposed);plans.push({node,rules,p});}catch(e){failed=true;note(result,node+': '+e.message);}}
-   if(failed){note(result,'Применение не запущено: устраните ошибки и повторите предпросмотр.');return;}const agree=checkbox(result,'Подтверждаю применение на выбранных серверах');const apply=button('Применить на '+plans.length+' серверах',async()=>{if(!agree.checked)throw Error('Подтвердите применение');apply.disabled=true;const report=el('div');result.append(report);for(const {node,rules,p} of plans){try{const out=await api('/dns/forwarding?node='+enc(node),'PUT',{rules,revision:p.revision,proposedRevision:p.proposedRevision,confirm:true});note(report,node+': применено. Резервная копия: '+out.backup);}catch(e){note(report,node+': ОШИБКА — '+e.message);}}note(report,'Обработка завершена. Проверьте результат каждого сервера; успешные изменения остальных серверов сохраняются.');});result.append(apply);
+  async function plan(remove=false,target,retryNodes){
+   const ticket=Symbol();result._ticket=ticket;result.replaceChildren();
+   const selected=retryNodes||[...checks].filter(([,c])=>c.checked).map(([n])=>n);
+   if(!selected.length)throw Error('Выберите хотя бы один сервер');
+   const name=(target||domain.value).trim().toLowerCase().replace(/\.$/,'');if(!name)throw Error('Укажите домен');
+   const rule={domain:name,servers:servers.value.split(/[\s,]+/).filter(Boolean),mode:mode.value},plans=[],failed=[];let unchanged=0;
+   const active=()=>id===generation&&result._ticket===ticket;
+   const signature=rules=>JSON.stringify(rules.map(r=>({domain:r.domain,servers:r.servers,mode:r.mode})).sort((a,b)=>a.domain.localeCompare(b.domain)));
+   const retry=nodes=>result.append(button('Повторить для недоставленных',()=>plan(remove,name,nodes)));
+   for(const node of selected){
+    try{
+     const current=await api('/dns/forwarding?node='+enc(node));if(!active())return;
+     if(!current.editable)throw Error(current.warning||'BIND недоступен');
+     const rules=current.rules.filter(r=>r.domain!==name);if(!remove)rules.push(rule);
+     const p=await api('/dns/forwarding/plan?node='+enc(node),'POST',{rules,revision:current.revision});if(!active())return;
+     if(signature(current.rules)===signature(p.rules)){unchanged++;note(result,node+': уже актуально, повторная запись не нужна.');continue;}
+     preview(result,node+' · предпросмотр','Было:\n'+(p.before||'Нет управляемых правил')+'\nСтанет:\n'+p.proposed);plans.push({node,rules,p});
+    }catch(e){if(!active())return;failed.push(node);note(result,node+': не доставлено — '+e.message);}
+   }
+   if(failed.length)note(result,'Часть серверов недоступна. Примените изменения на доступных серверах, затем повторите доставку для остальных.');
+   if(!plans.length){if(failed.length)retry(failed);else note(result,'Все выбранные серверы уже содержат нужные настройки.');return;}
+   const agree=checkbox(result,'Подтверждаю применение на выбранных серверах');
+   const apply=button('Применить на '+plans.length+' серверах',async()=>{
+    if(!active())return;if(!agree.checked)throw Error('Подтвердите применение');apply.disabled=true;
+    const report=el('div'),pending=[...failed];let delivered=0;result.append(report);
+    for(const {node,rules,p} of plans){
+     try{const out=await api('/dns/forwarding?node='+enc(node),'PUT',{rules,revision:p.revision,proposedRevision:p.proposedRevision,confirm:true});delivered++;note(report,node+': применено. Резервная копия: '+out.backup);}
+     catch(e){pending.push(node);note(report,node+': не доставлено — '+e.message);}
+    }
+    note(report,'Обработка завершена. Доставлено: '+delivered+'. Уже актуально: '+unchanged+'. Не доставлено: '+pending.length+'.');
+    if(active()&&pending.length)retry(pending);
+   });result.append(apply);
   }
   const planButton=button('Предпросмотр',()=>plan());planButton.disabled=true;form.append(planButton);source.onchange=()=>load().catch(showError);
   if(nodes.length){const pending=el('p','muted','Определяем работающие DNS-бэкенды…');targets.append(pending);await Promise.all(nodes.map(async n=>{try{const status=await api('/dns/forwarding?node='+enc(n));if(id!==generation)return;const c=checks.get(n);c.disabled=!status.editable;c.checked=!!status.editable;if(!status.editable){const hint=el('small','muted',' · BIND недоступен');hint.title=status.warning||'Выберите этот сервер в списке просмотра для подробностей';c.parentElement.append(hint);}}catch(e){if(id===generation){const hint=el('small','muted',' · Нет связи');hint.title=e.message;checks.get(n).parentElement.append(hint);}}}));if(id!==generation)return;pending.remove();planButton.disabled=false;await load();}else note(list,'Зарегистрируйте helper в настройках серверов.');
