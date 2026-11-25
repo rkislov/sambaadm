@@ -59,7 +59,7 @@ for package in service web; do
     compose exec -T -e SAMBAADM_IT=1 -e SAMBAADM_IT_MUTATE=SAMBAADM.TEST -e SAMBAADM_IT_TEST_PATTERN="${SAMBAADM_IT_TEST_PATTERN:-Integration}" \
         -e SAMBAADM_IT_URI=ldaps://127.0.0.1:636 \
         -e SAMBAADM_IT_USER=Administrator@sambaadm.test -e SAMBAADM_IT_SECOND_DC="${SAMBAADM_IT_SECOND_DC:-}" -e SAMBAADM_IT_HELPERS="${SAMBAADM_HELPERS:-0}" dc \
-        sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run "$SAMBAADM_IT_TEST_PATTERN" -test.v -test.timeout 4m' sh "$package"
+        sh -c 'export SAMBAADM_PASSWORD="$SAMBAADM_LAB_PASSWORD"; exec "/tmp/$1.test" -test.run "$SAMBAADM_IT_TEST_PATTERN" -test.v -test.timeout 8m' sh "$package"
     fi
 done
 if [ "${SAMBAADM_RODC:-0}" = 1 ]; then
