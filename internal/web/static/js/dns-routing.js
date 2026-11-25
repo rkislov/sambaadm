@@ -54,7 +54,7 @@
    if(failed.length)note(result,'Часть серверов недоступна. Примените изменения на доступных серверах, затем повторите доставку для остальных.');
    if(!plans.length){if(failed.length)retry(failed);else note(result,'Все выбранные серверы уже содержат нужные настройки.');return;}
    const agree=checkbox(result,'Подтверждаю применение на выбранных серверах');
-   const apply=button('Применить на '+plans.length+' серверах',async()=>{
+   const apply=button('Применить на '+plans.length+(plans.length===1?' сервере':' серверах'),async()=>{
     if(!active())return;if(!agree.checked)throw Error('Подтвердите применение');apply.disabled=true;
     const report=el('div'),pending=[...failed];let delivered=0;result.append(report);
     for(const {node,rules,p} of plans){
