@@ -196,6 +196,7 @@ func (s *Server) handleHelperInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
+		NewNode      string   `json:"newNode"`
 		Action       string   `json:"action"`
 		ID           string   `json:"id"`
 		Nodes        []string `json:"nodes"`
@@ -230,6 +231,14 @@ func (s *Server) handleHelperInstall(w http.ResponseWriter, r *http.Request) {
 		allowed := map[string]bool{}
 		for _, dc := range dcs {
 			allowed[strings.ToLower(dc.DNS)] = true
+		}
+		if in.NewNode != "" {
+			domain := dnsFromBaseDN(s.cfg.LDAP.BaseDN)
+			if len(in.Nodes) != 1 || in.Nodes[0] != in.NewNode || !enrollmentDNS(in.NewNode) || !strings.HasSuffix(in.NewNode, "."+domain) || allowed[in.NewNode] {
+				writeJSON(w, 400, map[string]string{"error": "Укажите полное имя одного нового сервера в текущем домене"})
+				return
+			}
+			allowed[in.NewNode] = true
 		}
 		selected := map[string]bool{}
 		for _, n := range in.Nodes {
@@ -588,7 +597,7 @@ func (s *Server) installOneHelper(ctx context.Context, j *helperInstallJob, i in
 	}
 	log := func(line string) { s.installLog(j, i, "", line, password, rootPassword) }
 	// Preflight is separate from installation: never alter a configured foreign helper silently.
-	preflight := "set -eu\nif [ -s /etc/sambaadm-helper/config.yaml ]; then echo SAMBAADM_EXISTING; fi\ncommand -v rpm >/dev/null\ncommand -v systemctl >/dev/null\ncommand -v openssl >/dev/null\n"
+	preflight := "set -eu\ncommand -v apt-get >/dev/null || { echo Настройте репозитории ALT Linux; exit 1; }\nrepo_log=$(mktemp)\ntrap 'rm -f -- \"$repo_log\"' EXIT\nif ! apt-get update >\"$repo_log\" 2>&1; then cat \"$repo_log\"; echo Настройте доступные репозитории ALT Linux; exit 1; fi\nif grep -E '^(Err|E:|W:.*(failed|fetch|resolve))|Some index files failed' \"$repo_log\"; then echo Настройте доступные репозитории ALT Linux; exit 1; fi\nfor package in coreutils systemd shadow-utils openssl python3; do apt-cache policy \"$package\" | grep -E 'Candidate:.*[^[:space:]]' | grep -v '(none)' >/dev/null || { echo Недоступен пакет \"$package\". Настройте репозитории; exit 1; }; done\nif [ -s /etc/sambaadm-helper/config.yaml ]; then echo SAMBAADM_EXISTING; fi\ncommand -v rpm >/dev/null\ncommand -v systemctl >/dev/null\n\n"
 	before, e := bootstrap.Su(ctx, client, preflight, rootPassword, nil)
 	if e != nil {
 		return fmt.Errorf("Повышение прав su - или проверка зависимостей не выполнены: %s", redactInstall(before, password, rootPassword))
@@ -598,7 +607,7 @@ func (s *Server) installOneHelper(ctx context.Context, j *helperInstallJob, i in
 	}
 	s.installLog(j, i, "installing", "Права root подтверждены. Проверка SHA-256 и установка RPM")
 	metadata := "sambaadm-helper " + helperInstallVersion() + " alt1 " + arch
-	script := "set -eu\numask 077\nstage=$(mktemp -d /var/tmp/sambaadm-install.XXXXXXXX)\ntrap 'rm -rf -- \"$stage\"' EXIT\ninstall -m 0600 " + bootstrap.Quote(temp+"/helper.rpm") + " \"$stage/helper.rpm\"\nprintf '%s  %s\\n' " + bootstrap.Quote(hex.EncodeToString(sha[:])) + " \"$stage/helper.rpm\" | sha256sum -c -\ntest \"$(rpm -qp --qf '%{NAME} %{VERSION} %{RELEASE} %{ARCH}' \"$stage/helper.rpm\")\" = " + bootstrap.Quote(metadata) + "\nrpm -Uvh --test --replacepkgs \"$stage/helper.rpm\"\nrpm -Uvh --replacepkgs \"$stage/helper.rpm\"\n/usr/bin/sambaadm-helper version\n"
+	script := "set -eu\numask 077\nstage=$(mktemp -d /var/tmp/sambaadm-install.XXXXXXXX)\ntrap 'rm -rf -- \"$stage\"' EXIT\ninstall -m 0600 " + bootstrap.Quote(temp+"/helper.rpm") + " \"$stage/helper.rpm\"\nprintf '%s  %s\\n' " + bootstrap.Quote(hex.EncodeToString(sha[:])) + " \"$stage/helper.rpm\" | sha256sum -c -\ntest \"$(rpm -qp --qf '%{NAME} %{VERSION} %{RELEASE} %{ARCH}' \"$stage/helper.rpm\")\" = " + bootstrap.Quote(metadata) + "\ndeps=\"\"\nfor package in python3 openssl; do rpm -q \"$package\" >/dev/null 2>&1 || deps=\"$deps $package\"; done\nif [ -n \"$deps\" ]; then\n apt-get -s install $deps >\"$stage/dependencies\"\n if grep -q '^Remv ' \"$stage/dependencies\"; then echo План зависимостей удаляет пакеты. Установка остановлена; exit 1; fi\n apt-get --download-only -y install $deps\n apt-get --no-download -y install $deps\nfi\nrpm -Uvh --test --replacepkgs \"$stage/helper.rpm\"\nrpm -Uvh --replacepkgs \"$stage/helper.rpm\"\n/usr/bin/sambaadm-helper version\n"
 	if _, e = bootstrap.Su(ctx, client, script, rootPassword, log); e != nil {
 		return fmt.Errorf("Установка RPM завершилась ошибкой: %w", e)
 	}

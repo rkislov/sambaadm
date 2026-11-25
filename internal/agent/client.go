@@ -159,7 +159,11 @@ func (c *Client) Call(ctx context.Context, name, method string, in, out any) err
 	if len(raw) > MaxMessage {
 		return fmt.Errorf("helper request exceeds limit")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	timeout := 60 * time.Second
+	if method == "domain.init.plan" {
+		timeout = 190 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var response []byte
 	switch node.Transport {

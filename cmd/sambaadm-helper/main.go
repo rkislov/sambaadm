@@ -206,7 +206,7 @@ func run() error {
 	if cfg.Helper.Listen == "" || cfg.Helper.TLS.Cert == "" || cfg.Helper.TLS.Key == "" {
 		return fmt.Errorf("HTTPS helper requires helper.listen, tls.cert and tls.key")
 	}
-	srv := &http.Server{Addr: cfg.Helper.Listen, Handler: agent.API(v, handler), TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	srv := &http.Server{Addr: cfg.Helper.Listen, Handler: agent.API(v, handler), TLSConfig: &tls.Config{MinVersion: tls.VersionTLS13}, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 60 * time.Second, WriteTimeout: 210 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)

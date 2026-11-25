@@ -10,7 +10,7 @@ License: Apache-2.0
 Group: System/Servers
 URL: https://github.com/rkislov/sambaadm
 ExclusiveArch: x86_64 aarch64
-Requires: coreutils systemd
+Requires: coreutils systemd python3
 Requires(pre): shadow-utils
 AutoReqProv: no
 

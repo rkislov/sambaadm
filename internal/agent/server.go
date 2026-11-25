@@ -28,7 +28,15 @@ func API(verifier *Verifier, handler Handler) http.Handler {
 			http.Error(w, "invalid helper message", 400)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 55*time.Second)
+		timeout := 55 * time.Second
+		var envelope Envelope
+		var request struct {
+			Method string `json:"method"`
+		}
+		if json.Unmarshal(raw, &envelope) == nil && json.Unmarshal(envelope.Request, &request) == nil && request.Method == "domain.init.plan" {
+			timeout = 190 * time.Second
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
 		result := verifier.Dispatch(ctx, raw, handler)
 		w.Header().Set("Content-Type", "application/json")

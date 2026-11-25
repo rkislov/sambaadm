@@ -200,6 +200,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/settings/time", s.handleTimeSettings)
 		r.Post("/settings/time", s.handleTimeSettings)
 		r.Post("/settings/certificates", s.handleCertificates)
+		r.Get("/settings/domain-init", s.domainInitPage)
+		r.Handle("/domain-init-assets/*", domainInitAssets())
 		r.Get("/settings/helpers", s.enrollHelper)
 		r.Post("/settings/helpers", s.enrollHelper)
 		r.Get("/me", s.handleSelfPage)
@@ -414,6 +416,9 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/gpo/{gpo}/distribute", s.handleAPIGPODistribute)
 		r.Get("/gpo/distribute/{jobID}", s.handleAPIGPODistributeStatus)
 
+		r.Get("/domain-init", s.handleDomainInit)
+		r.Post("/domain-init/plan", s.handleDomainInit)
+		r.Post("/domain-init/start", s.handleDomainInit)
 		r.Get("/helper-install", s.handleHelperInstall)
 		r.Post("/helper-install", s.handleHelperInstall)
 		r.Post("/helper-install/package", s.handleHelperPackage)

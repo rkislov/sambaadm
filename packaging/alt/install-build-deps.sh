@@ -23,7 +23,7 @@ for mirror in $mirrors; do
  echo "ALT build dependencies: mirror=$mirror update_timeout=${update_timeout}s install_timeout=${install_timeout}s"
  if timeout --kill-after=10s "${update_timeout}s" apt-get "${options[@]}" update &&
     timeout --kill-after=10s "${install_timeout}s" apt-get "${options[@]}" install -y \
-      rpm-build file shadow-utils systemd systemd-analyze util-linux tar coreutils; then
+      rpm-build file shadow-utils systemd systemd-analyze util-linux tar coreutils python3; then
   apt-get "${options[@]}" clean
   echo "ALT build dependencies ready: $mirror"
   exit 0

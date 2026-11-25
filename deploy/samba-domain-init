@@ -1,0 +1,3 @@
+#!/bin/sh
+# A distinct command: normal setup/update must never provision a domain.
+exec /usr/bin/sambaadm domain-init "$@"

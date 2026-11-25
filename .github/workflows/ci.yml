@@ -16,6 +16,8 @@ jobs:
           go-version-file: go.mod
       - name: Test
         run: go test -race ./...
+      - name: Domain deployment repository and mutation gates
+        run: python3 -m unittest discover -s internal/domaininit -p 'test_*.py' -v
       - name: Vet
         run: go vet ./...
       - name: ALT template compatibility (pinned upstream)
@@ -96,6 +98,8 @@ jobs:
           node testdata/web/survey-workstation.cjs
       - name: Workstation survey browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/survey-workstation-browser.cjs
+      - name: First forest and additional controller wizard
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-init.cjs
       - name: Compact dashboard and SSO fallback
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dashboard.cjs
       - name: Domain search and direct object cards

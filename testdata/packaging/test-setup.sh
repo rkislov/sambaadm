@@ -29,6 +29,8 @@ elif [[ ${3:-} == certificates ]]; then
 else
  [[ ${SETUP_FAIL_PREFLIGHT:-0} == 0 ]] || exit 7
  if [[ ${SETUP_REQUIRE_LEGACY:-0} == 1 ]] && ! grep -q 'allow_legacy_cn: true' "$2";then echo 'certificate relies on legacy Common Name';exit 7;fi
+ ca=$(sed -n 's/^  ca_cert: "\(.*\)"$/\1/p' "$2")
+ [[ -z $ca || -r $ca ]] || { echo "CA unavailable during preflight";exit 7; }
  [[ -n ${SAMBAADM_PASSWORD:-} ]]
 fi
 MOCK

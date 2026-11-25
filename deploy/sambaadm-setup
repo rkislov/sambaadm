@@ -149,7 +149,7 @@ setup_main() (
   escaped=${escaped//\"/\\\"}
   printf 'SAMBAADM_PASSWORD="%s"\n' "$escaped" > "$work/env"
   if [[ -n $ca ]]; then
-    args=(--realm "$domain" --user "$bind_user" --admin-group "$group" --ca "$config_dir/domain-ca.pem")
+    args=(--realm "$domain" --user "$bind_user" --admin-group "$group" --ca "$work/domain-ca.pem")
     [[ -z $dc ]] || args+=(--dc "$dc")
     [[ $legacy == false ]] || args+=(--allow-legacy-cn)
     "$binary" discover "${args[@]}" > "$work/config.yaml"
@@ -165,6 +165,17 @@ setup_main() (
     mv -f "$work/https/config.yaml" "$work/config.yaml"
     chgrp sambaadm "$work/config.yaml";chmod 0640 "$work/config.yaml"
     setup_check
+  fi
+  # Validate against the staged CA. The live CA is committed below together
+  # with YAML/env; a first HTTPS setup must not try to read a missing live file.
+  if [[ -n $ca ]]; then
+    /usr/bin/python3 - "$work/config.yaml" "$work/domain-ca.pem" "$config_dir/domain-ca.pem" <<'PYCA'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); text = path.read_text()
+if text.count(sys.argv[2]) != 1:
+    raise SystemExit('Не удалось подготовить окончательный путь ЦС LDAP; настройки не заменены.')
+path.write_text(text.replace(sys.argv[2], sys.argv[3]))
+PYCA
   fi
   unset SAMBAADM_PASSWORD escaped
   install -d -m 0700 "$state_dir"

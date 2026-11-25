@@ -13,7 +13,7 @@ License: Apache-2.0
 Group: System/Servers
 URL: https://github.com/rkislov/sambaadm
 ExclusiveArch: x86_64 aarch64
-Requires: bash coreutils tar util-linux systemd
+Requires: bash coreutils tar util-linux systemd python3
 Requires(pre): shadow-utils
 Requires(post): systemd
 Requires(preun): systemd
@@ -38,6 +38,7 @@ mkdir -p %buildroot/usr/share/sambaadm/helper-packages
 install -m644 %{payload_dir}/helper.rpm %buildroot/usr/share/sambaadm/helper-packages/sambaadm-helper-%{version}-%{release}.%{_arch}.rpm
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
 install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
+install -m755 %{payload_dir}/samba-domain-init %buildroot/usr/sbin/samba-domain-init
 install -m755 %{payload_dir}/sambaadm-setup %buildroot/usr/sbin/sambaadm-setup
 install -m755 %{payload_dir}/sambaadm-renew-certificates %buildroot/usr/sbin/sambaadm-renew-certificates
 install -m755 %{payload_dir}/sambaadm-package %buildroot/usr/sbin/sambaadm-package
@@ -58,7 +59,7 @@ if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || :
 fi
 # First-start setup is explicit; package updates preserve the current service.
-echo 'Для первой настройки и запуска выполните: sudo sambaadm-setup'
+echo 'Существующий домен: sudo sambaadm-setup. Новый лес на чистом сервере: sudo samba-domain-init.'
 
 %preun
 if [ "$1" -eq 0 ] && [ -d /run/systemd/system ]; then
@@ -78,6 +79,7 @@ fi
 /usr/share/sambaadm/helper-packages
 /usr/sbin/sambaadm-package
 /usr/sbin/sambaadm-setup
+/usr/sbin/samba-domain-init
 /usr/sbin/sambaadm-renew-certificates
 /usr/libexec/sambaadm-prepare-logs
 /lib/systemd/system/sambaadm.service

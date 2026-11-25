@@ -26,7 +26,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -93,6 +93,17 @@ jobs:
           done
           test "$ready" = true
           docker exec -e SAMBAADM_REAL_SYSTEMD=1 sambaadm-alt-systemd bash /src/testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
+      - name: First forest, RWDC and RODC through real HTTPS wizard and helpers
+        timeout-minutes: 12
+        env:
+          RPM_VERSION: ${{ inputs.version }}
+        run: |
+          version=${RPM_VERSION#v}
+          rpm_arch=${{ matrix.arch }}
+          if [ "$rpm_arch" = amd64 ]; then rpm_arch=x86_64; else rpm_arch=aarch64; fi
+          docker build -f testdata/samba/domain-init.Dockerfile --build-arg BASE=sambaadm-rpm-builder:p10-${{ matrix.arch }} --build-arg PANEL_RPM=dist/sambaadm-$version-alt1.$rpm_arch.rpm -t sambaadm-domain-init-fixture .
+          CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -o "$RUNNER_TEMP/domain-init-client" ./testdata/domain-init-client
+          python3 testdata/samba/test_domain_init.py --image sambaadm-domain-init-fixture --binary dist/sambaadm-linux-${{ matrix.arch }} --helper dist/sambaadm-helper-linux-${{ matrix.arch }} --helper-rpm dist/sambaadm-helper-$version-alt1.$rpm_arch.rpm --client "$RUNNER_TEMP/domain-init-client"
       - uses: actions/upload-artifact@v4
         with:
           name: alt-rpm-${{ matrix.arch }}

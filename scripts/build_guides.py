@@ -99,7 +99,7 @@ def build(source, target):
                     for run in entry.runs: run.font.size=Pt(9)
                 contents=True
             p=doc.add_paragraph(line[3:],'Heading 1')
-            if line[3:] == headings[0]: p.paragraph_format.page_break_before=True
+            if line[3:] in (headings[0], 'Развёртывание нового домена и контроллеров'): p.paragraph_format.page_break_before=True
             continue
         if line.startswith('### '): doc.add_paragraph(line[4:],'Heading 2');continue
         m=re.match(r'!\[(.*?)\]\((.*?)\)',line)

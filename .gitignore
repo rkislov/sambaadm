@@ -16,3 +16,7 @@ dist/
 
 # UI build dependencies (runtime CSS is embedded)
 node_modules/
+
+# Python worker test bytecode
+__pycache__/
+*.pyc

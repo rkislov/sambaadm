@@ -55,6 +55,13 @@ func decodeHost(raw []byte, out any) error {
 // HelperDispatch is the closed host-operation allowlist. There is no shell,
 // arbitrary executable, credential export, or general filesystem endpoint.
 func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, method string, raw json.RawMessage) (result any, err error) {
+	if method == "domain.init.status" {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return helperDomainInit(ctx, cfg, method, in)
+	}
 	if method == "dns.backend.status" {
 		var in HostOperation
 		if e := decodeHost(raw, &in); e != nil {
@@ -110,6 +117,8 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return nil, e
 	}
 	switch method {
+	case "domain.init.plan", "domain.init.start":
+		return helperDomainInit(ctx, cfg, method, in)
 	case "dns.backend.plan", "dns.backend.start":
 		return helperDNSBackend(ctx, cfg, method, in)
 	case "dns.forward.inspect", "dns.forward.plan", "dns.forward.apply":

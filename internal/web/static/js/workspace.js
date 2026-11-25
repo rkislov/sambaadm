@@ -1600,7 +1600,9 @@
       heading.textContent=title;
       commands.replaceChildren();commands.dataset.compactActions=kind==='site'?'2':'1';
       searchBox.hidden=kind==='site';
+      if(kind==='servers'&&admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init'+(site?'?site='+enc(site.name):'');commands.append(link);}
       if(kind==='sites'){
+        if(admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init';commands.append(link);}
         addAction(commands,action(t('Создать сайт','New Site'),'POST','/sites',[name()]));
       }else if(kind==='site'){
         commands.append(button(serverLabel,()=>select(item('servers',site))),button(subnetLabel,()=>select(item('subnets',site))));
