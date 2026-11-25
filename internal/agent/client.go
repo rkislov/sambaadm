@@ -12,7 +12,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -21,6 +24,8 @@ import (
 )
 
 type Node struct {
+	dialAddress string // internal pin; never loaded from configuration or API input
+
 	Name       string `mapstructure:"name"`
 	Transport  string `mapstructure:"transport"`
 	Endpoint   string `mapstructure:"endpoint"`
@@ -65,7 +70,7 @@ func (c *Client) signingKey(path string) (ed25519.PrivateKey, error) {
 func (c *Client) httpClient(node *Node) (*http.Client, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	cacheKey := node.Name + "|" + node.Endpoint + "|" + node.CACert
+	cacheKey := node.Name + "|" + node.Endpoint + "|" + node.CACert + "|" + node.dialAddress
 	if client := c.httpClients[cacheKey]; client != nil {
 		return client, nil
 	}
@@ -84,7 +89,23 @@ func (c *Client) httpClient(node *Node) (*http.Client, error) {
 		}
 		tc.RootCAs = roots
 	}
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tc, Proxy: http.ProxyFromEnvironment}, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("helper redirects are not allowed") }}
+	transport := &http.Transport{TLSClientConfig: tc, Proxy: http.ProxyFromEnvironment}
+	if node.dialAddress != "" {
+		endpoint, err := url.Parse(node.Endpoint)
+		if err != nil {
+			return nil, err
+		}
+		port := endpoint.Port()
+		if port == "" {
+			port = "443"
+		}
+		tc.ServerName = endpoint.Hostname()
+		transport.Proxy = nil
+		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 10 * time.Second}).DialContext(ctx, network, net.JoinHostPort(node.dialAddress, port))
+		}
+	}
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return fmt.Errorf("helper redirects are not allowed") }}
 	if c.httpClients == nil {
 		c.httpClients = map[string]*http.Client{}
 	}
@@ -108,6 +129,23 @@ func (c *Client) Has(name string) bool {
 	return false
 }
 func (c *Client) Call(ctx context.Context, name, method string, in, out any) error {
+	return c.call(ctx, name, method, in, out, "")
+}
+
+// CallPinned preserves the configured TLS hostname/CA and signed node identity
+// while DNS records are being retired. The address must come from a prior
+// authenticated helper plan, never directly from an HTTP request.
+func (c *Client) CallPinned(ctx context.Context, name, method string, in, out any, address string) error {
+	if !strings.HasPrefix(method, "domain.demote.") {
+		return fmt.Errorf("address pin is limited to DC retirement")
+	}
+	ip, err := netip.ParseAddr(address)
+	if err != nil || ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() {
+		return fmt.Errorf("invalid helper address pin")
+	}
+	return c.call(ctx, name, method, in, out, address)
+}
+func (c *Client) call(ctx context.Context, name, method string, in, out any, address string) error {
 	cfg, e := c.Configuration()
 	if e != nil {
 		return e
@@ -124,6 +162,11 @@ func (c *Client) Call(ctx context.Context, name, method string, in, out any) err
 	}
 	if node == nil {
 		return fmt.Errorf("no sambaadm-helper configured for node %q", name)
+	}
+	if address != "" {
+		copyNode := *node
+		copyNode.dialAddress = address
+		node = &copyNode
 	}
 	key, e := c.signingKey(cfg.PrivateKey)
 	if e != nil {
@@ -160,7 +203,7 @@ func (c *Client) Call(ctx context.Context, name, method string, in, out any) err
 		return fmt.Errorf("helper request exceeds limit")
 	}
 	timeout := 60 * time.Second
-	if method == "domain.init.plan" {
+	if method == "domain.init.plan" || (method == "domain.demote.plan" || method == "domain.demote.manifest") {
 		timeout = 190 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)

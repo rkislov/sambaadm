@@ -16,10 +16,12 @@ permissions:
 
 jobs:
   package:
-    name: ALT RPM (${{ matrix.arch }})
+    name: ALT ${{ matrix.branch }} RPM (${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
+        branch: [p10, p11]
+        arch: [amd64, arm64]
         include:
           - arch: amd64
             runner: ubuntu-24.04
@@ -50,42 +52,43 @@ jobs:
       - name: Restore executable mode after artifact download
         run: chmod 755 dist/sambaadm-linux-${{ matrix.arch }} dist/sambaadm-helper-linux-${{ matrix.arch }}
       - uses: docker/setup-buildx-action@v3
-      - name: Build cached ALT p10 environment
+      - name: Build cached ALT ${{ matrix.branch }} environment
         uses: docker/build-push-action@v6
         timeout-minutes: 14
         with:
           context: .
           file: packaging/alt/Dockerfile
+          build-args: ALT_BRANCH=${{ matrix.branch }}
           platforms: linux/${{ matrix.arch }}
           load: true
-          tags: sambaadm-rpm-builder:p10-${{ matrix.arch }}
-          cache-from: type=gha,scope=alt-p10-builder-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=alt-p10-builder-${{ matrix.arch }}
+          tags: sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=alt-${{ matrix.branch }}-builder-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=alt-${{ matrix.branch }}-builder-${{ matrix.arch }}
       - name: Verify mirror fallback and deadlines
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-build-deps.sh
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash testdata/packaging/test-build-deps.sh
       - name: Build RPM
         env:
           RPM_VERSION: ${{ inputs.version }}
-        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist
+        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash packaging/alt/build-rpm.sh "$RPM_VERSION" /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist
       - name: Build Caja plugin RPM
         if: matrix.arch == 'amd64'
-        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash packaging/alt/build-caja-rpm.sh /src/dist
+        run: docker run --rm -v "$PWD:/src" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash packaging/alt/build-caja-rpm.sh /src/dist
       - name: ALT RPM lifecycle (systemd simulated)
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
       - name: Host helper RPM lifecycle
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-helper-alt.sh /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash testdata/packaging/test-helper-alt.sh /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
       - name: First-start setup preflight and rollback
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-setup.sh
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash testdata/packaging/test-setup.sh
       - name: Combined installer first install, update and repeat
-        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} bash testdata/packaging/test-installer-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
+        run: docker run --rm -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} bash testdata/packaging/test-installer-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }} /src/dist/sambaadm-helper-linux-${{ matrix.arch }}
       - name: Certificate deployment transaction and rollback
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go test -c -o "$RUNNER_TEMP/certificate.test" ./internal/service
-          docker run --rm -v "$RUNNER_TEMP/certificate.test:/certificate.test:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} sh -c 'mkdir -p /var/lib/sambaadm-certificate-tests; TMPDIR=/var/lib/sambaadm-certificate-tests /certificate.test -test.run ^TestHelperCertificate -test.v'
-      - name: ALT p10 real systemd update and rollback
+          docker run --rm -v "$RUNNER_TEMP/certificate.test:/certificate.test:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} sh -c 'mkdir -p /var/lib/sambaadm-certificate-tests; TMPDIR=/var/lib/sambaadm-certificate-tests /certificate.test -test.run ^TestHelperCertificate -test.v'
+      - name: ALT ${{ matrix.branch }} real systemd update and rollback
         run: |
           trap 'docker logs --tail 50 sambaadm-alt-systemd || true; docker rm -f sambaadm-alt-systemd || true' EXIT
-          docker run -d --name sambaadm-alt-systemd --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock -v "$PWD:/src:ro" sambaadm-rpm-builder:p10-${{ matrix.arch }} /lib/systemd/systemd
+          docker run -d --name sambaadm-alt-systemd --privileged --cgroupns=private --tmpfs /run --tmpfs /run/lock -v "$PWD:/src:ro" sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} /lib/systemd/systemd
           ready=false
           for attempt in $(seq 1 30); do
             if docker exec sambaadm-alt-systemd systemctl show -p Version --value | grep -q .; then ready=true; break; fi
@@ -101,10 +104,11 @@ jobs:
           version=${RPM_VERSION#v}
           rpm_arch=${{ matrix.arch }}
           if [ "$rpm_arch" = amd64 ]; then rpm_arch=x86_64; else rpm_arch=aarch64; fi
-          docker build -f testdata/samba/domain-init.Dockerfile --build-arg BASE=sambaadm-rpm-builder:p10-${{ matrix.arch }} --build-arg PANEL_RPM=dist/sambaadm-$version-alt1.$rpm_arch.rpm -t sambaadm-domain-init-fixture .
+          docker build -f testdata/samba/domain-init.Dockerfile --build-arg BASE=sambaadm-rpm-builder:${{ matrix.branch }}-${{ matrix.arch }} --build-arg PANEL_RPM=dist/sambaadm-$version-alt1.$rpm_arch.rpm -t sambaadm-domain-init-fixture .
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath -o "$RUNNER_TEMP/domain-init-client" ./testdata/domain-init-client
           python3 testdata/samba/test_domain_init.py --image sambaadm-domain-init-fixture --binary dist/sambaadm-linux-${{ matrix.arch }} --helper dist/sambaadm-helper-linux-${{ matrix.arch }} --helper-rpm dist/sambaadm-helper-$version-alt1.$rpm_arch.rpm --client "$RUNNER_TEMP/domain-init-client"
       - uses: actions/upload-artifact@v4
+        if: matrix.branch == 'p10'
         with:
           name: alt-rpm-${{ matrix.arch }}
           path: dist/*.rpm

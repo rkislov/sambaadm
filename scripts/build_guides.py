@@ -95,7 +95,8 @@ def build(source, target):
                 doc.add_paragraph('Содержание', 'Heading 2')
                 for title in headings:
                     entry=doc.add_paragraph(title)
-                    entry.paragraph_format.space_after=Pt(1)
+                    entry.paragraph_format.space_after=Pt(0)
+                    entry.paragraph_format.line_spacing=1
                     for run in entry.runs: run.font.size=Pt(9)
                 contents=True
             p=doc.add_paragraph(line[3:],'Heading 1')

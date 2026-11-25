@@ -17,7 +17,9 @@ jobs:
       - name: Test
         run: go test -race ./...
       - name: Domain deployment repository and mutation gates
-        run: python3 -m unittest discover -s internal/domaininit -p 'test_*.py' -v
+        run: |
+          python3 -m unittest discover -s internal/domaininit -p 'test_*.py' -v
+          python3 -m unittest discover -s internal/dcdemote -p 'test_*.py' -v
       - name: Vet
         run: go vet ./...
       - name: ALT template compatibility (pinned upstream)
@@ -100,6 +102,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/survey-workstation-browser.cjs
       - name: First forest and additional controller wizard
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-init.cjs
+      - name: DC retirement wizard and resumable member setup
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-demote.cjs
       - name: Compact dashboard and SSO fallback
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dashboard.cjs
       - name: Domain search and direct object cards

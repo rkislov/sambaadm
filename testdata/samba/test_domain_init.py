@@ -81,6 +81,22 @@ assert status['state']=='completed',status
 print(json.dumps(status))
 '''
 
+demote_client=panel_client[:panel_client.index('metadata=api(\'/domain-init\')')]+r'''
+metadata=api('/domain-demote');assert metadata['realm']==value['realm']
+input.update(username='Administrator@'+value['realm'],password=value['password'])
+if value.get('resume'):
+ input.update(id=value['resume'],confirm=input['node']);job=api('/domain-demote/resume',input)
+else:
+ plan=api('/domain-demote/plan',input);assert len(plan['revision'])==64
+ input.update(revision=plan['revision'],confirm=input['node']);job=api('/domain-demote/start',input)
+for _ in range(900):
+ status=api('/domain-demote?'+urllib.parse.urlencode({'id':job['id'],'node':input['node']}))
+ if status['state'] not in ['queued','running']:break
+ time.sleep(1)
+assert status['state']==('needs_member' if value.get('fail') else 'completed'),status
+print(json.dumps(status))
+'''
+
 try:
     first,ip=create('initdc')
     resolver=call(['docker','exec',first,'cat','/etc/resolv.conf']).stdout.decode();forwarder=next(line.split()[1] for line in resolver.splitlines() if line.startswith('nameserver '))
@@ -92,6 +108,12 @@ try:
     input=dict(mode='forest',realm=realm,netbios='INITTEST',hostname='initdc',address=ip,forwarder=forwarder,site='Main-Init',source='',level='2008_R2',panelName='sambaadm.'+realm)
     status=json.loads(execute(first,bootstrap_client,dict(input=input,password=password)));ca=status['_ca']
     print('PASS first forest through real HTTPS bootstrap; panel/helper/TLS/site verified',flush=True)
+    call(['docker','cp',args.helper,first+':/usr/bin/sambaadm-helper']);call(['docker','exec',first,'systemctl','restart','sambaadm-helper'])
+    snapshot_script="""import sys,json,pathlib,hashlib;sys.path.insert(0,'/usr/lib64/samba-dc/python%d.%d'%sys.version_info[:2]);from samba.param import LoadParm;from samba.samdb import SamDB;from samba.auth import system_session;lp=LoadParm();lp.load('/etc/samba/smb.conf');db=SamDB(lp=lp,session_info=system_session());rows=db.search(expression='(sAMAccountName=LifecycleKeep)',attrs=['objectGUID']);policies=db.search(expression='(objectClass=groupPolicyContainer)',attrs=['name','versionNumber']);root=pathlib.Path('/var/lib/samba/sysvol');files={str(p.relative_to(root)):hashlib.sha256(p.read_bytes()).hexdigest() for p in root.rglob('*') if p.is_file()};print(json.dumps({'user':bytes(rows[0]['objectGUID'][0]).hex(),'policies':sorted((str(p['name'][0]),str(p['versionNumber'][0])) for p in policies),'sysvol':files}))"""
+    execute(first,"import sys,json;v=json.load(sys.stdin);sys.path.insert(0,'/usr/lib64/samba-dc/python%d.%d'%sys.version_info[:2]);from samba.param import LoadParm;from samba.samdb import SamDB;from samba.auth import system_session;lp=LoadParm();lp.load('/etc/samba/smb.conf');db=SamDB(lp=lp,session_info=system_session());db.newuser('LifecycleKeep',v['password'])",dict(password=secrets.token_urlsafe(24)+'aA1!'))
+    call(['docker','exec','-i',first,'samba-tool','dns','add','127.0.0.1',realm,'lifecycle-preserve','A','192.0.2.123','-U','Administrator'],(password+'\n').encode())
+    baseline=json.loads(execute(first,snapshot_script));assert len(baseline['policies'])>=2
+
     call(['docker','exec',first,'samba-tool','sites','create','Branch-Init'])
     call(['docker','cp',args.client,first+':/usr/bin/init-test-client'])
     public=call(['docker','exec',first,'cat','/var/lib/sambaadm/enrollment/management.pub']).stdout
@@ -113,6 +135,33 @@ try:
         input=dict(mode=mode,node=fqdn,realm=realm,netbios='INITTEST',hostname=host,address=address,forwarder=forwarder,site='Branch-Init',source='initdc.'+realm,level='2008_R2',panelName='')
         status=json.loads(execute(first,panel_client,dict(input=input,realm=realm,password=password,ca=ca)))
         print('PASS '+mode+' through real panel and signed helper; site, TLS and SYSVOL verified',flush=True)
+    for host in ['rwnew','ronew']:
+        input=dict(node=host+'.'+realm,realm=realm,source='initdc.'+realm)
+        if host=='ronew':
+            # Fault only the post-demotion installation; preview/download remain real.
+            node=prefix+'-'+host
+            execute(node,"import pathlib;p=pathlib.Path('/usr/sbin/apt-get');assert not p.exists()")
+            upload(node,'/usr/sbin/apt-get',b'#!/bin/sh\nfor arg do [ "$arg" != --no-download ] || exit 100; done\nexec /usr/bin/apt-get "$@"\n',0o755)
+        status=json.loads(execute(first,demote_client,dict(input=input,realm=realm,password=password,ca=ca,fail=host=='ronew')))
+        if host=='ronew':
+            call(['docker','exec',node,'rm','/usr/sbin/apt-get'])
+            execute(first,"import sys,json;v=json.load(sys.stdin);sys.path.insert(0,'/usr/lib64/samba-dc/python%d.%d'%sys.version_info[:2]);import ldb;from samba.param import LoadParm;from samba.samdb import SamDB;from samba.auth import system_session;lp=LoadParm();lp.load('/etc/samba/smb.conf');db=SamDB(lp=lp,session_info=system_session());row=db.search(expression='(sAMAccountName=RONEW$)',attrs=['name'])[0];m=ldb.Message();m.dn=row.dn;m['servicePrincipalName']=ldb.MessageElement('HTTP/lifecycle-preserve.'+v['realm'],ldb.FLAG_MOD_ADD,'servicePrincipalName');db.modify(m);db.dns_replace('ronew.'+v['realm'],[])",dict(realm=realm))
+            call(['docker','exec',node,'systemctl','restart','sambaadm-helper'])
+            status=json.loads(execute(first,demote_client,dict(input=input,realm=realm,password=password,ca=ca,resume=status['id'])))
+            assert sum('Штатное снятие роли DC;' in line for line in status['log'])==1,'resume repeated native demotion'
+        execute(first,"import json,sys;v=json.load(sys.stdin);sys.path.insert(0,'/usr/lib64/samba-dc/python%d.%d'%sys.version_info[:2]);from samba.param import LoadParm;from samba.samdb import SamDB;from samba.auth import system_session;lp=LoadParm();lp.load('/etc/samba/smb.conf');db=SamDB(lp=lp,session_info=system_session());row=db.search(expression='(sAMAccountName='+v['host'].upper()+'$)',attrs=['servicePrincipalName'])[0];names=[str(x).lower() for x in row['servicePrincipalName']];assert 'host/'+v['host']+'.'+v['realm'] in names;assert v['host']!='ronew' or 'http/lifecycle-preserve.'+v['realm'] in names;assert not any(n.startswith(('ldap/','gc/','dns/','e3514235-')) for n in names);_,records=db.dns_lookup(v['host']+'.'+v['realm']);assert len([r for r in records if r.wType==1])==1",dict(host=host,realm=realm))
+        execute(prefix+'-'+host,"import pathlib,json,sys;v=json.load(sys.stdin);assert v['node'].encode() in pathlib.Path('/etc/krb5.keytab').read_bytes(),'FQDN missing from member keytab'",dict(node=host+'.'+realm))
+        pam=(repo/'testdata/samba/member_auth.py').read_text()
+        execute(prefix+'-'+host,pam+"\nimport json,sys;v=json.load(sys.stdin);pam_check('INITTEST\\\\Administrator',v['password']);print('PAM verified')",dict(password=password))
+
+        execute(prefix+'-'+host,"import json,sys,pathlib;v=json.load(sys.stdin);needle=v['password'].encode();root=pathlib.Path('/var/lib/sambaadm-helper/dc-demote');assert all(needle not in p.read_bytes() for p in root.rglob('*') if p.is_file()),'plaintext administrator password persisted'",dict(password=password))
+        print('PASS DC-to-member '+host+' through real panel and signed helper; trust/NSS/PAM/helper verified',flush=True)
+
+    assert json.loads(execute(first,snapshot_script))==baseline,'users, GPO or SYSVOL changed while retiring DCs'
+    assert call(['docker','exec',first,'dig','+short','@127.0.0.1','lifecycle-preserve.'+realm,'A']).stdout.strip()==b'192.0.2.123'
+    srv=call(['docker','exec',first,'dig','+short','@127.0.0.1','_ldap._tcp.dc._msdcs.'+realm,'SRV']).stdout.decode().lower()
+    assert 'initdc.'+realm in srv and 'rwnew.' not in srv and 'ronew.' not in srv,'retired DC service records remain'
+    print('PASS users, GPO, SYSVOL and ordinary DNS retained; retired DC SRV removed; no plaintext admin credentials',flush=True)
     print('PASS isolated domain lifecycle: '+','.join(nodes),flush=True)
 finally:
     if not args.keep:

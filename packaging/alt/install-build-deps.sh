@@ -8,6 +8,8 @@ install_timeout=${ALT_APT_INSTALL_TIMEOUT:-180}
 for limit in "$update_timeout" "$install_timeout"; do
  [[ $limit =~ ^[1-9][0-9]*$ ]] || { echo 'APT timeout must be a positive integer.' >&2; exit 2; }
 done
+branch=${ALT_APT_BRANCH:-p10}
+case $branch in p10|p11) ;; *) echo "Unsupported ALT branch: $branch" >&2; exit 2;; esac
 arch=$(uname -m)
 case $arch in x86_64|aarch64) ;; *) echo "Unsupported ALT architecture: $arch" >&2; exit 2;; esac
 source_file=/etc/apt/sources.list.d/sambaadm-builder.list
@@ -17,7 +19,7 @@ options=(-o "Dir::Etc::sourcelist=$source_file" -o Dir::Etc::sourceparts=/etc/ap
 for mirror in $mirrors; do
  [[ $mirror == http://* && $mirror != *'@'* ]] || { echo 'Bootstrap APT mirror must be an HTTP URL without credentials.' >&2; exit 2; }
  mirror=${mirror%/}
- printf 'rpm [p10] %s p10/branch/%s classic\nrpm [p10] %s p10/branch/noarch classic\n' "$mirror" "$arch" "$mirror" > "$source_file"
+ printf 'rpm [%s] %s %s/branch/%s classic\nrpm [%s] %s %s/branch/noarch classic\n' "$branch" "$mirror" "$branch" "$arch" "$branch" "$mirror" "$branch" > "$source_file"
  # Never fall back to stale indexes from an unsuccessful mirror.
  find /var/lib/apt/lists -type f ! -name lock -delete
  echo "ALT build dependencies: mirror=$mirror update_timeout=${update_timeout}s install_timeout=${install_timeout}s"

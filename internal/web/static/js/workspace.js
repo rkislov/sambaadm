@@ -1577,7 +1577,8 @@
         actions=[
           action(t('Перенести в сайт','Move to site'),'POST',row=>'/sites/controllers/'+enc(row.name)+'/move',[text('site','Новый сайт','New site')],{revision:true,confirm:true}),
           {...view(t('Проверить репликацию','Inspect replication'),'/repl/status',[text('dc','Контроллер','Controller')]),prefill:row=>({dc:row.dns})},
-          {label:'Установить helper',method:'GET',adminOnly:true,href:row=>'/settings/helpers?node='+enc(row.dns)}
+          {label:'Установить helper',method:'GET',adminOnly:true,href:row=>'/settings/helpers?node='+enc(row.dns)},
+          {label:'Снять роль DC',method:'GET',adminOnly:true,href:row=>'/settings/domain-demote?node='+enc(row.dns)}
         ];
       }else{
         items=data.links;
@@ -1600,7 +1601,7 @@
       heading.textContent=title;
       commands.replaceChildren();commands.dataset.compactActions=kind==='site'?'2':'1';
       searchBox.hidden=kind==='site';
-      if(kind==='servers'&&admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init'+(site?'?site='+enc(site.name):'');commands.append(link);}
+      if(kind==='servers'&&admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init'+(site?'?site='+enc(site.name):'');const retire=el('a','btn secondary','Снять роль DC');retire.href='/settings/domain-demote';commands.append(link,retire);}
       if(kind==='sites'){
         if(admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init';commands.append(link);}
         addAction(commands,action(t('Создать сайт','New Site'),'POST','/sites',[name()]));
