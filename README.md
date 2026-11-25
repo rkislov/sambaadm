@@ -4,7 +4,7 @@
 
 Для автоматизации доступны CLI и REST API. Отдельный `sambaadm-helper` выполняет операции на Linux-серверах: доставка SYSVOL, настройка служб, сертификаты, резервное копирование и восстановление. Панель поддерживает Kerberos SSO и вход по логину и паролю.
 
-[Скачать последний релиз](https://github.com/rkislov/sambaadm/releases/latest) · [Плагин Caja: скачать и установить](docs/caja-plugin.md) · [Быстрая установка](docs/quick-install.md) · [Полная инструкция для ALT](docs/alt-install.md) · [Руководство администратора](docs/admin.md)
+[Скачать последний релиз](https://github.com/rkislov/sambaadm/releases/latest) · [Плагин Caja: скачать и установить](docs/caja-plugin.md) · [Быстрая установка](docs/quick-install.md) · [Полная инструкция для ALT](docs/alt-install.md) · [Руководство администратора](docs/admin.md) · [Руководство пользователя](docs/user.md)
 
 ## Релиз v0.50.0
 

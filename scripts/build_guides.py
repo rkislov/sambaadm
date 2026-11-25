@@ -3,11 +3,32 @@ Requires python-docx. Run from any directory; render resulting DOCX for layout Q
 """
 from pathlib import Path
 import re
+from urllib.parse import urljoin
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 ROOT = Path(__file__).resolve().parents[1]
+
+def inline(paragraph, text, source):
+    """Keep links usable without appending long URLs to every paragraph."""
+    base = 'https://github.com/rkislov/sambaadm/blob/main/' + str(source.relative_to(ROOT))
+    offset = 0
+    for match in re.finditer(r'\[([^]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*', text):
+        paragraph.add_run(text[offset:match.start()])
+        if match.group(1):
+            from docx.opc.constants import RELATIONSHIP_TYPE as RT
+            link = OxmlElement('w:hyperlink')
+            link.set(qn('r:id'), paragraph.part.relate_to(urljoin(base, match.group(2)), RT.HYPERLINK, is_external=True))
+            run = OxmlElement('w:r');props = OxmlElement('w:rPr')
+            style = OxmlElement('w:rStyle');style.set(qn('w:val'), 'Hyperlink');props.append(style);run.append(props)
+            value = OxmlElement('w:t');value.text = match.group(1);run.append(value);link.append(run);paragraph._p.append(link)
+        else:
+            run = paragraph.add_run(match.group(3) or match.group(4))
+            if match.group(3):run.font.name='Courier New';run.font.size=Pt(9)
+            else:run.bold=True
+        offset = match.end()
+    paragraph.add_run(text[offset:])
 
 def plain(s):
     return re.sub(r'\[([^]]+)\]\([^)]+\)', r'\1', s).replace('`', '').replace('**', '')
@@ -74,7 +95,7 @@ def build(source, target):
                 doc.add_paragraph('Содержание', 'Heading 2')
                 for title in headings:
                     entry=doc.add_paragraph(title)
-                    entry.paragraph_format.space_after=Pt(2)
+                    entry.paragraph_format.space_after=Pt(1)
                     for run in entry.runs: run.font.size=Pt(9)
                 contents=True
             p=doc.add_paragraph(line[3:],'Heading 1')
@@ -88,11 +109,8 @@ def build(source, target):
             p.add_run().add_picture(str(source.parent/m[2]),width=Cm(13.5 if 'share-wizard' in m[2] else 17.0))
             doc.add_paragraph(m[1], 'Caption');continue
         if line.startswith('[Иллюстрированная') or line.startswith('[Инструкция Word'): continue
-        p=doc.add_paragraph(plain(line))
-        if code is False and '](' in line:
-            for label, href in re.findall(r'\[([^]]+)\]\(([^)]+)\)',line):
-                url=href if href.startswith('http') else 'https://github.com/rkislov/sambaadm/blob/v0.36.0/'+str((source.parent/href).resolve().relative_to(ROOT))
-                r=p.add_run(' '+url);r.font.size=Pt(8)
+        p=doc.add_paragraph()
+        inline(p,line,source)
         if code:
             p.paragraph_format.space_after=Pt(0)
             p.paragraph_format.line_spacing=1
@@ -100,11 +118,10 @@ def build(source, target):
     paragraphs=doc.paragraphs
     for i,p in enumerate(paragraphs[:-1]):
         if p.text.rstrip().endswith(':'): p.paragraph_format.keep_with_next=True
-        if re.match(r'^\d+\. ',p.text) and re.match(r'^\d+\. ',paragraphs[i+1].text):
-            p.paragraph_format.keep_with_next=True
     doc.core_properties.title=doc.paragraphs[0].text
     doc.core_properties.author='sambaadm'
-    doc.core_properties.subject='Руководство для sambaadm 0.36.0 от 5 ноября 2026 года'
+    version=re.search(r'Версия [0-9.]+ от [^.]+', source.read_text())
+    doc.core_properties.subject=version.group(0) if version else 'Руководство sambaadm'
     target.parent.mkdir(parents=True,exist_ok=True);doc.save(target)
 
 build(ROOT/'docs/admin.md',ROOT/'docs/admin-guide/sambaadm-admin-guide.docx')
