@@ -104,6 +104,8 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-init.cjs
       - name: Existing AD bootstrap and resume browser contracts
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-init-existing.cjs
+      - name: Windows SYSVOL sync browser contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/sysvol-sync.cjs
       - name: DC retirement wizard and resumable member setup
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-demote.cjs
       - name: Compact dashboard and SSO fallback

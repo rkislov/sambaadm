@@ -69,8 +69,9 @@ type DistributeJob struct {
 
 // jobStore keeps in-memory distribute jobs for UI polling.
 type jobStore struct {
-	mu   sync.RWMutex
-	jobs map[string]*DistributeJob
+	sysvolActive bool
+	mu           sync.RWMutex
+	jobs         map[string]*DistributeJob
 }
 
 func newJobStore() *jobStore {
@@ -83,6 +84,9 @@ var ErrGPOBulkDeliveryActive = errors.New("массовую доставку н�
 func (s *jobStore) start(j *DistributeJob) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.sysvolActive {
+		return ErrGPOBulkDeliveryActive
+	}
 	for _, current := range s.jobs {
 		if (j.Bulk || current.Bulk) && (current.Status == JobPending || current.Status == JobRunning) {
 			return ErrGPOBulkDeliveryActive
@@ -659,3 +663,19 @@ func installPolicySnapshot(share *sysvolShare, target string, snapshot policyBac
 	}
 	return nil
 }
+
+func (s *jobStore) reserveSYSVOL() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.sysvolActive {
+		return ErrGPOBulkDeliveryActive
+	}
+	for _, j := range s.jobs {
+		if j.Status == JobPending || j.Status == JobRunning {
+			return ErrGPOBulkDeliveryActive
+		}
+	}
+	s.sysvolActive = true
+	return nil
+}
+func (s *jobStore) releaseSYSVOL() { s.mu.Lock(); s.sysvolActive = false; s.mu.Unlock() }

@@ -135,6 +135,24 @@ try:
         input=dict(mode=mode,node=fqdn,realm=realm,netbios='INITTEST',hostname=host,address=address,forwarder=forwarder,site='Branch-Init',source='initdc.'+realm,level='2008_R2',panelName='')
         status=json.loads(execute(first,panel_client,dict(input=input,realm=realm,password=password,ca=ca)))
         print('PASS '+mode+' through real panel and signed helper; site, TLS and SYSVOL verified',flush=True)
+    sysvol_client=panel_client[:panel_client.index("metadata=api('/domain-init')")]+r"""
+meta=api('/gpo/sysvol-sync');policy=meta['policies'][0]['guid']
+job=api('/gpo/sysvol-sync/plan',{'source':'initdc.'+value['realm'],'targets':['rwnew.'+value['realm'],'ronew.'+value['realm']],'policies':[policy]})
+for _ in range(180):
+ job=api('/gpo/sysvol-sync/jobs/'+job['id'])
+ if job['state'] not in ['planning','running']:break
+ time.sleep(1)
+assert job['state']=='planned' and all(i['state']=='identical' for i in job['items']),job
+job=api('/gpo/sysvol-sync/jobs/'+job['id']+'/apply',{'revision':job['revision'],'confirm':True})
+for _ in range(180):
+ job=api('/gpo/sysvol-sync/jobs/'+job['id'])
+ if job['state'] not in ['planning','running']:break
+ time.sleep(1)
+assert job['state']=='completed' and all(i['state']=='identical' for i in job['items']),job
+print('SYSVOL Kerberos source and helper RWDC/RODC recipients verified')
+"""
+    execute(first,sysvol_client,dict(input={},realm=realm,password=password,ca=ca))
+    print('PASS real panel SYSVOL pull: service Kerberos, RWDC/RODC LDAP and helper ACL verification, identical copies not rewritten',flush=True)
     for host in ['rwnew','ronew']:
         input=dict(node=host+'.'+realm,realm=realm,source='initdc.'+realm)
         if host=='ronew':

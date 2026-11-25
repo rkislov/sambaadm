@@ -1,0 +1,3 @@
+{{define "sysvol-sync.html"}}
+<!DOCTYPE html><html lang="ru"><head>{{template "head" .}}<link rel="stylesheet" href="/domain-init-assets/wizard.css"><link rel="stylesheet" href="/static/css/sysvol-sync.css"><script src="/static/js/sysvol-sync.js" defer></script></head><body>{{template "nav" .}}<main class="di-shell ss-shell"><a href="/gpo">← Групповые политики</a><h1>Синхронизация SYSVOL</h1><p class="di-muted">Перенос политик с выбранного Windows или Samba DC на контроллеры с helper.</p><div data-sysvol-sync></div></main>{{template "footer" .}}</body></html>
+{{end}}

@@ -292,7 +292,18 @@ func (s *Services) helperSYSVOL(ctx context.Context, cfg *config.Config, method 
 		remote.User = credentials.Username
 		remote.Password = func() string { return credentials.Password }
 	}
-	err = remote.SYSVOL(ctx, cfg.GPO.SMBPort, func(sh *smb2.Share) error {
+	access := remote.SYSVOL
+	if in.Kerberos {
+		realm := strings.Split(strings.ReplaceAll(cfg.Helper.SYSVOLPrefix, `\`, "/"), "/")[0]
+		if realm == "" || !strings.HasSuffix(strings.ToLower(cfg.Helper.Node), "."+strings.ToLower(realm)) {
+			return nil, fmt.Errorf("Проверьте DNS-имя helper и домен SYSVOL для Kerberos")
+		}
+		remote.Host = cfg.Helper.Node
+		access = func(ctx context.Context, port int, fn func(*smb2.Share) error) error {
+			return remote.SYSVOLKerberos(ctx, port, realm, fn)
+		}
+	}
+	err = access(ctx, cfg.GPO.SMBPort, func(sh *smb2.Share) error {
 		// Existing path checking rejects symlinked ancestors, including the root.
 		root := &smbPolicyStore{share: &sysvolShare{local: sh, ctx: ctx}, base: strings.ReplaceAll(p, `\`, "/")}
 		missing := method == "mkdir" || method == "mkdir-all" || method == "open" || method == "write-file"

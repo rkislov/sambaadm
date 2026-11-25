@@ -30,13 +30,15 @@ type repairSnapshot struct {
 	Signature string
 }
 type RepairInput struct {
-	Operation string `json:"operation"`
-	Source    string `json:"source,omitempty"`
-	Target    string `json:"target,omitempty"`
-	Record    string `json:"record,omitempty"`
-	Preview   string `json:"preview,omitempty"`
+	WindowsSource bool   `json:"windowsSource,omitempty"`
+	Operation     string `json:"operation"`
+	Source        string `json:"source,omitempty"`
+	Target        string `json:"target,omitempty"`
+	Record        string `json:"record,omitempty"`
+	Preview       string `json:"preview,omitempty"`
 }
 type RepairRecord struct {
+	Kerberos                                              bool `json:",omitempty"`
 	Format                                                int
 	ID, GPO, Source, Target, Base, LDAP, State, Direction string
 	Created                                               time.Time

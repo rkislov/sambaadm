@@ -16,13 +16,17 @@ import (
 
 // sysvolShare preserves the editor's filesystem contract while delegating
 // every DC file operation to that DC's registered helper.
+type sysvolKerberosKey struct{}
 type sysvolShare struct {
-	local   *smb2.Share
-	helpers *agent.Client
-	node    string
-	ctx     context.Context
+	kerberos bool
+	readOnly bool
+	local    *smb2.Share
+	helpers  *agent.Client
+	node     string
+	ctx      context.Context
 }
 type helperFSRequest struct {
+	Kerberos bool `json:"Kerberos,omitempty"`
 	Path     string
 	To       string
 	Flags    int
@@ -72,7 +76,7 @@ func (s *GPOService) sysvol(ctx context.Context, remote *adremote.Client, port i
 		if !s.helpers.Has(node) {
 			return fmt.Errorf("sambaadm-helper is required for DC %s", node)
 		}
-		return fn(&sysvolShare{helpers: s.helpers, node: node, ctx: ctx})
+		return fn(&sysvolShare{helpers: s.helpers, node: node, ctx: ctx, kerberos: ctx.Value(sysvolKerberosKey{}) == true})
 	}
 	// A session identity must never silently become the configured service
 	// account when no helper is available (including embedded web setups).
@@ -84,6 +88,7 @@ func (s *GPOService) sysvol(ctx context.Context, remote *adremote.Client, port i
 	return remote.SYSVOL(ctx, port, func(sh *smb2.Share) error { return fn(&sysvolShare{local: sh, ctx: ctx}) })
 }
 func (s *sysvolShare) call(op string, in helperFSRequest, out any) error {
+	in.Kerberos = s.kerberos
 	return s.helpers.Call(s.ctx, s.node, "sysvol."+op, in, out)
 }
 func (s *sysvolShare) Lstat(p string) (os.FileInfo, error) {
@@ -116,36 +121,54 @@ func (s *sysvolShare) ReadFile(p string) ([]byte, error) {
 	return out, e
 }
 func (s *sysvolShare) WriteFile(p string, b []byte, m os.FileMode) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.WriteFile(p, b, m)
 	}
 	return s.call("write-file", helperFSRequest{Path: p, Data: b, Mode: m}, nil)
 }
 func (s *sysvolShare) Mkdir(p string, m os.FileMode) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.Mkdir(p, m)
 	}
 	return s.call("mkdir", helperFSRequest{Path: p, Mode: m}, nil)
 }
 func (s *sysvolShare) MkdirAll(p string, m os.FileMode) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.MkdirAll(p, m)
 	}
 	return s.call("mkdir-all", helperFSRequest{Path: p, Mode: m}, nil)
 }
 func (s *sysvolShare) Remove(p string) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.Remove(p)
 	}
 	return s.call("remove", helperFSRequest{Path: p}, nil)
 }
 func (s *sysvolShare) RemoveAll(p string) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.RemoveAll(p)
 	}
 	return s.call("remove-tree", helperFSRequest{Path: p}, nil)
 }
 func (s *sysvolShare) Rename(p, to string) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.Rename(p, to)
 	}
@@ -160,12 +183,18 @@ func (s *sysvolShare) SecurityInfoRaw(p string, flags smb2.SecurityInformationRe
 	return out, e
 }
 func (s *sysvolShare) SetSecurityInfoRaw(p string, flags smb2.SecurityInformationRequestFlags, b adremote.SecurityBytes) error {
+	if s.readOnly {
+		return os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.SetSecurityInfoRaw(p, flags, b)
 	}
 	return s.call("set-acl", helperFSRequest{Path: p, Security: uint32(flags), Data: []byte(b)}, nil)
 }
 func (s *sysvolShare) OpenFile(p string, flags int, m os.FileMode) (policyFile, error) {
+	if s.readOnly && flags != os.O_RDONLY {
+		return nil, os.ErrPermission
+	}
 	if s.local != nil {
 		return s.local.OpenFile(p, flags, m)
 	}

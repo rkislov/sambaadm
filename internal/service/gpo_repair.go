@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	smb2 "github.com/cloudsoda/go-smb2"
 	"os"
 	"path"
 	"strconv"
@@ -52,6 +54,9 @@ func repairLDAP(entry *ldap.Entry) (string, error) {
 	return consistencyHash([]any{m, a, v, strings.ToLower(entry.DN)}), nil
 }
 func (s *GPOService) withRepairDC(ctx context.Context, gpo, host string, fn func(*GPOService, *ldap.Entry, repairVolume, string) error) error {
+	return s.withRepairPeer(ctx, gpo, host, false, fn)
+}
+func (s *GPOService) withRepairPeer(ctx context.Context, gpo, host string, sourceOnly bool, fn func(*GPOService, *ldap.Entry, repairVolume, string) error) error {
 	dcs, e := (&SiteService{ldap: s.ldap}).Controllers(ctx)
 	if e != nil {
 		return e
@@ -90,19 +95,22 @@ func (s *GPOService) withRepairDC(ctx context.Context, gpo, host string, fn func
 	}
 	peer := s.ldap.ServicePeer(uri)
 	defer peer.Close()
-	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers:s.helpers}
+	other := &GPOService{ldap: peer, remote: &remote, gpoCfg: s.gpoCfg, helpers: s.helpers}
 	pc, e := peer.Conn(ctx)
 	if e != nil {
 		return e
 	}
 	stop := context.AfterFunc(ctx, func() { pc.Close() })
 	defer stop()
-	root, e = pc.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 10, false, "(objectClass=*)", []string{"dNSHostName"}, nil))
+	root, e = pc.Search(ldap.NewSearchRequest("", ldap.ScopeBaseObject, ldap.NeverDerefAliases, 1, 10, false, "(objectClass=*)", []string{"dNSHostName", "defaultNamingContext"}, nil))
 	if e != nil {
 		return e
 	}
 	if len(root.Entries) != 1 || !strings.EqualFold(root.Entries[0].GetEqualFoldAttributeValue("dNSHostName"), host) {
 		return fmt.Errorf("DC identity mismatch")
+	}
+	if (sourceOnly || ctx.Value(sysvolKerberosKey{}) == true) && !strings.EqualFold(root.Entries[0].GetEqualFoldAttributeValue("defaultNamingContext"), s.ldap.BaseDN()) {
+		return fmt.Errorf("Выбранный DC относится к другому домену")
 	}
 	entry, e := readConsistencyLDAP(ctx, other, gpo)
 	if e != nil {
@@ -113,6 +121,16 @@ func (s *GPOService) withRepairDC(ctx context.Context, gpo, host string, fn func
 		return e
 	}
 	base = strings.ReplaceAll(base, `\`, "/")
+	if sourceOnly {
+		remote.Host = host // CIFS SPN must use the authenticated DC name, never a forwarded LDAP address.
+		realm, err := other.domainDNS(ctx)
+		if err != nil {
+			return err
+		}
+		return remote.SYSVOLKerberos(ctx, s.gpoCfg.SMBPort, realm, func(sh *smb2.Share) error {
+			return fn(other, entry, &smbRepairVolume{&sysvolShare{local: sh, ctx: ctx, readOnly: true}, path.Dir(base)}, base)
+		})
+	}
 	return s.sysvol(ctx, &remote, s.gpoCfg.SMBPort, func(sh *sysvolShare) error { return fn(other, entry, &smbRepairVolume{sh, path.Dir(base)}, base) })
 }
 func validateRepair(in RepairInput) error {
@@ -182,9 +200,9 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 	}
 	p := &RepairPlan{Operation: in.Operation, Source: in.Source, Target: in.Target, Record: in.Record, Changes: []ConsistencyDifference{}, Warnings: []string{"Use a maintenance window: directory cutover has a brief interval with no live GPO directory.", "Pause external GPO editors and SYSVOL synchronizers; SMB has no compare-and-swap directory rename.", "Owner/group/DACL and ordinary file contents are copied; SACL, alternate streams and extended attributes are outside this repair format.", "Original directory and private local backup are retained; service metadata remains in the original directory."}}
 	if in.Operation == "repair" {
-		r := &RepairRecord{Format: 1, GPO: braceGUID(gpo), Source: in.Source, Target: in.Target, State: "pending", Direction: "complete"}
+		r := &RepairRecord{Kerberos: in.WindowsSource, Format: 1, GPO: braceGUID(gpo), Source: in.Source, Target: in.Target, State: "pending", Direction: "complete"}
 		p.record = r
-		e := s.withRepairDC(ctx, gpo, in.Source, func(other *GPOService, entry *ldap.Entry, v repairVolume, base string) error {
+		e := s.withRepairPeer(ctx, gpo, in.Source, in.WindowsSource, func(other *GPOService, entry *ldap.Entry, v repairVolume, base string) error {
 			var e error
 			r.LDAP, e = repairLDAP(entry)
 			if e != nil {
@@ -240,6 +258,11 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 				return fmt.Errorf("LDAP metadata, security or version differs; resolve LDAP replication first")
 			}
 			r.Base = base
+			if in.WindowsSource {
+				if _, err := v.Tree(".").Lstat("."); err != nil {
+					return fmt.Errorf("Каталог Policies получателя не инициализирован или недоступен; сначала завершите начальное развёртывание SYSVOL: %w", err)
+				}
+			}
 			if _, e = v.Tree(path.Base(base)).Lstat("."); os.IsNotExist(e) {
 				r.Before = nil
 				return nil
@@ -262,15 +285,23 @@ func (s *GPOService) buildRepair(ctx context.Context, local *os.Root, gpo string
 		if e != nil {
 			return nil, e
 		}
-		if repairSignature(r.Before) == r.After.Signature {
-			return nil, topologyBad("SYSVOL copies already match")
+		if in.WindowsSource {
+			if err := safeSyncVersions(r.Before, r.After); err != nil {
+				return nil, err
+			}
+		}
+		if repairSignature(r.Before) == r.After.Signature && !in.WindowsSource {
+			return nil, errSYSVOLMatch
 		}
 		p.Changes = repairPlanChanges(r.Before, r.After)
-		p.Preview = consistencyHash([]any{in.Operation, r.GPO, r.Source, r.Target, r.Base, r.LDAP, repairSignature(r.Before), r.After.Signature})
+		p.Preview = consistencyHash([]any{in.Operation, in.WindowsSource, r.GPO, r.Source, r.Target, r.Base, r.LDAP, repairSignature(r.Before), r.After.Signature})
 	} else {
 		r, e := readRepair(local, in.Record)
 		if e != nil {
 			return nil, e
+		}
+		if r.Kerberos {
+			ctx = context.WithValue(ctx, sysvolKerberosKey{}, true)
 		}
 		if r.GPO != braceGUID(gpo) {
 			return nil, topologyBad("record belongs to another GPO")
@@ -343,6 +374,9 @@ func (s *GPOService) RepairPreview(ctx context.Context, gpo string, in RepairInp
 	if e := validateRepair(in); e != nil {
 		return nil, e
 	}
+	if in.WindowsSource {
+		ctx = context.WithValue(ctx, sysvolKerberosKey{}, true)
+	}
 	s.editorMu.Lock()
 	defer s.editorMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -360,6 +394,9 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 	}
 	if e := validateRepair(in); e != nil {
 		return nil, e
+	}
+	if in.WindowsSource {
+		ctx = context.WithValue(ctx, sysvolKerberosKey{}, true)
 	}
 	if in.Preview == "" {
 		return nil, topologyBad("preview required")
@@ -390,6 +427,9 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 			return ErrTopologyConflict
 		}
 		r := p.record
+		if r.Kerberos {
+			ctx = context.WithValue(ctx, sysvolKerberosKey{}, true)
+		}
 		if in.Operation == "repair" {
 			r.ID = uuid.NewString()
 			r.Created = time.Now().UTC()
@@ -404,6 +444,7 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 		if e = saveRepair(local, r); e != nil {
 			return e
 		}
+		out = &RepairResult{Record: r.ID, State: r.State}
 		e = s.withRepairDC(ctx, gpo, r.Target, func(other *GPOService, entry *ldap.Entry, v repairVolume, base string) error {
 			if base != r.Base {
 				return ErrTopologyConflict
@@ -423,6 +464,25 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 				if fp != r.LDAP {
 					return ErrTopologyConflict
 				}
+				if in.WindowsSource && in.Operation == "repair" {
+					return s.withRepairPeer(ctx, gpo, r.Source, true, func(_ *GPOService, entry *ldap.Entry, source repairVolume, base string) error {
+						fingerprint, e := repairLDAP(entry)
+						if e != nil {
+							return e
+						}
+						if fingerprint != r.LDAP {
+							return ErrTopologyConflict
+						}
+						current, e := scanPolicyTree(ctx, source.Tree(path.Base(base)), true)
+						if e != nil {
+							return e
+						}
+						if current.Pending || current.Signature != r.After.Signature {
+							return ErrTopologyConflict
+						}
+						return nil
+					})
+				}
 				return nil
 			}
 			return runRepair(ctx, v, local, r, check)
@@ -434,7 +494,7 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 		return nil
 	}()
 	if err != nil {
-		return nil, err
+		return out, err
 	}
 	if in.Operation == "prune" {
 		return out, nil
@@ -445,4 +505,35 @@ func (s *GPOService) RepairApply(ctx context.Context, gpo string, in RepairInput
 		err = nil
 	}
 	return out, nil
+}
+
+var errSYSVOLMatch = topologyBad("Копии SYSVOL уже совпадают")
+
+func snapshotVersion(s *repairSnapshot) (uint32, error) {
+	if s != nil {
+		for _, o := range s.Objects {
+			if strings.EqualFold(o.Path, "GPT.INI") {
+				v, _, e := gptVersion(o.Data, nil)
+				return v, e
+			}
+		}
+	}
+	return 0, errors.New("Не удалось прочитать версию GPT.INI")
+}
+func safeSyncVersions(before, after *repairSnapshot) error {
+	source, e := snapshotVersion(after)
+	if e != nil {
+		return e
+	}
+	if before == nil {
+		return nil
+	}
+	target, e := snapshotVersion(before)
+	if e != nil {
+		return fmt.Errorf("Версия получателя неизвестна; используйте отдельное восстановление GPO: %w", e)
+	}
+	if uint16(target) > uint16(source) || uint16(target>>16) > uint16(source>>16) {
+		return fmt.Errorf("Получатель содержит более новую пользовательскую или компьютерную версию; понижение версии запрещено")
+	}
+	return nil
 }

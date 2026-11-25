@@ -196,6 +196,9 @@ func (s *GPOService) buildRepairPrune(ctx context.Context, local *os.Root, gpo s
 	if e != nil {
 		return nil, e
 	}
+	if r.Kerberos {
+		ctx = context.WithValue(ctx, sysvolKerberosKey{}, true)
+	}
 	if r.GPO != braceGUID(gpo) {
 		return nil, topologyBad("record belongs to another GPO")
 	}

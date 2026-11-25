@@ -213,6 +213,7 @@
     parent.append(button(a.label,()=>openOperation(a,row),a.danger?'danger':''));
   }
   tools.append(button(t('Обновить','Refresh'),()=>load()));
+  if(admin&&root.dataset.module==='/gpo'){const sync=el('a','btn secondary','Синхронизация SYSVOL');sync.href='/gpo/sysvol-sync';tools.append(sync);}
   if(root.dataset.module==='/domain'){const guide=el('a','btn secondary','Вывод Windows DC');guide.href='https://github.com/rkislov/sambaadm/blob/main/docs/windows-migration.md';tools.append(guide);}
   if(cfg.create){
     const target=specialized?tools:listTools;
