@@ -139,6 +139,33 @@ func (h *bootstrapHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(200, value)
 		return
 	}
+	if r.URL.Path == "/api/resume" && r.Method == "POST" {
+		runner, ok := h.runner.(interface {
+			Resume(context.Context, string, string, string) (*Status, error)
+		})
+		if !ok {
+			fail(409, "Продолжение не поддерживается")
+			return
+		}
+		var in struct {
+			ID       string `json:"id"`
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		dec := json.NewDecoder(r.Body)
+		dec.DisallowUnknownFields()
+		if dec.Decode(&in) != nil || dec.Decode(&struct{}{}) != io.EOF {
+			fail(400, "Некорректные параметры")
+			return
+		}
+		out, err := runner.Resume(r.Context(), in.ID, in.Username, in.Password)
+		if err != nil {
+			fail(409, err.Error())
+			return
+		}
+		reply(202, out)
+		return
+	}
 	if r.Method != "POST" || (r.URL.Path != "/api/plan" && r.URL.Path != "/api/start") {
 		http.NotFound(w, r)
 		return
@@ -158,8 +185,8 @@ func (h *bootstrapHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(400, "Некорректные параметры")
 		return
 	}
-	if in.Mode != "forest" {
-		fail(400, "Первоначальный мастер создаёт только новый лес")
+	if in.Mode != "forest" && in.Mode != "existing" {
+		fail(400, "Выберите новый лес или присоединение к существующему домену")
 		return
 	}
 	if r.URL.Path == "/api/plan" {

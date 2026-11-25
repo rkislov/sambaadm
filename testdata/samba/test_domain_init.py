@@ -162,6 +162,39 @@ try:
     srv=call(['docker','exec',first,'dig','+short','@127.0.0.1','_ldap._tcp.dc._msdcs.'+realm,'SRV']).stdout.decode().lower()
     assert 'initdc.'+realm in srv and 'rwnew.' not in srv and 'ronew.' not in srv,'retired DC service records remain'
     print('PASS users, GPO, SYSVOL and ordinary DNS retained; retired DC SRV removed; no plaintext admin credentials',flush=True)
+    # First panel in an existing AD; this is protocol coverage with Samba,
+    # not an assertion of acceptance against a real Windows Server DC.
+    execute(first,"import sys;sys.path.insert(0,'/usr/lib64/samba-dc/python%d.%d'%sys.version_info[:2]);from samba.param import LoadParm;from samba.samdb import SamDB;from samba.auth import system_session;lp=LoadParm();lp.load('/etc/samba/smb.conf');db=SamDB(lp=lp,session_info=system_session());[(db.add({'dn':'CN=PageUser%03d,CN=Users,'%i+str(db.domain_dn()),'objectClass':['user'],'sAMAccountName':'PageUser%03d'%i,'userAccountControl':'546'})) for i in range(501)]")
+    node,address=create('firstlinux',ip)
+    upload(node,'/usr/share/sambaadm/helper-packages/'+pathlib.Path(args.helper_rpm).name,pathlib.Path(args.helper_rpm).read_bytes(),0o644)
+    upload(node,'/usr/sbin/sambaadm-setup.real',(repo/'deploy/sambaadm-setup').read_bytes(),0o755)
+    upload(node,'/usr/sbin/sambaadm-setup',b'#!/bin/sh\nexit 42\n',0o755)
+    call(['docker','exec','-d',node,'sh','-c','umask 077; exec /usr/bin/sambaadm domain-init --state-dir /var/lib/sambaadm-domain-init >/root/bootstrap-console 2>&1'])
+    for _ in range(60):
+        if b'SHA-256' in call(['docker','exec',node,'cat','/root/bootstrap-console'],check=False).stdout:break
+        time.sleep(.2)
+    request=dict(mode='existing',realm=realm,netbios='',hostname='firstlinux',address=address,forwarder=forwarder,site='',source='initdc.'+realm,level='auto',panelName='sambaadm-firstlinux.'+realm,serviceUser='sadm-firstlinux',transferRoles=False,username='Administrator@'+realm)
+    fault_client=bootstrap_client.replace("assert status['state']=='completed',status", "assert status['state']=='failed' and status.get('resumable'),status")
+    interrupted=json.loads(execute(node,fault_client,dict(input=request,password=password)))
+    assert interrupted['site']=='Main-Init'
+    execute(node,"from pathlib import Path;p=Path('/usr/sbin/sambaadm-setup');p.unlink();Path('/usr/sbin/sambaadm-setup.real').rename(p)")
+    resume_client=bootstrap_client[:bootstrap_client.index("csrf=api('/api/unlock'")]+r"""
+csrf=api('/api/unlock',{'token':token})['csrf']
+job=api('/api/resume',{'id':value['id'],'username':'Administrator@'+value['realm'],'password':value['password']})
+for _ in range(300):
+ status=api('/api/status?id='+job['id'])
+ if status['state'] not in ['queued','running']:break
+ time.sleep(1)
+assert status['state']=='completed',status
+print(json.dumps(status))
+"""
+    status=json.loads(execute(node,resume_client,dict(id=interrupted['id'],realm=realm,password=password)))
+    assert status['report']['windowsTested'] is False and status['report']['fsmo']==[]
+    assert status['report']['directory']['users']>500,'LDAP pagination was not exercised'
+    assert sum('Присоединение первого Samba RWDC' in line for line in status['log'])==1
+    assert sum('SYSVOL доставлен и права проверены' in line for line in status['log'])==1
+    execute(node,"import pathlib,json,sys;v=json.load(sys.stdin);root=pathlib.Path('/var/lib/sambaadm-domain-init');assert all(v['password'].encode() not in p.read_bytes() for p in root.rglob('*') if p.is_file()),'administrator password persisted'",dict(password=password))
+    print('PASS first panel in existing Samba AD: Kerberos, site discovery, directory/SYSVOL, panel failure/resume without rejoin, signed helper, FSMO skipped; real Windows DC acceptance outstanding',flush=True)
     print('PASS isolated domain lifecycle: '+','.join(nodes),flush=True)
 finally:
     if not args.keep:

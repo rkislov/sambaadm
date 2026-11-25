@@ -82,7 +82,7 @@ func (s *Server) handleDomainInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	realm := dnsFromBaseDN(s.cfg.LDAP.BaseDN)
-	if request.Mode == "forest" || request.Realm != realm || !strings.EqualFold(request.Node, request.Hostname+"."+realm) {
+	if (request.Mode != "DC" && request.Mode != "RODC") || request.Realm != realm || !strings.EqualFold(request.Node, request.Hostname+"."+realm) {
 		writeJSON(w, 400, map[string]string{"error": "Выберите новый контроллер в текущем домене"})
 		return
 	}

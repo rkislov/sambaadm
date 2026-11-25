@@ -85,7 +85,7 @@ func SignPlan(plan *Plan, in Input, dir string) error {
 	}
 	plan.Certificate, plan.CA = cert, public
 	// Bootstrap runs as root; the permanent unprivileged panel owns its CA.
-	if in.Mode == "forest" && os.Geteuid() == 0 {
+	if (in.Mode == "forest" || in.Mode == "existing") && os.Geteuid() == 0 {
 		account, err := user.Lookup("sambaadm")
 		if err != nil {
 			return fmt.Errorf("Установите пакет sambaadm перед созданием леса")

@@ -21,20 +21,24 @@ def canonical(value):
 def validate(value):
     realm=value.get('realm','')
     dns=lambda s: len(s)<=253 and '.' in s and all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',p) for p in s.split('.'))
-    if not dns(realm) or value.get('mode') not in ['forest','DC','RODC']: raise RuntimeError('Недопустимые параметры домена')
+    if not dns(realm) or value.get('mode') not in ['forest','DC','RODC','existing']: raise RuntimeError('Недопустимые параметры домена')
     for field in ['hostname','netbios']:
+        if field=='netbios' and value['mode']=='existing' and not value.get(field):continue
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]{0,14}',value.get(field,'')): raise RuntimeError('Недопустимое короткое имя '+field)
     if value['hostname'].lower()==value['netbios'].lower() or not dns(value['hostname'].lower()+'.'+realm):raise RuntimeError('Имя DC должно отличаться от NetBIOS домена и образовывать корректное DNS-имя')
     site=value.get('site','')
-    if not site.strip() or len(site)>64 or any(c in site for c in '\r\n\x00/\\'):raise RuntimeError('Недопустимое имя сайта')
+    if (not site.strip() and value['mode']!='existing') or len(site)>64 or any(c in site for c in '\r\n\x00/\\'):raise RuntimeError('Недопустимое имя сайта')
+    if value['mode']=='existing' and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,19}',value.get('serviceUser','')):raise RuntimeError('Укажите имя новой служебной записи до 20 знаков')
+    if value.get('serviceUser') and value['mode']!='existing':raise RuntimeError('Имя новой служебной записи задаётся только для существующего домена')
+    if value.get('transferRoles') and value['mode']!='existing':raise RuntimeError('Перенос FSMO доступен только для существующего домена')
     address=ipaddress.ip_address(value.get('address',''))
     if address.version!=4 or address.is_loopback or address.is_multicast or address.is_unspecified:raise RuntimeError('Нужен адрес IPv4 интерфейса сервера')
     forwarder=ipaddress.ip_address(value.get('forwarder',''))
     if forwarder.is_loopback or forwarder.is_multicast or forwarder.is_unspecified or forwarder==address:raise RuntimeError('Нужен доступный внешний DNS-пересыльщик')
-    if value.get('level') not in ['2003','2008','2008_R2']:raise RuntimeError('Недопустимый функциональный уровень')
-    if value['mode']=='forest':
+    if value.get('level') not in (['auto'] if value['mode']=='existing' else ['2003','2008','2008_R2']):raise RuntimeError('Недопустимый функциональный уровень')
+    if value['mode'] in ['forest','existing']:
         if not dns(value.get('panelName','')) or not value['panelName'].endswith('.'+realm):raise RuntimeError('HTTPS-имя должно принадлежать новому домену')
-    elif not dns(value.get('source','')) or not value['source'].endswith('.'+realm):raise RuntimeError('Нужен исходный RWDC этого домена')
+    if value['mode']!='forest' and (not dns(value.get('source','')) or not value['source'].endswith('.'+realm)):raise RuntimeError('Нужен исходный RWDC этого домена')
 
 def unmodified_vendor(path):
     run(['rpm','-qf',str(path)],10)
@@ -93,11 +97,17 @@ def install_local_helper(value,folder,save):
     helper=pathlib.Path('/etc/sambaadm-helper');helper.mkdir(mode=0o700,exist_ok=True)
     shutil.copyfile(public,helper/'management.pub');(helper/'management.pub').chmod(0o600)
     node=value['hostname'].lower()+'.'+value['realm'];tls=pathlib.Path('/var/lib/samba/private/tls')
-    settings={'helper':{'node':node,'trusted_keys':[str(helper/'management.pub')],'listen':'0.0.0.0:8444','tls':{'cert':str(tls/'cert.pem'),'key':str(tls/'key.pem')},'state_dir':'/var/lib/sambaadm-helper','backup_root':'/var/lib/sambaadm-helper/backups','sysvol_prefix':value['realm']+'/Policies'},'ldap':{'uri':'ldaps://'+node+':636','base_dn':','.join('DC='+p for p in value['realm'].split('.')),'ca_cert':'/etc/sambaadm/domain-ca.pem','bind':{'user':'svc-sambaadm@'+value['realm'],'password_env':'SAMBAADM_PASSWORD'}},'samba':{'smb_conf':str(SMB),'shares_root':'/srv/samba'},'audit':{'file':'/var/log/sambaadm-helper/audit.log'}}
+    settings={'helper':{'node':node,'trusted_keys':[str(helper/'management.pub')],'listen':'0.0.0.0:8444','tls':{'cert':str(tls/'cert.pem'),'key':str(tls/'key.pem')},'state_dir':'/var/lib/sambaadm-helper','backup_root':'/var/lib/sambaadm-helper/backups','sysvol_prefix':value['realm']+'/Policies'},'ldap':{'uri':'ldaps://'+node+':636','base_dn':','.join('DC='+p for p in value['realm'].split('.')),'ca_cert':'/etc/sambaadm/domain-ca.pem','bind':{'user':(value['serviceUser'] if value['mode']=='existing' else 'svc-sambaadm')+'@'+value['realm'],'password_env':'SAMBAADM_PASSWORD'}},'samba':{'smb_conf':str(SMB),'shares_root':'/srv/samba'},'audit':{'file':'/var/log/sambaadm-helper/audit.log'}}
     (helper/'config.yaml').write_text(json.dumps(settings));(helper/'config.yaml').chmod(0o600)
     dropin=pathlib.Path('/etc/systemd/system/sambaadm-helper.service.d');dropin.mkdir(parents=True,exist_ok=True)
     (dropin/'domain-env.conf').write_text('[Service]\nEnvironmentFile=/etc/sambaadm/env\n')
     managed={'PrivateKey':str(private),'HostNode':node,'Nodes':[{'Name':node,'Transport':'https','Endpoint':'https://'+node+':8444','CACert':'/etc/sambaadm/domain-ca.pem'}]}
+    existing_nodes=enrollment/'nodes.json'
+    if existing_nodes.exists():
+        current=json.loads(existing_nodes.read_text())
+        if current.get('PrivateKey')!=str(private) or current.get('HostNode') not in ['',node]:raise RuntimeError('Привязки helper изменены; автоматическая замена отменена')
+        if any(n.get('Name')==node for n in current.get('Nodes',[])):raise RuntimeError('Helper этого узла уже привязан; проверьте его в рабочей панели')
+        managed['Nodes']=current.get('Nodes',[])+managed['Nodes']
     candidate={'server':{'enrollment_dir':''},'helpers':{'private_key':str(private),'host_node':node,'nodes':[{'name':node,'transport':'https','endpoint':'https://'+node+':8444','ca_cert':'/etc/sambaadm/domain-ca.pem'}]}}
     (folder/'helper-check.json').write_text(json.dumps(candidate))
     run(['systemctl','daemon-reload']);run(['systemctl','enable','--now','sambaadm-helper'])
@@ -137,7 +147,7 @@ def preflight(value):
         socket.getaddrinfo(value['source'],389)
         with socket.create_connection((value['source'],389),timeout=5):pass
     if shutil.disk_usage('/var/lib').free < 2*1024**3:raise RuntimeError('Для развёртывания нужно не менее 2 ГиБ свободного места в /var/lib')
-    if value['mode']=='forest':
+    if value['mode'] in ['forest','existing']:
         if not pathlib.Path('/usr/sbin/sambaadm-setup').is_file():raise RuntimeError('Установите пакет sambaadm с командой sambaadm-setup перед созданием леса')
         local_helper_package()
         if subprocess.run(['systemctl','is-active','--quiet','sambaadm-helper'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:raise RuntimeError('На сервере уже работает helper. Для нового леса нужен отдельный чистый сервер.')
@@ -154,7 +164,10 @@ def preflight(value):
     check_forwarder(value['forwarder'])
     candidates=repository_plan()
     fingerprint={'input':canonical(value),'packages':candidates,'smb':hashlib.sha256(SMB.read_bytes() if SMB.exists() else b'').hexdigest(),'hostname':socket.gethostname(),'worker':hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest()}
+    if value['mode']=='existing':fingerprint['existingWorker']=hashlib.sha256(pathlib.Path(__file__).with_name('existing.py').read_bytes()).hexdigest()
     revision=hashlib.sha256(json.dumps(fingerprint,sort_keys=True).encode()).hexdigest()
+    if value['mode']=='existing':
+        return {'revision':revision,'packages':[k+' = '+v for k,v in candidates.items()], 'checks':['ALT Linux, чистый сервер и systemd','IPv4 и доступность источника LDAP','Репозитории и все пакеты доступны'], 'steps':['Скачать и установить пакеты до изменения AD','Проверить Kerberos, идентичность и функциональный уровень исходного AD','Присоединить RWDC; дождаться совпадения пользователей, групп, компьютеров, OU и GPO','Скопировать SYSVOL с версиями политик и правами; до проверки слушать только localhost','Создать новую служебную запись '+value['serviceUser']+' в доменной группе администраторов и настроить панель/helper','Перенести FSMO только после проверок, без захвата' if value.get('transferRoles') else 'Оставить FSMO на прежних владельцах и завершить мастер','Исходный Windows DC не отключается; проверка на настоящем Windows ещё не выполнена']}
     return {'revision':revision,'packages':[k+' = '+v for k,v in candidates.items()],
       'checks':['ALT Linux и systemd','Постоянный IPv4 назначен серверу','Существующий домен и работающие службы Samba отсутствуют','DNS-пересыльщик отвечает на запросы','Репозитории отвечают; все пакеты доступны; удалений пакетов нет'],
       'steps':['Повторная проверка репозиториев и скачивание всех пакетов','Установка Samba AD DC и зависимостей','Настройка имени сервера и развёртывание '+('нового леса' if value['mode']=='forest' else value['mode'])+' в сайте '+value['site'],'Запуск Samba; проверка LDAP, DNS SOA и SRV','Настройка панели HTTPS' if value['mode']=='forest' else 'Проверка роли и сайта контроллера']}
@@ -162,7 +175,7 @@ def preflight(value):
 def initial_sysvol(value,lp,folder,save):
     """Read-only snapshot from RWDC, ACL-preserving cutover before serving SMB."""
     from samba.auth import system_session
-    from samba.credentials import Credentials,DONT_USE_KERBEROS,SMB_SIGNING_REQUIRED
+    from samba.credentials import Credentials,DONT_USE_KERBEROS,MUST_USE_KERBEROS,SMB_SIGNING_REQUIRED
     from samba.samba3 import libsmb_samba_internal as smb,param
     from samba.dcerpc import security
     from samba.ntacls import setntacl,getntacl
@@ -172,9 +185,10 @@ def initial_sysvol(value,lp,folder,save):
     root=pathlib.Path(acl_lp.get('path','sysvol')).resolve(strict=True)
     target=root/value['realm']
     if target.is_symlink():raise RuntimeError('SYSVOL содержит ссылку; проверьте сервер')
-    credentials=Credentials();credentials.guess(lp);credentials.parse_string(value['username']);credentials.set_password(value['password']);credentials.set_kerberos_state(DONT_USE_KERBEROS);credentials.set_smb_signing(SMB_SIGNING_REQUIRED)
+    credentials=Credentials();credentials.guess(lp);credentials.parse_string(value['username']);credentials.set_password(value['password']);credentials.set_kerberos_state(MUST_USE_KERBEROS if value['mode']=='existing' else DONT_USE_KERBEROS);credentials.set_smb_signing(SMB_SIGNING_REQUIRED)
     lp.set('client min protocol','SMB2_02')
-    connection=smb.Conn(value['source'],'sysvol',lp,credentials,force_smb1=False)
+    client_lp=param.get_context();client_lp.load(str(SMB));client_lp.set('client min protocol','SMB2_02')
+    connection=smb.Conn(value['source'],'sysvol',client_lp,credentials,force_smb1=False)
     flags=security.SECINFO_OWNER|security.SECINFO_GROUP|security.SECINFO_DACL
     save('Начальная доставка SYSVOL с '+value['source']+' с сохранением прав', 'sysvol')
     def local_revision():
@@ -258,6 +272,9 @@ def deploy(value, folder, save):
             except BlockingIOError:
                 if time.monotonic()>=deadline:raise RuntimeError('Другая операция на сервере уже выполняется; проверьте её журнал')
                 time.sleep(.1)
+        if value.get('_resume'):
+            from existing import resume
+            return resume(value,folder,save,globals())
         return deploy_locked(value,folder,save)
 
 def deploy_locked(value,folder,save):
@@ -273,6 +290,9 @@ def deploy_locked(value,folder,save):
     save('Пакеты доступны и скачаны. Установка Samba AD DC', 'install')
     run(['apt-get','-y','--no-download','install',*PACKAGES],300)
     pristine()
+    if value['mode']=='existing':
+        from existing import bootstrap
+        return bootstrap(value,folder,save,globals())
     # Keep the vendor configuration and hostname for manual recovery. Never remove AD data on failure.
     if SMB.exists():shutil.copy2(SMB,folder/'smb.conf.before')
     (folder/'hostname.before').write_text(socket.gethostname());os.chmod(folder/'hostname.before',0o600)
@@ -392,15 +412,20 @@ def main():
     if not re.fullmatch('[a-f0-9]{32}',ident):return 1
     folder=base/ident
     state={'id':ident,'state':'running','log':[],'pid':os.getpid(),'realm':value['realm'],'node':value['hostname'].lower()+'.'+value['realm'],'site':value['site'],'mode':value['mode'],'ca':value.get('ca','')}
+    if mode=='resume':
+        previous=json.loads((folder/'status.json').read_text());state['log']=previous.get('log',[]);value['_resume']=True
     password=value.get('password','')
     def save(message=None,phase=None):
         if message:state['log'].append(time.strftime('%H:%M:%S')+' · '+str(message).replace(password,'[скрыто]')[:1800])
         state['log']=state['log'][-400:]
         if phase:state['phase']=phase
+        if value.get('_report'):state['report']=value['_report']
+        state['resumable']=bool(value.get('_resumable'))
+        state['site']=value.get('site',state.get('site',''))
         path=folder/'status.tmp';path.write_text(json.dumps(state,ensure_ascii=False));path.chmod(0o600);path.replace(folder/'status.json')
     try:
         save();deploy(value,folder,save);state['state']='completed'
-        if value['mode']=='forest':state['panelURL']='https://'+value['panelName']
+        if value['mode'] in ['forest','existing']:state['panelURL']='https://'+value['panelName']
         save()
     except Exception as error:
         state['state']='failed';state['error']=str(error).replace(password,'[скрыто]')[:1800]

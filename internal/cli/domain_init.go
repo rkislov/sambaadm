@@ -25,7 +25,7 @@ import (
 
 func init() {
 	var addr, dir string
-	cmd := &cobra.Command{Use: "domain-init", Short: "Открыть веб-мастер создания нового леса Active Directory", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "domain-init", Short: "Открыть веб-мастер нового леса или первого Samba RWDC в существующем домене", Args: cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runtime.GOOS != "linux" || os.Geteuid() != 0 {
