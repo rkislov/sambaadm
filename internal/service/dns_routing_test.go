@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sambaadm/internal/config"
 	"strings"
 	"testing"
@@ -56,6 +57,60 @@ func TestForwardBlockPreservesManualConfiguration(t *testing.T) {
 		}
 	}
 }
+func TestForwardConcurrentChangeAndFreshRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "named.conf")
+	if e := os.WriteFile(path, []byte("// existing config\n"), 0640); e != nil {
+		t.Fatal(e)
+	}
+	h := &dnsForwardHost{cfg: &config.Config{}, path: path, run: func(context.Context, string, ...string) (string, error) { return "ok", nil }}
+	ctx := context.Background()
+	wanted := DNSForwardRule{Domain: "first.example", Servers: []string{"192.0.2.53"}, Mode: "only"}
+	first := DNSForwardRequest{Rules: []DNSForwardRule{wanted}, Confirm: true}
+	p, e := h.plan(ctx, first)
+	if e != nil {
+		t.Fatal(e)
+	}
+	first.Revision, first.ProposedRevision = p.Revision, p.ProposedRevision
+	other := DNSForwardRequest{Rules: []DNSForwardRule{{Domain: "second.example", Servers: []string{"192.0.2.54"}, Mode: "first"}}, Confirm: true}
+	p, e = h.plan(ctx, other)
+	if e != nil {
+		t.Fatal(e)
+	}
+	other.Revision, other.ProposedRevision = p.Revision, p.ProposedRevision
+	if _, e = h.apply(ctx, other); e != nil {
+		t.Fatal(e)
+	}
+	before, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = h.apply(ctx, first); !errors.Is(e, ErrTopologyConflict) {
+		t.Fatalf("stale administrator preview accepted: %v", e)
+	}
+	after, e := os.ReadFile(path)
+	if e != nil || string(after) != string(before) {
+		t.Fatalf("conflict changed the second administrator's configuration: %v", e)
+	}
+	current, e := h.inspect(ctx)
+	if e != nil {
+		t.Fatal(e)
+	}
+	first.Rules = append(current.Rules, wanted)
+	first.Revision, first.ProposedRevision = current.Revision, ""
+	p, e = h.plan(ctx, first)
+	if e != nil {
+		t.Fatal(e)
+	}
+	first.ProposedRevision = p.ProposedRevision
+	result, e := h.apply(ctx, first)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if got := result.Status.Rules; !reflect.DeepEqual(got, []DNSForwardRule{wanted, other.Rules[0]}) {
+		t.Fatalf("fresh retry lost or duplicated a rule: %+v", got)
+	}
+}
+
 func TestForwardApplyPreviewConflictAndRollback(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "named.conf")
 	before := []byte("// existing config\n")
