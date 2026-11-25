@@ -51,6 +51,7 @@ jobs:
           cp docs/quick-install.md dist/sambaadm-quick-install.md
           cp docs/admin-guide/sambaadm-admin-guide.docx "dist/sambaadm-admin-guide-${VERSION#v}.docx"
           cp docs/user-guide/sambaadm-user-guide.docx "dist/sambaadm-user-guide-${VERSION#v}.docx"
+          cp docs/domain-init-guide/sambaadm-domain-init-guide.docx "dist/sambaadm-domain-init-guide-${VERSION#v}.docx"
           tar -czf "dist/sambaadm-documentation-${VERSION#v}.tar.gz" README.md docs configs deploy contrib/caja-shadow-copies
       - name: Verify static Linux binaries
         run: |

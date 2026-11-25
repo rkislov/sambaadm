@@ -106,7 +106,8 @@ def build(source, target):
         if m:
             p=doc.add_paragraph();p.paragraph_format.keep_with_next=True
             if "share-wizard" in m[2]: p.alignment=1
-            p.add_run().add_picture(str(source.parent/m[2]),width=Cm(13.5 if 'share-wizard' in m[2] else 17.0))
+            picture=p.add_run().add_picture(str(source.parent/m[2]),width=Cm(13.5 if 'share-wizard' in m[2] else 17.0))
+            picture._inline.docPr.set('descr',m[1])
             doc.add_paragraph(m[1], 'Caption');continue
         if line.startswith('[Иллюстрированная') or line.startswith('[Инструкция Word'): continue
         p=doc.add_paragraph()
@@ -124,5 +125,10 @@ def build(source, target):
     doc.core_properties.subject=version.group(0) if version else 'Руководство sambaadm'
     target.parent.mkdir(parents=True,exist_ok=True);doc.save(target)
 
-build(ROOT/'docs/admin.md',ROOT/'docs/admin-guide/sambaadm-admin-guide.docx')
-build(ROOT/'docs/user.md',ROOT/'docs/user-guide/sambaadm-user-guide.docx')
+if __name__ == '__main__':
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('guides',nargs='*',choices=['admin','user','domain-init'])
+    args=parser.parse_args()
+    for guide in args.guides or ['admin','user','domain-init']:
+        build(ROOT/('docs/'+guide+'.md'),ROOT/('docs/'+guide+'-guide/sambaadm-'+guide+'-guide.docx'))
