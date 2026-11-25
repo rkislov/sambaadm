@@ -22,7 +22,7 @@ def upload(node,destination,data,mode=0o600,owner=None):
 def create(host,dns=None):
     node=prefix+'-'+host;command=['docker','run','--name',node,'--privileged','--cgroupns=private','-d','--hostname',host+'.'+realm,'--tmpfs','/run','--tmpfs','/tmp']
     if dns:command+=['--dns',dns]
-    call(command+[args.image,'/sbin/init']);nodes.append(node)
+    call(command+[args.image,'/lib/systemd/systemd']);nodes.append(node)
     call(['docker','cp',str(repo/'deploy/sambaadm-setup'),node+':/usr/sbin/sambaadm-setup']);call(['docker','cp',args.binary,node+':/usr/bin/sambaadm']);call(['docker','cp',args.helper,node+':/usr/bin/sambaadm-helper'])
     for _ in range(40):
         p=call(['docker','exec',node,'systemctl','is-system-running'],check=False)

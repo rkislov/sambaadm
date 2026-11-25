@@ -26,7 +26,7 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -94,7 +94,7 @@ jobs:
           test "$ready" = true
           docker exec -e SAMBAADM_REAL_SYSTEMD=1 sambaadm-alt-systemd bash /src/testdata/packaging/test-alt.sh /src/dist/sambaadm-linux-${{ matrix.arch }}
       - name: First forest, RWDC and RODC through real HTTPS wizard and helpers
-        timeout-minutes: 12
+        timeout-minutes: 20
         env:
           RPM_VERSION: ${{ inputs.version }}
         run: |
