@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+body:has(.di-brand) { @apply bg-slate-50; background-image:radial-gradient(ellipse at 10% 0%,rgb(15 118 110 / .04),transparent 55%); }
+body .di-brand { @apply sticky z-20 flex items-center gap-4 rounded-2xl border border-white bg-white/95 px-6 py-4 text-lg font-bold text-slate-900 shadow-float backdrop-blur-xl; width:calc(100% - 48px);max-width:1450px;margin:12px auto 0;top:12px; }
+body .di-brand span { @apply ml-0 text-xs font-normal text-slate-400; }
+body .di-shell { @apply px-6 pb-12 pt-3;max-width:1100px;margin:24px auto; }
+body .di-shell h1 { @apply mb-2 mt-4 text-3xl font-semibold tracking-tight text-slate-900; }
+body .di-shell h2 { @apply text-base font-semibold text-slate-900; }
+body .di-shell .di-muted { @apply text-sm leading-relaxed text-slate-500; }
+body .di-shell .di-card { @apply my-6 rounded-2xl border border-white bg-white p-7 shadow-panel; }
+body .di-shell .di-steps { @apply sticky z-10 my-6 gap-2 rounded-2xl border border-white bg-white/95 p-3 shadow-float backdrop-blur-xl;top:96px; }
+body .di-shell .di-steps li { @apply m-0 rounded-xl border-0 px-4 py-3 text-xs font-medium text-slate-400; }
+body .di-shell .di-steps li[aria-current=step] { @apply bg-brand-50 font-semibold text-brand-700;box-shadow:inset 3px 0 0 #0f766e; }
+body .di-shell label { @apply gap-2 text-xs font-medium text-slate-500; }
+body .di-shell :is(input,select,textarea) { @apply rounded-lg border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-none; }
+body .di-shell :is(input,select,textarea):focus { @apply border-brand-600 outline-none ring-2 ring-brand-100; }
+body .di-shell button { @apply rounded-lg border-slate-200 px-4 py-2.5 text-sm font-medium shadow-sm transition; }
+body .di-shell button.di-primary { @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700; }
+body .di-shell .di-actions { @apply mt-6 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-5; }
+body .di-shell pre { @apply rounded-xl border border-slate-100 bg-slate-50 p-4 text-xs; }
+body .di-shell [hidden] { display:none!important; }
+@media(max-width:700px){body .di-brand{width:calc(100% - 24px);top:8px}body .di-shell{@apply px-4}body .di-shell .di-card{@apply p-5}body .di-shell .di-steps{@apply static gap-1 p-2}body .di-shell .di-steps li{@apply px-2 py-2}body .di-shell .di-grid{@apply grid-cols-1}}
+body .di-brand { box-sizing:border-box; }

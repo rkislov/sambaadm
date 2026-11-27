@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -33,7 +34,7 @@ func API(verifier *Verifier, handler Handler) http.Handler {
 		var request struct {
 			Method string `json:"method"`
 		}
-		if json.Unmarshal(raw, &envelope) == nil && json.Unmarshal(envelope.Request, &request) == nil && (request.Method == "domain.init.plan" || (request.Method == "domain.demote.plan" || request.Method == "domain.demote.manifest")) {
+		if json.Unmarshal(raw, &envelope) == nil && json.Unmarshal(envelope.Request, &request) == nil && (strings.HasPrefix(request.Method, "printing.") || request.Method == "kea.gss.ad.apply" || request.Method == "kea.gss.ad.plan" || request.Method == "kea.ddns.apply" || strings.HasPrefix(request.Method, "kea.install") || strings.HasPrefix(request.Method, "filecluster.") || strings.HasPrefix(request.Method, "storage.") || request.Method == "domain.init.plan" || (request.Method == "domain.demote.plan" || request.Method == "domain.demote.manifest")) {
 			timeout = 190 * time.Second
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)

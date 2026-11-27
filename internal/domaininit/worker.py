@@ -19,6 +19,9 @@ def canonical(value):
     return {k: v for k, v in value.items() if k not in ['password', 'username', 'confirm', 'revision', 'certificate', 'ca']}
 
 def validate(value):
+    if value.get('mode')=='member':
+        from member import validate as validate_member
+        return validate_member(value)
     realm=value.get('realm','')
     dns=lambda s: len(s)<=253 and '.' in s and all(re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',p) for p in s.split('.'))
     if not dns(realm) or value.get('mode') not in ['forest','DC','RODC','existing']: raise RuntimeError('Недопустимые параметры домена')
@@ -56,18 +59,19 @@ def pristine():
         p=subprocess.run(['systemctl','is-active','--quiet',unit],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         if p.returncode==0:raise RuntimeError('Служба '+unit+' уже работает. Подготовьте отдельный чистый сервер.')
 
-def repository_plan():
+def repository_plan(packages=None):
+    packages=PACKAGES if packages is None else packages
     try:
         output=run(['apt-get','-o','Acquire::http::Timeout=15','-o','Acquire::Retries=0','update'],120)
         if re.search(r'(?im)^(Err:|Err\s|E:|W:.*(?:failed|fetch|resolve))',output) or 'Some index files failed' in output:
             raise RuntimeError(output[-1800:])
         candidates={}
-        for name in PACKAGES:
+        for name in packages:
             text=run(['apt-cache','policy',name],5)
             match=re.search(r'(?m)^\s*Candidate:\s*(\S+)',text)
             if not match or match.group(1) in ['(none)','(null)']:raise RuntimeError('Пакет '+name+' недоступен')
             candidates[name]=match.group(1)
-        text=run(['apt-get','-s','install',*PACKAGES],15)
+        text=run(['apt-get','-s','install',*packages],15)
         if re.search(r'(?m)^Remv\s',text):raise RuntimeError('План пакетов удаляет установленное ПО')
         return candidates
     except Exception as error:
@@ -139,6 +143,9 @@ def preflight(value):
         if not shutil.which(cmd):raise RuntimeError('Не установлена обязательная утилита '+cmd+'; настройте базовую ОС и репозитории')
     try:run(['rpm','-qa'],15)
     except Exception as error:raise RuntimeError('Проверьте и восстановите базу пакетов RPM до развёртывания. '+str(error))
+    if value['mode']=='member':
+        from member import preflight as member_preflight
+        return member_preflight(value,globals())
     pristine()
     interfaces=json.loads(run(['ip','-j','address','show']))
     if not any(a.get('local')==value['address'] for i in interfaces for a in i.get('addr_info',[])):
@@ -278,6 +285,9 @@ def deploy(value, folder, save):
         return deploy_locked(value,folder,save)
 
 def deploy_locked(value,folder,save):
+    if value['mode']=='member':
+        from member import deploy as member_deploy
+        return member_deploy(value,folder,save,globals())
     save('Проверка сервера и повторная проверка репозиториев', 'preflight')
     plan=preflight(value)
     if plan['revision']!=value.get('revision'):raise RuntimeError('Параметры сервера или пакеты изменились. Выполните новый предпросмотр.')
@@ -425,7 +435,7 @@ def main():
         path=folder/'status.tmp';path.write_text(json.dumps(state,ensure_ascii=False));path.chmod(0o600);path.replace(folder/'status.json')
     try:
         save();deploy(value,folder,save);state['state']='completed'
-        if value['mode'] in ['forest','existing']:state['panelURL']='https://'+value['panelName']
+        if value['mode'] in ['forest','existing','member']:state['panelURL']='https://'+value['panelName']
         save()
     except Exception as error:
         state['state']='failed';state['error']=str(error).replace(password,'[скрыто]')[:1800]

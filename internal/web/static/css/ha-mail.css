@@ -1,0 +1,41 @@
+.ha-mail { max-width: 900px; }
+.ha-mail form, .ha-mail-delivery { border: 1px solid #dce5ed; border-radius: 10px; padding: 16px 20px; background: #fff; margin: 0 0 18px; }
+#ha-mail-fields { margin: 0; padding: 0; border: 0; }
+.ha-mail legend { margin-bottom: 10px; color: #15283c; font-weight: 650; }
+.ha-mail-connection { display: grid; grid-template-columns: minmax(170px, 2fr) minmax(65px, .6fr) minmax(125px, 1fr); gap: 10px 16px; margin-top: 12px; }
+.ha-mail label:not(.ha-mail-check) { display: grid; gap: 4px; margin: 0; font-size: 13px; }
+.ha-mail input:not([type=checkbox]), .ha-mail select { width: 100%; min-width: 0; margin: 0; }
+.ha-mail .ha-mail-check { display: flex; gap: 6px; align-items: center; margin: 0; font-size: 13px; }
+.ha-mail-check input { margin: 0; }
+.ha-mail-help { font-size: 12px; color: #526379; }
+.ha-mail h2 { font-size: 16px; margin: 15px 0 8px; }
+.ha-mail-recipient { display: grid; gap: 8px 12px; grid-template-columns: minmax(170px,1fr) auto; padding: 10px 12px; margin: 0 0 10px; }
+.ha-mail-recipient legend { margin: 0; font-size: 12px; }
+.ha-mail-event-list { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ha-mail-recipient button { grid-column: 2; grid-row: 1; align-self: end; margin: 0; font-size: 12px; }
+.ha-mail footer { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+#ha-mail-message { color: #344963; margin: 0; }
+.ha-mail-delivery header { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
+.ha-mail-delivery h2 { margin: 0; }
+.ha-mail-delivery p { font-size: 13px; color: #526379; margin: 4px 0; }
+#ha-mail-recent { list-style: none; padding: 0; margin: 8px 0 0; }
+#ha-mail-recent li { display: grid; grid-template-columns: minmax(120px, auto) minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 0; border-top: 1px solid #e2e8f0; font-size: 12px; overflow-wrap: anywhere; }
+#ha-mail-recent small { grid-column: 2 / -1; }
+.ha-mail-state[data-state=sent] { color: #147257; }
+.ha-mail-state[data-state=failed], .ha-mail-state[data-state=uncertain] { color: #a12539; }
+@media (max-width: 620px) {
+  .ha-mail-connection, .ha-mail-recipient { grid-template-columns: 1fr; }
+  .ha-mail-recipient button { grid-column: 1; grid-row: auto; justify-self: start; }
+  #ha-mail-recent li { grid-template-columns: 1fr; gap: 3px; }
+  #ha-mail-recent small { grid-column: 1; }
+}
+.ha-mail-test { margin-top: 16px; padding: 0 0 12px; border-block: 1px solid #e2e8f0; }
+.ha-mail-test h2 { margin: 10px 0 4px; }
+.ha-mail-test-tools { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.ha-mail-test-tools label { flex: 1 1 190px; }
+.ha-mail-test-tools label[hidden] { display: none; }
+.ha-mail-test-tools button { margin: 0; }
+#ha-mail-test-result { margin: 8px 0 0; font-size: 13px; }
+#ha-mail-test-result:empty { display: none; }
+#ha-mail-test-result[data-state=sent] { color: #147257; }
+#ha-mail-test-result[data-state=failed] { color: #a12539; }

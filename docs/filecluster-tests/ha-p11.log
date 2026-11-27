@@ -1,0 +1,17 @@
+fs1 → fs2
+=== RUN   TestIntegrationZFSSMBFailover
+    failover_integration_test.go:136: PASS signed SMB with one iSCSI path disconnected
+    failover_integration_test.go:212: PASS fs1.sambaadm.test → fs2.sambaadm.test in 45s: signed SMB, identical inherited ACL, access denial, named snapshot and Previous Versions; fencing: reboot of fs1.sambaadm.test successful: delegate=fs2.sambaadm.test, client=pacemaker-controld.1389, origin=fs2.sambaadm.test, last-successful='2026-11-26 18:10:01.443000Z'
+        1 event found
+--- PASS: TestIntegrationZFSSMBFailover (56.84s)
+PASS
+ok  	sambaadm/internal/filecluster	57.578s
+
+fs2 → fs1; SMB write/read after failover verified
+=== RUN   TestIntegrationZFSSMBFailover
+    failover_integration_test.go:144: PASS signed SMB with one iSCSI path disconnected
+    failover_integration_test.go:226: PASS fs2.sambaadm.test → fs1.sambaadm.test in 44s: signed SMB, identical inherited ACL, access denial, named snapshot and Previous Versions; fencing: reboot of fs2.sambaadm.test successful: delegate=fs1.sambaadm.test, client=pacemaker-controld.1008, origin=fs1.sambaadm.test, last-successful='2026-11-26 18:11:42.497000Z'
+        1 event found
+--- PASS: TestIntegrationZFSSMBFailover (57.29s)
+PASS
+ok  	sambaadm/internal/filecluster	58.093s

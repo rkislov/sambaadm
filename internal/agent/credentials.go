@@ -61,3 +61,8 @@ type redactedCredentialError struct {
 
 func (e redactedCredentialError) Error() string { return e.text }
 func (e redactedCredentialError) Unwrap() error { return e.err }
+
+// Credential forwarding is restricted to exact host operations which need the actor.
+func credentialMethod(method string) bool {
+	return strings.HasPrefix(method, "sysvol.") || method == "kea.gss.ad.plan" || method == "kea.gss.ad.apply"
+}

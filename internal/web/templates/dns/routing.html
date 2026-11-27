@@ -1,5 +1,5 @@
 {{define "dns/routing.html"}}
 <!DOCTYPE html><html lang="ru"><head>{{template "head" .}}<script src="/static/js/dns-routing.js?v=20261125-routing3" defer></script></head><body>{{template "nav" .}}
 <main class="container dns-routing"><a href="/dns">← Диспетчер DNS</a><h1>Маршрутизация DNS</h1><p class="muted">Делегируйте поддомен или направьте его запросы на другой DNS-сервер.</p>
-<div class="self-tabs" role="tablist" aria-label="Настройки DNS"><button type="button" role="tab" aria-selected="true" data-dns-tab="delegations">Делегирование</button><button type="button" role="tab" aria-selected="false" data-dns-tab="forwarding">Условная пересылка</button><button type="button" role="tab" aria-selected="false" data-dns-tab="backend">DNS-бэкенд</button></div>
+<div class="self-tabs" role="tablist" aria-label="Настройки DNS"><button type="button" role="tab" aria-selected="true" data-dns-tab="delegations">Делегирование</button><button type="button" role="tab" aria-selected="false" data-dns-tab="forwarding">Условная пересылка</button></div>
 <p id="dns-routing-message" role="status" aria-live="polite"></p><section id="dns-routing-panel" aria-live="polite"></section></main>{{template "footer" .}}</body></html>{{end}}

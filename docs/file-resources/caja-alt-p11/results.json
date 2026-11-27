@@ -1,0 +1,152 @@
+[
+  {
+    "case": "01-local-r-x",
+    "uri": "file:///srv/sambaadm-caja-test/mode-r-x/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "01b-local-parent-no-x",
+    "uri": "file:///srv/sambaadm-caja-test/mode-r--",
+    "caja_contains_inside_file": false,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "mode-r--"
+    ]
+  },
+  {
+    "case": "02-local-no-x",
+    "uri": "file:///srv/sambaadm-caja-test/mode-r--/nested",
+    "caja_contains_inside_file": false,
+    "caja_error": true,
+    "navigation_succeeded": false,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "03-local-acl-mask-no-x",
+    "uri": "file:///srv/sambaadm-caja-test/acl-mask-no-x/nested",
+    "caja_contains_inside_file": false,
+    "caja_error": true,
+    "navigation_succeeded": false,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "04-smb-r-x",
+    "uri": "smb://127.0.0.1/acl-test/mode-r-x/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "04b-smb-parent-no-x",
+    "uri": "smb://127.0.0.1/acl-test/mode-r--",
+    "caja_contains_inside_file": false,
+    "caja_error": true,
+    "navigation_succeeded": false,
+    "frame_titles": [
+      "mode-r--"
+    ]
+  },
+  {
+    "case": "05-smb-no-x",
+    "uri": "smb://127.0.0.1/acl-test/mode-r--/nested",
+    "caja_contains_inside_file": false,
+    "caja_error": true,
+    "navigation_succeeded": false,
+    "frame_titles": [
+      "mode-r--"
+    ]
+  },
+  {
+    "case": "06-smb-acl-mask-no-x",
+    "uri": "smb://127.0.0.1/acl-test/acl-mask-no-x/nested",
+    "caja_contains_inside_file": false,
+    "caja_error": true,
+    "navigation_succeeded": false,
+    "frame_titles": [
+      "mode-r--"
+    ]
+  },
+  {
+    "read_test": "local/mode-r-x",
+    "ok": true,
+    "text": "directory traversal verified\n"
+  },
+  {
+    "read_test": "local/mode-r--",
+    "ok": false,
+    "error": "Error opening file /srv/sambaadm-caja-test/mode-r--/nested/inside.txt: Permission denied"
+  },
+  {
+    "read_test": "local/acl-mask-no-x",
+    "ok": false,
+    "error": "Error opening file /srv/sambaadm-caja-test/acl-mask-no-x/nested/inside.txt: Permission denied"
+  },
+  {
+    "read_test": "smb/mode-r-x",
+    "ok": true,
+    "text": "directory traversal verified\n"
+  },
+  {
+    "read_test": "smb/mode-r--",
+    "ok": false,
+    "error": "Permission denied"
+  },
+  {
+    "read_test": "smb/acl-mask-no-x",
+    "ok": false,
+    "error": "Permission denied"
+  },
+  {
+    "case": "07-local-x-restored",
+    "uri": "file:///srv/sambaadm-caja-test/mode-r--/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "08-local-mask-restored",
+    "uri": "file:///srv/sambaadm-caja-test/acl-mask-no-x/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "09-smb-x-restored",
+    "uri": "smb://127.0.0.1/acl-test/mode-r--/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  },
+  {
+    "case": "10-smb-mask-restored",
+    "uri": "smb://127.0.0.1/acl-test/acl-mask-no-x/nested",
+    "caja_contains_inside_file": true,
+    "caja_error": false,
+    "navigation_succeeded": true,
+    "frame_titles": [
+      "nested"
+    ]
+  }
+]

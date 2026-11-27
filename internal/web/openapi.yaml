@@ -6,6 +6,147 @@
 "servers":
     - "url": "/api/v1"
 "paths":
+    "/printing/{operation}":
+        "parameters":
+            - "name": "operation"
+              "in": "path"
+              "required": true
+              "schema": {"type": "string"}
+            - "name": "node"
+              "in": "query"
+              "schema": {"type": "string"}
+              "description": "Registered helper node. Empty node is allowed only for the aggregate journal."
+        "get":
+            "summary": "Read CUPS status, model catalogue, jobs, aggregate journal, Windows packages or install status"
+            "description": "Read permission. Operations: inspect, models, jobs, journal, windows.catalog, install.status. Catalogue/journal query: search, sort, descending, offset, limit (1..250). Journal also accepts printer, user, state, from/to (UTC YYYY-MM-DD). Job status requires id. Responses never include keytab contents."
+            "responses":
+                "200": {"description": "Operation result. Paged lists return rows, total, offset and limit; journal includes per-node errors and retention."}
+                "403": {"description": "Read permission required"}
+                "409": {"description": "Helper, CUPS or archive error"}
+        "post":
+            "summary": "Manage CUPS, PPD/keytab and Windows drivers through the selected helper (admin, CSRF)"
+            "description": "Closed operations: queue.plan/apply, security.plan/apply, service, ppd.upload/import, keytab.upload, windows.upload/register, job.cancel, install.plan/start. Apply requires a fresh revision and confirm=true. Uploads use base64 data and filename. Keytab uses kind (http/smb/windows), principal, controller and HTTP accountPrincipal; private data is never returned. Windows registration uses a staged package id and selected manifest files. No shell or arbitrary command endpoint."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"type": "object", "additionalProperties": true}
+            "responses":
+                "200": {"description": "Plan, result, staged driver metadata or queued installation job id"}
+                "400": {"description": "Invalid or oversized JSON"}
+                "403": {"description": "Admin permission and CSRF required"}
+                "409": {"description": "Stale plan, rejected upload or native service error"}
+    "/services/ha-mail":
+        "get":
+            "summary": "Read HA email settings and delivery status (admin)"
+            "responses":
+                "200": {"description": "SMTP settings, recipients, selected events and recent delivery outcomes. The password is read from the service environment."}
+                "403": {"description": "Admin required"}
+                "503": {"description": "Email settings storage is unavailable"}
+        "put":
+            "summary": "Set HA email transport and per-recipient event routing (admin, CSRF)"
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "enabled": {"type": "boolean"}
+                                "host": {"type": "string"}
+                                "port": {"type": "integer"}
+                                "security": {"type": "string", "enum": ["starttls", "tls", "local"]}
+                                "from": {"type": "string"}
+                                "username": {"type": "string"}
+                                "recipients":
+                                    "type": "array"
+                                    "maxItems": 32
+                                    "items":
+                                        "type": "object"
+                                        "properties":
+                                            "address": {"type": "string"}
+                                            "events":
+                                                "type": "array"
+                                                "items": {"type": "string", "enum": ["node-down", "smb-moved", "dhcp-moved", "reserve-restored"]}
+            "responses":
+                "200": {"description": "Saved settings and current delivery status"}
+                "400": {"description": "Invalid server, addresses or event routing"}
+                "403": {"description": "Admin and CSRF token required"}
+    "/services/ha-mail/test":
+        "post":
+            "summary": "Send one SMTP test message using the provided settings (admin, CSRF)"
+            "description": "Uses the current form values and a single recipient without saving configuration or enqueuing a HA alert. The SMTP attempt has a 15 second deadline."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "required": ["smtp", "recipient"]
+                            "properties":
+                                "recipient": {"type": "string", "format": "email"}
+                                "smtp":
+                                    "type": "object"
+                                    "required": ["host", "from"]
+                                    "properties":
+                                        "host": {"type": "string"}
+                                        "port": {"type": "integer"}
+                                        "security": {"type": "string", "enum": ["starttls", "tls", "local"]}
+                                        "from": {"type": "string", "format": "email"}
+                                        "username": {"type": "string"}
+            "responses":
+                "200": {"description": "SMTP accepted the test message"}
+                "400": {"description": "Invalid SMTP settings or email address"}
+                "403": {"description": "Admin and CSRF token required"}
+                "409": {"description": "Another SMTP test is in progress"}
+                "502": {"description": "SMTP failed or did not confirm receipt. Returns the phase and SMTP reply code when available."}
+    "/services/ha-notifications":
+        "get":
+            "summary": "Read the HA notification feed and the current user's unread count"
+            "description": "Available to admin, Helpdesk and readonly. Returns up to 50 notifications with stable IDs derived from observed HA transitions and links to affected services. Polling is read-only."
+            "responses":
+                "200": {"description": "Latest HA notifications, their read state and unread count"}
+                "401": {"description": "Session required"}
+                "503": {"description": "Notification storage is unavailable"}
+    "/services/ha-notifications/read":
+        "post":
+            "summary": "Acknowledge specific HA notifications for the current user"
+            "description": "Available to admin, Helpdesk and readonly. Requires CSRF. Repeated acknowledgements are idempotent, and new notifications remain unread."
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "properties":
+                                "ids": {"type": "array", "items": {"type": "string"}, "maxItems": 50}
+            "responses":
+                "200": {"description": "Updated feed and unread count"}
+                "400": {"description": "Invalid notification IDs"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Read permission or CSRF token required"}
+                "503": {"description": "Notification storage is unavailable"}
+    "/services/ha-history":
+        "get":
+            "summary": "Read observed failovers for SMB HA or a Kea HA pair"
+            "description": "Available to admin, Helpdesk and readonly. Returns up to 100 recorded events per service with the panel confirmation time, the unavailable or returned member and the confirmed serving members. Kea history is scoped to the selected IP family."
+            "parameters":
+                - {"in": "query", "name": "kind", "required": true, "schema": {"type": "string", "enum": ["smb", "dhcp4", "dhcp6"]}}
+                - {"in": "query", "name": "id", "required": true, "schema": {"type": "string"}, "description": "Cluster key or Kea pairID returned by the service overview"}
+            "responses":
+                "200": {"description": "Members, recording start and ordered node-down, service-moved and reserve-restored events"}
+                "400": {"description": "Invalid service kind or identity"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Read permission required"}
+                "503": {"description": "History storage is unavailable"}
+    "/services/overview":
+        "get":
+            "summary": "Read server, Samba, file cluster and DHCP service health"
+            "description": "Available to admin, Helpdesk and readonly. Discovers registered helpers and AD controllers. Returns service states and safe Kea HA observations from local config or status-get, plus file cluster ownership, quorum and multipath counts. Missing observations are distinct from stopped services. No configuration, credentials or DHCP leases are returned."
+            "responses":
+                "200": {"description": "Timestamped inventory of servers and clusters, including partial-source indicators"}
+                "401": {"description": "Session required"}
+                "403": {"description": "Read permission required"}
     "/backups/restore/plan":
         "post":
             "summary": "Inspect a verified full cold archive and prepare first-DC forest recovery (admin, CSRF)"
@@ -4058,7 +4199,450 @@
             "summary": "Добавить RPM helper другой архитектуры"
             "description": "Только admin, CSRF. multipart/form-data, поле package, до 64 МиБ. Принимается sambaadm-helper той же версии, что панель, release alt1, архитектура x86_64/aarch64."
             "responses": {"200": {"description": "Результат операции"}, "400": {"description": "Некорректные параметры"}, "403": {"description": "Недостаточно полномочий или CSRF"}, "409": {"description": "Устаревшая версия или план"}}
+    "/dhcp":
+        "get":
+            "summary": "Состояние DHCP Kea через helper (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "family", "required": true, "schema": {"type": "string", "enum": ["4", "6"]}}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
+    "/dhcp/ddns":
+        "get":
+            "summary": "Состояние Kea D2 и подсказки DNS-зон (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "family", "required": true, "schema": {"type": "string", "enum": ["4", "6"]}}
+            "responses":
+                "200": {"description": "path, version, service, enabled, revision, settings без секрета, zoneHints, gssHook, keytab"}
+                "403": {"description": "Требуется admin"}
+                "409": {"description": "Ошибка helper"}
+    "/dhcp/gss/install/plan":
+        "post":
+            "summary": "Предпросмотр установки GSS-TSIG для ALT p10/p11 (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/gss/install/status":
+        "get":
+            "summary": "Состояние задания установки GSS-TSIG (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "family", "required": true, "schema": {"type": "string", "enum": ["4", "6"]}}
+                - {"in": "query", "name": "jobID", "required": true, "schema": {"type": "string", "pattern": "^[a-f0-9]{32}$"}}
+            "responses":
+                "200": {"description": "id, state (queued/running/complete/failed), phase, detail, updated"}
+                "403": {"description": "Требуется admin"}
+                "409": {"description": "Ошибка helper"}
+    "/dhcp/gss/install/start":
+        "post":
+            "summary": "Запуск отдельного задания установки GSS-TSIG (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/gss/ad/plan":
+        "post":
+            "summary": "Предпросмотр служебной учётной записи Samba AD и ACL DNS (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/gss/ad/apply":
+        "post":
+            "summary": "Создание AES keytab, ACL DNS и таймера Kerberos через helper (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/gss/ad/pair/plan":
+        "post":
+            "summary": "Общая идентичность HA: Предпросмотр служебной учётной записи Samba AD и ACL DNS (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/gss/ad/pair/apply":
+        "post":
+            "summary": "Общая идентичность HA: Создание AES keytab, ACL DNS и таймера Kerberos через helper (admin, CSRF)"
+            "description": "Секрет текущей сессии передаётся только точным операциям ad.plan/ad.apply по подписанному протоколу helper v2. Для удалённого AD нужен проверенный LDAPS. Изменения требуют confirm и актуальную revision; DNS-зоны должны существовать."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema": {"$ref": "#/components/schemas/KeaGSSRequest"}
+            "responses":
+                "200": {"description": "План, job id/state либо ready/principal/serverPrincipal/keytab/kvno; пароли и keytab не возвращаются"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Ошибка helper либо устаревший план"}
+    "/dhcp/ddns/plan":
+        "post":
+            "summary": "Предпросмотр автонастройки DDNS (admin, CSRF)"
+            "description": "Проверяет штатными бинарниками D2 и существующие DHCPv4/IPv6. Возвращает общий план файлов, включая приватный secret-file TSIG, обе ревизии и подсказку настройки зон. Секрет скрыт в файлах предпросмотра, но присутствует в dnsInstructions для установки на DNS-сервере."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family", "ddns"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "ddns": {"$ref": "#/components/schemas/KeaDDNSSettings"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "План либо результат с backups/status/detail"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Устаревший план, ошибка проверки или применения; подробности отката в error"}
+    "/dhcp/ddns/apply":
+        "post":
+            "summary": "Автонастройка D2, TSIG-файла и DHCPv4/IPv6 (admin, CSRF)"
+            "description": "Повторно строит план и проверяет ревизии всех файлов. Создаёт копии, заменяет файлы, включает и запускает D2, перезапускает только работавшие DHCP-службы. При ошибке восстанавливает собственные изменения и состояния служб; конфликты внешнего редактирования останавливают откат соответствующего файла. DNS-зоны автоматически не создаются."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family", "ddns", "revision", "proposedRevision", "confirm"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "ddns": {"$ref": "#/components/schemas/KeaDDNSSettings"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "План либо результат с backups/status/detail"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Устаревший план, ошибка проверки или применения; подробности отката в error"}
+    "/dhcp/ddns/service":
+        "post":
+            "summary": "Управление службой kea-dhcp-ddns (admin, CSRF)"
+            "description": "Для start/restart/enable нужны текущая revision D2 из GET /dhcp/ddns и успешная проверка конфигурации. Все изменения требуют confirm=true."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family", "action", "confirm"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "ddns": {"$ref": "#/components/schemas/KeaDDNSSettings"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "План либо результат с backups/status/detail"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Устаревший план, ошибка проверки или применения; подробности отката в error"}
+    "/dhcp/leases":
+        "get":
+            "summary": "Активные аренды области Kea через helper (admin)"
+            "description": "Читает работающую Kea через настроенный UNIX control-socket и lease_cmds. Возвращает только state=0 с неистёкшим valid-lft; бесконечные аренды отмечены infinite. Одна страница сканирует до 256 записей общей базы: пустая leases при наличии next не означает конец области."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+                - {"in": "query", "name": "family", "required": true, "schema": {"type": "string", "enum": ["4", "6"]}}
+                - {"in": "query", "name": "subnetID", "schema": {"type": "integer", "minimum": 1, "maximum": 4294967295}}
+                - {"in": "query", "name": "from", "schema": {"type": "string", "default": "start"}}
+                - {"in": "query", "name": "search", "schema": {"type": "string", "maxLength": 256}, "description": "Поиск по адресу, имени, MAC, DUID, client-id, IAID и ID области на каждой native-странице; продолжайте по next"}
+            "responses":
+                "200": {"description": "leases, next, observed, scanned. Каждая аренда содержит поля Kea, revision, expiresAt либо infinite=true"}
+                "400": {"description": "Некорректный ID области"}
+                "403": {"description": "Требуется admin"}
+                "409": {"description": "Недоступны helper, control-socket или hook lease_cmds"}
+    "/dhcp/leases/delete":
+        "post":
+            "summary": "Удалить выбранную аренду Kea (admin, CSRF)"
+            "description": "Повторно читает аренду и сверяет revision, адрес, тип и область. Отправляет lease4-del/lease6-del только на выбранный сервер. Резервирование не удаляется. updateDDNS по умолчанию false. Между проверкой и удалением Kea не предоставляет атомарный compare-and-delete."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family", "lease", "confirm"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "lease": {"$ref": "#/components/schemas/KeaLeaseRef"}
+                                "revision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "updateDDNS": {"type": "boolean", "default": false}
+                                "reservationHostname": {"type": "string"}
+            "responses":
+                "200": {"description": "Результат удаления либо план конфигурации с before/proposed/revision/proposedRevision/validation"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Изменилась аренда/конфигурация, найден конфликт или Kea отклонил команду"}
+    "/dhcp/leases/reservation/plan":
+        "post":
+            "summary": "Создать план резервирования из активной аренды (admin, CSRF)"
+            "description": "Читает выбранную аренду, проверяет её ревизию и активность, находит область в файле, отклоняет конфликт адреса/идентификатора. Создаёт KeaPlan для дальнейшего /dhcp/apply с config, обеими ревизиями, lease и confirm=true. Аренда сохраняется. IPv6 IA_PD создаёт prefixes."
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family", "lease", "revision"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "lease": {"$ref": "#/components/schemas/KeaLeaseRef"}
+                                "revision": {"type": "string"}
+                                "confirm": {"type": "boolean", "enum": [true]}
+                                "updateDDNS": {"type": "boolean", "default": false}
+                                "reservationHostname": {"type": "string"}
+            "responses":
+                "200": {"description": "Результат удаления либо план конфигурации с before/proposed/revision/proposedRevision/validation"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуются admin и CSRF"}
+                "409": {"description": "Изменилась аренда/конфигурация, найден конфликт или Kea отклонил команду"}
+    "/dhcp/plan":
+        "post":
+            "summary": "Проверка и предпросмотр конфигурации Kea (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "config": {"type": "string", "description": "Полный текст конфигурации; до 1 МиБ"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean"}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
+    "/dhcp/apply":
+        "post":
+            "summary": "Применение показанной конфигурации Kea с резервной копией и откатом (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family"]
+                            "properties":
+                                "lease": {"$ref": "#/components/schemas/KeaLeaseRef"}
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "config": {"type": "string", "description": "Полный текст конфигурации; до 1 МиБ"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean"}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
+    "/dhcp/service":
+        "post":
+            "summary": "Управление службой Kea (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "config": {"type": "string", "description": "Полный текст конфигурации; до 1 МиБ"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean"}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
+    "/dhcp/install/plan":
+        "post":
+            "summary": "Предпросмотр установки пакетов Kea из репозиториев АЛЬТ (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "config": {"type": "string", "description": "Полный текст конфигурации; до 1 МиБ"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean"}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
+    "/dhcp/install":
+        "post":
+            "summary": "Установка Kea и hook-библиотек после подтверждения плана (admin)"
+            "parameters":
+                - {"in": "query", "name": "node", "required": true, "schema": {"type": "string"}}
+            "requestBody":
+                "required": true
+                "content":
+                    "application/json":
+                        "schema":
+                            "type": "object"
+                            "additionalProperties": false
+                            "required": ["family"]
+                            "properties":
+                                "family": {"type": "string", "enum": ["4", "6"]}
+                                "config": {"type": "string", "description": "Полный текст конфигурации; до 1 МиБ"}
+                                "revision": {"type": "string"}
+                                "proposedRevision": {"type": "string"}
+                                "confirm": {"type": "boolean"}
+                                "action": {"type": "string", "enum": ["start", "stop", "restart", "enable", "disable"]}
+            "responses":
+                "200": {"description": "Состояние, план или результат операции"}
+                "400": {"description": "Некорректный запрос"}
+                "403": {"description": "Требуется admin и CSRF для POST"}
+                "409": {"description": "Устаревший план, ошибка проверки или выполнения на helper"}
 "components":
+    "schemas":
+        "KeaGSSRequest":
+            "type": "object"
+            "additionalProperties": false
+            "required": ["family"]
+            "properties":
+                "family": {"type": "string", "enum": ["4", "6"]}
+                "revision": {"type": "string"}
+                "confirm": {"type": "boolean"}
+                "ddns": {"$ref": "#/components/schemas/KeaDDNSSettings"}
+                "gss":
+                    "type": "object"
+                    "additionalProperties": false
+                    "required": ["controller"]
+                    "properties":
+                        "members": {"type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": {"type": "string"}, "description": "Два helper-узла HA с общей DNS-идентичностью; только для pair endpoints"}
+                        "controller": {"type": "string", "description": "FQDN DC, проверенный LDAPS по ldap.ca_cert helper"}
+                        "dnsHost": {"type": "string", "description": "FQDN DNS-сервера того же домена, по умолчанию controller"}
+                        "rotate": {"type": "boolean", "description": "Явная смена пароля управляемой учётной записи и keytab"}
+        "KeaDDNSSettings":
+            "type": "object"
+            "additionalProperties": false
+            "required": ["forwardZone", "reverseZones", "dnsAddress", "dnsPort", "ncrPort", "auth"]
+            "properties":
+                "forwardZone": {"type": "string"}
+                "reverseZones": {"type": "array", "minItems": 1, "maxItems": 512, "items": {"type": "string"}}
+                "dnsAddress": {"type": "string", "description": "IP авторитетного DNS-сервера"}
+                "dnsPort": {"type": "integer", "minimum": 1, "maximum": 65535}
+                "ncrPort": {"type": "integer", "minimum": 1024, "maximum": 65535, "description": "D2 слушает только 127.0.0.1"}
+                "auth": {"type": "string", "enum": ["tsig", "gss-tsig"]}
+                "keyName": {"type": "string"}
+                "secret": {"type": "string", "format": "password", "writeOnly": true, "description": "TSIG base64, 16–128 байт; пустое значение сохраняет выбранный существующий ключ"}
+                "clientPrincipal": {"type": "string"}
+                "serverPrincipal": {"type": "string"}
+                "overrideClient": {"type": "boolean"}
+        "KeaLeaseRef":
+            "type": "object"
+            "additionalProperties": false
+            "required": ["address", "subnetID", "revision"]
+            "properties":
+                "address": {"type": "string"}
+                "type": {"type": "string", "enum": ["IA_NA", "IA_PD"], "description": "Обязателен для IPv6"}
+                "subnetID": {"type": "integer", "minimum": 1, "maximum": 4294967295}
+                "revision": {"type": "string", "description": "Ревизия записи из списка активных аренд"}
     "securitySchemes":
         "cookieAuth":
             "type": "apiKey"

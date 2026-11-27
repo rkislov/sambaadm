@@ -81,7 +81,19 @@ sam.add(record,controls=['relax:0'])`
 	}
 	add(computer, "computer", ldap.Attribute{Type: "sAMAccountName", Vals: []string{"Retired-Full$"}}, ldap.Attribute{Type: "userAccountControl", Vals: []string{"8194"}}, ldap.Attribute{Type: "dNSHostName", Vals: []string{host}})
 	add(server, "server", ldap.Attribute{Type: "serverReference", Vals: []string{computer}}, ldap.Attribute{Type: "dNSHostName", Vals: []string{host}})
-	add(ntds, "nTDSDSA", ldap.Attribute{Type: "options", Vals: []string{"6"}}, ldap.Attribute{Type: "invocationId", Vals: []string{"0123456789abcdef"}}, ldap.Attribute{Type: "hasMasterNCs", Vals: []string{base, ConfigDN(base), "CN=Schema," + ConfigDN(base)}}, ldap.Attribute{Type: "msDS-hasMasterNCs", Vals: []string{base, ConfigDN(base), "CN=Schema," + ConfigDN(base)}})
+	masterNCs := []string{ConfigDN(base), base, "CN=Schema," + ConfigDN(base)}
+	// INSTANCE_TYPE_NC_GOING makes KCC exclude these replicas as sources
+	// while retaining the retired DSA and its partition metadata for cleanup.
+	retiredNCs := make([]string, 0, len(masterNCs))
+	for _, dn := range masterNCs {
+		retiredNCs = append(retiredNCs, "B:8:00000020:"+dn)
+	}
+	add(ntds, "nTDSDSA",
+		ldap.Attribute{Type: "options", Vals: []string{"6"}},
+		ldap.Attribute{Type: "invocationId", Vals: []string{"0123456789abcdef"}},
+		ldap.Attribute{Type: "hasMasterNCs", Vals: masterNCs},
+		ldap.Attribute{Type: "msDS-hasMasterNCs", Vals: masterNCs},
+		ldap.Attribute{Type: "msDS-HasInstantiatedNCs", Vals: retiredNCs})
 	partition, e := s.Sites.ldap.SearchOne(ctx, ldapproto.SearchOptions{BaseDN: "CN=Partitions," + ConfigDN(base), Filter: "(&(objectClass=crossRef)(nCName=" + ldap.EscapeFilter("DC=DomainDnsZones,"+base) + "))", Attributes: []string{"objectGUID"}})
 	must(e)
 	replica := ldap.NewModifyRequest(partition.DN, nil)
@@ -111,7 +123,8 @@ sam.add(record,controls=['relax:0'])`
 	add("CN=SYSVOL Subscription,"+subscriber, "msDFSR-Subscription", ldap.Attribute{Type: "msDFSR-Enabled", Vals: []string{"FALSE"}}, ldap.Attribute{Type: "msDFSR-ReplicationGroupGuid", Vals: []string{groupGUID}}, ldap.Attribute{Type: "msDFSR-ContentSetGuid", Vals: []string{"0123456789abcdef"}})
 	live, e := s.Sites.controller(ctx, "dc2.sambaadm.test")
 	must(e)
-	add("CN=retired-full-connection,"+live.NTDS, "nTDSConnection", ldap.Attribute{Type: "fromServer", Vals: []string{ntds}}, ldap.Attribute{Type: "enabledConnection", Vals: []string{"FALSE"}}, ldap.Attribute{Type: "options", Vals: []string{"0"}})
+	inboundDN := "CN=retired-full-connection," + live.NTDS
+	add(inboundDN, "nTDSConnection", ldap.Attribute{Type: "fromServer", Vals: []string{ntds}}, ldap.Attribute{Type: "enabledConnection", Vals: []string{"FALSE"}}, ldap.Attribute{Type: "options", Vals: []string{"0"}})
 	// Shared DNS owner: removing the retired SRV must preserve the live SRV.
 	records := []AddDNSRecordInput{{Zone: "sambaadm.test", Name: "retired-full", Type: "A", Data: "192.0.2.231"}, {Zone: "sambaadm.test", Name: "@", Type: "A", Data: "192.0.2.231"}, {Zone: "sambaadm.test", Name: "_cleanup._tcp", Type: "SRV", Data: host + " 389 0 100"}, {Zone: "sambaadm.test", Name: "_cleanup._tcp", Type: "SRV", Data: "dc1.sambaadm.test 389 0 100"}}
 	for _, r := range records {
@@ -122,19 +135,39 @@ sam.add(record,controls=['relax:0'])`
 			_ = s.DNS.DeleteRecord(context.Background(), r, "test", "")
 		}
 	}()
-	for _, nc := range []string{base, ConfigDN(base), "CN=Schema," + ConfigDN(base), "DC=DomainDnsZones," + base, "DC=ForestDnsZones," + base} {
-		must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", nc, "test", ""))
-		must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", nc, "test", ""))
+	controllers := []string{"dc1.sambaadm.test", "dc2.sambaadm.test"}
+	partitions := append(masterNCs, "DC=DomainDnsZones,"+base, "DC=ForestDnsZones,"+base)
+	syncPartitions := func() {
+		t.Helper()
+		for _, nc := range partitions {
+			must(s.Repl.Sync(ctx, controllers[0], controllers[1], nc, "test", ""))
+			must(s.Repl.Sync(ctx, controllers[1], controllers[0], nc, "test", ""))
+		}
 	}
+	syncPartitions()
 	// Settle KCC's startup pass before capturing an immutable cleanup plan.
 	// Otherwise a newly generated inbound connection correctly invalidates it.
-	for _, dc := range []string{"dc1.sambaadm.test", "dc2.sambaadm.test"} {
-		must(s.Repl.KCC(ctx, dc, "test", ""))
+	for _, dc := range controllers {
+		started := time.Now()
+		err := s.Repl.KCC(ctx, dc, "test", "")
+		t.Logf("KCC before cleanup preview on %s took %s", dc, time.Since(started).Round(time.Millisecond))
+		must(err)
 	}
-	must(s.Repl.Sync(ctx, "dc1.sambaadm.test", "dc2.sambaadm.test", ConfigDN(base), "test", ""))
-	must(s.Repl.Sync(ctx, "dc2.sambaadm.test", "dc1.sambaadm.test", ConfigDN(base), "test", ""))
+	// KCC can create inbound neighbors with no successful replication history.
+	// Synchronize all partitions between the surviving DCs after recalculation.
+	syncPartitions()
 	p, e := s.Sites.PreviewCleanup(ctx, []string{server})
 	must(e)
+	if !cleanupHasDN(p, inboundDN) {
+		t.Fatalf("cleanup plan does not include the retired inbound connection %s", inboundDN)
+	}
+	for _, dc := range controllers {
+		status, err := s.Repl.StatusFor(ctx, dc)
+		must(err)
+		if !cleanupReplicationHealthy(status, p) {
+			t.Fatalf("fixture replication not ready after KCC and sync on %s: %+v", dc, status.Neighbors)
+		}
+	}
 	peerURI, e := consistencyPeerURI(s.Sites.ldap.URI(), "dc2.sambaadm.test")
 	must(e)
 	peerCheck := s.Sites.ldap.ServicePeer(peerURI)

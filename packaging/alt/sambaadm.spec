@@ -38,6 +38,7 @@ mkdir -p %buildroot/usr/share/sambaadm/helper-packages
 install -m644 %{payload_dir}/helper.rpm %buildroot/usr/share/sambaadm/helper-packages/sambaadm-helper-%{version}-%{release}.%{_arch}.rpm
 install -m755 %{payload_dir}/sambaadm %buildroot/usr/bin/sambaadm
 install -m755 %{payload_dir}/sambaadm-prepare-logs %buildroot/usr/libexec/sambaadm-prepare-logs
+install -m755 %{payload_dir}/samba-server-init %buildroot/usr/sbin/samba-server-init
 install -m755 %{payload_dir}/samba-domain-init %buildroot/usr/sbin/samba-domain-init
 install -m755 %{payload_dir}/sambaadm-setup %buildroot/usr/sbin/sambaadm-setup
 install -m755 %{payload_dir}/sambaadm-renew-certificates %buildroot/usr/sbin/sambaadm-renew-certificates
@@ -46,6 +47,8 @@ install -m644 %{payload_dir}/sambaadm.service %buildroot/lib/systemd/system/samb
 install -m640 %{payload_dir}/config.yaml %buildroot/etc/sambaadm/config.yaml
 install -m600 %{payload_dir}/env %buildroot/etc/sambaadm/env
 install -m644 %{payload_dir}/config.yaml %buildroot/usr/share/doc/sambaadm/config.example.yaml
+cp -R %{payload_dir}/server-init-guide %buildroot/usr/share/doc/sambaadm/
+install -m644 %{payload_dir}/server-init.md %buildroot/usr/share/doc/sambaadm/
 install -m644 %{payload_dir}/LICENSE %{payload_dir}/NOTICE %{payload_dir}/alt-install.md %{payload_dir}/quick-install.md %{payload_dir}/caja-plugin.md %buildroot/usr/share/doc/sambaadm/
 
 %pre
@@ -59,7 +62,7 @@ if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || :
 fi
 # First-start setup is explicit; package updates preserve the current service.
-echo 'Существующий домен: sudo sambaadm-setup. Новый лес на чистом сервере: sudo samba-domain-init.'
+echo 'Новый контроллер или файловый сервер: sudo samba-server-init. Существующий домен: sudo sambaadm-setup. Новый лес на чистом сервере: sudo samba-domain-init.'
 
 %preun
 if [ "$1" -eq 0 ] && [ -d /run/systemd/system ]; then
@@ -80,6 +83,7 @@ fi
 /usr/sbin/sambaadm-package
 /usr/sbin/sambaadm-setup
 /usr/sbin/samba-domain-init
+/usr/sbin/samba-server-init
 /usr/sbin/sambaadm-renew-certificates
 /usr/libexec/sambaadm-prepare-logs
 /lib/systemd/system/sambaadm.service

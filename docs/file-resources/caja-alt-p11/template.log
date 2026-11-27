@@ -1,0 +1,5 @@
+=== RUN   TestIntegrationCajaDirectoryTemplate
+    caja_integration_test.go:50: PASS directory mode/ACL/default ACL/mask without search rejected before mutation; non-executable file accepted
+    caja_integration_test.go:87: PASS actual read/traverse template applied to 7 ALT directories; effective group and mask search restored
+--- PASS: TestIntegrationCajaDirectoryTemplate (0.03s)
+PASS

@@ -11,6 +11,7 @@ case $arch in x86_64) file "$binary" | grep -q 'x86-64';; aarch64) file "$binary
 work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
 mkdir -p "$work"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS,payload}
 cp "$binary" "$work/payload/sambaadm-helper"
+cp "$repo/deploy/sambaadm-filecluster-secret" "$work/payload/"
 cp "$repo/deploy/sambaadm-helper.service" "$work/payload/"
 cp "$repo/configs/helper.example.yaml" "$work/payload/helper-config.yaml"
 cp "$repo/docs/helper.md" "$repo/LICENSE" "$repo/NOTICE" "$work/payload/"

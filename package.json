@@ -1,6 +1,13 @@
 {
   "name": "sambaadm-ui",
   "private": true,
-  "scripts": { "build:css": "tailwindcss -c tailwind.config.cjs -i ui/styles.css -o internal/web/static/css/ui.css --minify" },
-  "devDependencies": { "tailwindcss": "3.4.17" }
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.cjs -i ui/styles.css -o internal/web/static/css/ui.css --minify && npm run build:printing-css && npm run build:console-css && npm run build:wizard-css",
+    "build:printing-css": "tailwindcss -c tailwind.config.cjs -i ui/printing.css -o internal/web/static/css/printing.css --minify",
+    "build:console-css": "tailwindcss -c tailwind.config.cjs -i ui/console.css -o internal/web/static/css/console-theme.css --minify",
+    "build:wizard-css": "tailwindcss -c tailwind.config.cjs -i ui/wizard.css -o internal/domaininit/assets/theme.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "3.4.17"
+  }
 }

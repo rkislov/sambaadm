@@ -427,7 +427,7 @@ type installRegistration struct {
 	caPath string
 }
 
-func (s *Server) prepareInstallRegistration(node, csrPEM string) (*installRegistration, error) {
+func (s *Server) prepareInstallRegistration(node, csrPEM string, fileServer ...bool) (*installRegistration, error) {
 	dir := s.cfg.Server.EnrollmentDir
 	c, e := config.ManagedHelpers(dir)
 	if e != nil {
@@ -478,6 +478,13 @@ func (s *Server) prepareInstallRegistration(node, csrPEM string) (*installRegist
 	domain := dnsFromBaseDN(s.cfg.LDAP.BaseDN)
 	files := map[string][]byte{"management.pub": []byte(base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) + "\n"), "tls.crt": cert}
 	ldapSettings := map[string]any{"uri": "ldaps://" + node + ":636", "base_dn": s.cfg.LDAP.BaseDN, "bind": map[string]string{"user": s.cfg.LDAP.Bind.User, "password_env": "SAMBAADM_PASSWORD"}}
+	if len(fileServer) > 0 && fileServer[0] {
+		if !strings.HasPrefix(s.cfg.LDAP.URI, "ldaps://") {
+			return nil, fmt.Errorf("Для helper файлового сервера укажите LDAPS контроллера в настройках панели")
+		}
+		ldapSettings["uri"] = s.cfg.LDAP.URI
+		ldapSettings["allow_legacy_cn"] = s.cfg.LDAP.AllowLegacyCN
+	}
 	if caFile := s.cfg.LDAP.LDAPCAFile(); caFile != "" {
 		raw, err := os.ReadFile(caFile)
 		if err != nil {
@@ -598,6 +605,7 @@ func (s *Server) installOneHelper(ctx context.Context, j *helperInstallJob, i in
 	log := func(line string) { s.installLog(j, i, "", line, password, rootPassword) }
 	// Preflight is separate from installation: never alter a configured foreign helper silently.
 	preflight := "set -eu\ncommand -v apt-get >/dev/null || { echo Настройте репозитории ALT Linux; exit 1; }\nrepo_log=$(mktemp)\ntrap 'rm -f -- \"$repo_log\"' EXIT\nif ! apt-get update >\"$repo_log\" 2>&1; then cat \"$repo_log\"; echo Настройте доступные репозитории ALT Linux; exit 1; fi\nif grep -E '^(Err|E:|W:.*(failed|fetch|resolve))|Some index files failed' \"$repo_log\"; then echo Настройте доступные репозитории ALT Linux; exit 1; fi\nfor package in coreutils systemd shadow-utils openssl python3; do apt-cache policy \"$package\" | grep -E 'Candidate:.*[^[:space:]]' | grep -v '(none)' >/dev/null || { echo Недоступен пакет \"$package\". Настройте репозитории; exit 1; }; done\nif [ -s /etc/sambaadm-helper/config.yaml ]; then echo SAMBAADM_EXISTING; fi\ncommand -v rpm >/dev/null\ncommand -v systemctl >/dev/null\n\n"
+	preflight += "case \"$(testparm -s --parameter-name='server role' 2>/dev/null || :)\" in 'member server') printf '\\nSAMBAADM_ROLE=member\\n';; esac\n"
 	before, e := bootstrap.Su(ctx, client, preflight, rootPassword, nil)
 	if e != nil {
 		return fmt.Errorf("Повышение прав su - или проверка зависимостей не выполнены: %s", redactInstall(before, password, rootPassword))
@@ -642,7 +650,8 @@ func (s *Server) installOneHelper(ctx context.Context, j *helperInstallJob, i in
 	if start < 0 {
 		return fmt.Errorf("Не получен CSR узла")
 	}
-	p, e := s.prepareInstallRegistration(node.Node, strings.ReplaceAll(stage[start:], "\r", ""))
+	isMember := strings.Contains("\n"+strings.ReplaceAll(before, "\r", ""), "\nSAMBAADM_ROLE=member\n")
+	p, e := s.prepareInstallRegistration(node.Node, strings.ReplaceAll(stage[start:], "\r", ""), isMember)
 	if e != nil {
 		return e
 	}

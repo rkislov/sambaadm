@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 	"sync"
 	"time"
 )
@@ -146,7 +145,7 @@ func (v *Verifier) Dispatch(ctx context.Context, raw []byte, handler Handler) Re
 	// Version 2 is mandatory when forwarding credentials, so older helpers
 	// cannot silently ignore them and fall back to a service identity.
 	if req.Credentials != nil {
-		if req.Version != CredentialVersion || !req.Credentials.Valid() || !strings.HasPrefix(req.Method, "sysvol.") {
+		if req.Version != CredentialVersion || !req.Credentials.Valid() || !credentialMethod(req.Method) {
 			return unauthorized(out)
 		}
 	} else if req.Version != Version {

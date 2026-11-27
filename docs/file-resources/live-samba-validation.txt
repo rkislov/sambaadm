@@ -1,0 +1,16 @@
+Live disposable Samba AD validation, 2026-11-26
+Samba 4.17.12-Debian, Linux arm64, POSIX ACL share
+Command: SAMBAADM_TWO_DC=1 SAMBAADM_HELPERS=1 SAMBAADM_IT_TEST_PATTERN="IntegrationSharePermissionTemplatesAndInheritance|IntegrationHostHelperFilesystemConfinement" testdata/samba/run-integration.sh
+
+=== RUN   TestIntegrationHostHelperFilesystemConfinement
+--- PASS: TestIntegrationHostHelperFilesystemConfinement (0.04s)
+=== RUN   TestIntegrationSharePermissionTemplatesAndInheritance
+    share_permission_map_integration_test.go:66: Real AD security groups resolved by file-server NSS: RW GID=3000008, RO GID=3000009, masked GID=3000010
+    share_permission_map_integration_test.go:191: PASS all 5 existing directories: root RO, Team subtree RW, Archive override RO, unrelated masked group remains r-x
+    share_permission_map_integration_test.go:192: PASS default ACL inheritance in all branches: new directories and files, two levels; regular files have no effective execute bit; old file unchanged
+    share_permission_map_integration_test.go:250: PASS real signed SMB sessions: RW creates folder/file; RO reads but cannot create/overwrite; writer cannot write Archive or Other
+    share_permission_map_integration_test.go:264: OBSERVED inherit acls=yes SMB file mode=0770 ACL=user::rwx; user:3000008:rwx; user:3000009:r-x; group::---; group:100:---; group:3000008:rwx; group:3000009:r-x; group:3000011:rwx; mask::rwx; other::---
+    share_permission_map_integration_test.go:267: PASS both Samba modes: inherit acls=no gives non-executable SMB files through create mask; inherit acls=yes also inherits directory execute permissions onto SMB files
+    share_permission_map_integration_test.go:284: PASS private journal contains original ACLs, plan and successful per-directory results
+--- PASS: TestIntegrationSharePermissionTemplatesAndInheritance (0.33s)
+PASS

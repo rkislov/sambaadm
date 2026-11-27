@@ -1,9 +1,12 @@
 const {chromium}=require('playwright'),fs=require('fs'),os=require('os'),path=require('path'),http=require('http'),assert=require('assert/strict'),{execFileSync}=require('child_process');
 const repo=path.resolve(__dirname,'../..'),dir=fs.mkdtempSync(path.join(os.tmpdir(),'sambaadm-dns-'));
 execFileSync('go',['test','./internal/web','-run','^TestWorkspaceBrowserFixtures$','-count=1'],{cwd:repo,env:{...process.env,SAMBAADM_WEB_FIXTURE_DIR:dir}});
-const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://localhost').pathname,file=p.startsWith('/static/')?path.join(repo,'internal/web',p):path.join(dir,'admin-dns_routing.html');if(!fs.existsSync(file)){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));});
+const pages={'/':'admin-.html','/dns/routing':'admin-dns_routing.html'};
+const server=http.createServer((req,res)=>{const p=new URL(req.url,'http://localhost').pathname,file=p.startsWith('/static/')?path.join(repo,'internal/web',p):pages[p]&&path.join(dir,pages[p]);if(!file||!fs.existsSync(file)){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));});
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch({headless:true});try{
 const page=await browser.newPage({viewport:{width:1280,height:900}}),errors=[],writes=[],plans=[];page.on('pageerror',e=>errors.push(e.message));let blocked=true,unreachable=[],failApply=null,loseAck=null,releaseBootstrap;const configs=new Map([['dc1.ipr.loc',[{domain:'keep-one.test',servers:['192.0.2.1'],mode:'only'}]],['dc2.ipr.loc',[{domain:'keep-two.test',servers:['192.0.2.1'],mode:'only'}]]]),attempts=[];const bootstrap=new Promise(resolve=>releaseBootstrap=resolve);
+const backendCalls=[],jobID='a'.repeat(32),jobLog='<script>unsafe()</script>';
+let backendComplete=false;
 await page.route('**/api/v1/**',async route=>{const request=route.request(),u=new URL(request.url()),p=u.pathname.slice(7),node=u.searchParams.get('node'),body=request.postDataJSON();let json=[],status=200;
  if(p==='/dns/zones'||p==='/dns/routing/nodes')await bootstrap;
  if(p==='/dns/zones')json=[{name:'ipr.loc'}];else if(p==='/dns/routing/nodes')json=['dc1.ipr.loc','dc2.ipr.loc'];
@@ -12,11 +15,20 @@ await page.route('**/api/v1/**',async route=>{const request=route.request(),u=ne
  else if(p==='/dns/forwarding'&&request.method()==='GET'){if(unreachable.includes(node)){await route.fulfill({status:503,json:{error:'Нет связи с helper'}});return;}json={editable:true,path:'/etc/bind/named.conf',revision:'r',rules:configs.get(node)};}
  else if(p==='/dns/forwarding/plan'){if(node==='dc2.ipr.loc'&&blocked){await route.fulfill({status:409,json:{error:'BIND недоступен'}});return;}plans.push({node,body});json={revision:'r',proposedRevision:'next',before:'Старые правила',proposed:body.rules.map(r=>r.domain).join('\n'),rules:body.rules};}
  else if(p==='/dns/forwarding'&&request.method()==='PUT'){attempts.push(node);if(failApply===node){await route.fulfill({status:503,json:{error:'Связь потеряна при применении'}});return;}writes.push({node,body});configs.set(node,body.rules);if(loseAck===node){await route.fulfill({status:503,json:{error:'Ответ потерян после сохранения'}});return;}json={backup:'/private/backup',status:{}};}
- else if(p==='/dns/backend/plan')json={backend:'BIND9_DLZ',target:body.target,revision:'backend-r',steps:['Остановить DNS и Samba','Проверить SOA и SRV'],warning:'Правила BIND сохраняются, но перестанут действовать.'};
- else if(p==='/dns/backend/start'){writes.push({p,body});json={id:'a'.repeat(32),state:'queued'};}
- else if(p==='/dns/backend/status')json={state:'completed',log:['<script>unsafe()</script>','Готово']};
+ else if(p==='/services/overview')json={servers:[...configs.keys()].map(name=>({name,helper:'online',services:[]})),clusters:[]};
+ else if(p.startsWith('/dns/backend/')){
+  backendCalls.push({p,node,method:request.method(),csrf:request.headers()['x-csrf-token'],body,id:u.searchParams.get('id')});
+  if(p==='/dns/backend/plan')json={backend:'BIND9_DLZ',target:body.target,revision:'backend-r',steps:['Остановить DNS и Samba','Проверить SOA и SRV'],warning:'Правила BIND сохраняются, но перестанут действовать.'};
+  else if(p==='/dns/backend/start')json={id:jobID,state:'queued'};
+  else if(p==='/dns/backend/status')json=backendComplete?{state:'completed'}:{state:'running',log:[jobLog]};
+ }
  await route.fulfill({status,json});});
-await page.goto('http://127.0.0.1:'+server.address().port+'/dns/routing');for(const tab of await page.getByRole('tab').all())assert.equal(await tab.isDisabled(),true);releaseBootstrap();await page.getByLabel('Поддомен (например app)').fill('app');await page.getByLabel('DNS-серверы: имя и IP-адреса, по одному серверу в строке').fill('ns.app.ipr.loc 192.0.2.53');await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByText('Изменения: app.ipr.loc',{exact:true}).waitFor();assert.equal(writes.length,0);await page.getByLabel('Подтверждаю изменение делегирования').check();await page.getByRole('button',{name:'Применить',exact:true}).click();await page.getByText('Делегирование сохранено в AD-зоне.').waitFor();assert.equal(writes[0].body.confirm,true);
+const url='http://127.0.0.1:'+server.address().port;
+await page.goto(url+'/dns/routing');
+const routingTabs=page.getByRole('tablist',{name:'Настройки DNS'}).getByRole('tab');
+assert.deepEqual(await routingTabs.allTextContents(),['Делегирование','Условная пересылка']);
+for(const tab of await routingTabs.all())assert.equal(await tab.isDisabled(),true);
+releaseBootstrap();await page.getByLabel('Поддомен (например app)').fill('app');await page.getByLabel('DNS-серверы: имя и IP-адреса, по одному серверу в строке').fill('ns.app.ipr.loc 192.0.2.53');await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByText('Изменения: app.ipr.loc',{exact:true}).waitFor();assert.equal(writes.length,0);await page.getByLabel('Подтверждаю изменение делегирования').check();await page.getByRole('button',{name:'Применить',exact:true}).click();await page.getByText('Делегирование сохранено в AD-зоне.').waitFor();assert.equal(writes[0].body.confirm,true);
 await page.getByRole('tab',{name:'Условная пересылка'}).click();await page.getByLabel('Домен пересылки (например app.ipr.loc)').fill('app.ipr.loc');await page.getByLabel('IP-адреса DNS-серверов через пробел').fill('192.0.2.53');await page.getByRole('button',{name:'Выбрать все'}).click();await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByText('dc2.ipr.loc: не доставлено',{exact:false}).waitFor();assert.equal(await page.getByRole('button',{name:'Применить на 2 серверах'}).count(),0);
 const apply=async count=>{await page.getByLabel('Подтверждаю применение на выбранных серверах').check();await page.getByRole('button',{name:'Применить на '+count+(count===1?' сервере':' серверах'),exact:true}).click();await page.getByText('Обработка завершена.',{exact:false}).waitFor();};
 await apply(1);assert.deepEqual(attempts,['dc1.ipr.loc']);assert.equal(configs.get('dc2.ipr.loc').some(r=>r.domain==='app.ipr.loc'),false);
@@ -30,6 +42,38 @@ await page.getByLabel('Домен пересылки (например app.ipr.l
 await page.getByLabel('Домен пересылки (например app.ipr.loc)').fill('offline.ipr.loc');unreachable=['dc1.ipr.loc','dc2.ipr.loc'];await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByRole('button',{name:'Повторить для недоставленных',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:/Применить на/}).count(),0);const before=attempts.length;unreachable=['dc1.ipr.loc'];await page.getByRole('button',{name:'Повторить для недоставленных',exact:true}).click();await apply(1);assert.deepEqual(attempts.slice(before),['dc2.ipr.loc']);unreachable=[];await page.getByRole('button',{name:'Повторить для недоставленных',exact:true}).click();await apply(1);assert.deepEqual(attempts.slice(before),['dc2.ipr.loc','dc1.ipr.loc']);for(const rules of configs.values())assert.equal(rules.filter(r=>r.domain==='offline.ipr.loc').length,1);
 // If a reply is lost after the helper saved the rule, retry recognizes success without another write.
 await page.getByLabel('Домен пересылки (например app.ipr.loc)').fill('lost-reply.ipr.loc');await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByRole('button',{name:'Применить на 2 серверах',exact:true}).waitFor();loseAck='dc2.ipr.loc';await apply(2);const savedAttempts=attempts.length;loseAck=null;await page.getByRole('button',{name:'Повторить для недоставленных',exact:true}).click();await page.getByText('Все выбранные серверы уже содержат нужные настройки.',{exact:true}).waitFor();assert.equal(attempts.length,savedAttempts);for(const rules of configs.values())assert.equal(rules.filter(r=>r.domain==='lost-reply.ipr.loc').length,1);
-await page.getByRole('tab',{name:'DNS-бэкенд',exact:true}).click();await page.getByLabel('DNS-бэкенд',{exact:true}).selectOption('SAMBA_INTERNAL');await page.getByRole('button',{name:'Предпросмотр',exact:true}).click();await page.getByText('Правила BIND сохраняются, но перестанут действовать.').waitFor();assert.equal(writes.filter(w=>w.p==='/dns/backend/start').length,0);await page.getByLabel('Подтверждаю перезапуск DNS и Samba на этом DC').check();await page.getByRole('button',{name:'Начать',exact:true}).click();await page.getByText('Переключение DNS завершено.').waitFor();assert.equal(await page.locator('script').filter({hasText:'unsafe()'}).count(),0);
-await page.setViewportSize({width:390,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);console.log('PASS DNS: delegation preview/confirmation, partial preflight/apply failures, failed-host retries, idempotency and per-node rule preservation, backend confirmation and escaped logs, mobile');
+await page.setViewportSize({width:390,height:844});
+assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+assert.deepEqual(backendCalls,[]);
+
+await page.setViewportSize({width:1280,height:900});
+await page.goto(url+'/');
+await page.getByRole('button',{name:'Добавить роли и службы',exact:true}).click();
+const roles=page.getByRole('dialog',{name:'Добавить роли и службы'});
+await roles.getByRole('combobox',{name:'Роль или служба',exact:true}).selectOption('dns');
+await roles.getByRole('combobox',{name:'Сервер',exact:true}).selectOption('dc2.ipr.loc');
+await roles.getByRole('combobox',{name:'DNS-бэкенд',exact:true}).selectOption('SAMBA_INTERNAL');
+await roles.getByRole('button',{name:'Проверить установку…',exact:true}).click();
+const dialog=roles.getByRole('region',{name:'Подтверждение настройки роли'});
+await dialog.getByText('Правила BIND сохраняются, но перестанут действовать.').waitFor();
+await dialog.getByText('Будут перезапущены Samba и DNS выбранного DC. Зоны AD сохраняются.',{exact:true}).waitFor();
+const csrf=await page.locator('meta[name=csrf-token]').getAttribute('content');
+assert.ok(csrf);
+const plan={p:'/dns/backend/plan',node:'dc2.ipr.loc',method:'POST',csrf,body:{target:'SAMBA_INTERNAL',reinstall:false},id:null};
+assert.deepEqual(backendCalls,[plan]);
+await dialog.getByRole('button',{name:'Подтверждаю — настроить роль',exact:true}).click();
+const roleStatus=roles.getByRole('status');
+await roleStatus.filter({hasText:jobLog}).waitFor();
+assert.equal(await roleStatus.locator('script').count(),0);
+backendComplete=true;
+const management=roleStatus.getByRole('link',{name:'Открыть управление службой',exact:true});
+await management.waitFor();
+assert.match(await roleStatus.textContent(),/dc2\.ipr\.loc: настройка роли завершена/);
+assert.equal(await management.getAttribute('href'),'/dns');
+assert.deepEqual(backendCalls.slice(0,2),[plan,{...plan,p:'/dns/backend/start',body:{...plan.body,revision:'backend-r',confirm:true}}]);
+const statusCalls=backendCalls.slice(2);
+assert.ok(statusCalls.length>=2);
+for(const call of statusCalls)assert.deepEqual(call,{p:'/dns/backend/status',node:'dc2.ipr.loc',method:'GET',csrf:undefined,body:null,id:jobID});
+assert.deepEqual(errors,[]);
+console.log('PASS DNS: delegation preview/confirmation, partial failures and retries, idempotency, mobile routing, backend preview/confirmation and escaped logs on the dashboard');
 }finally{await browser.close();server.close();fs.rmSync(dir,{recursive:true,force:true});}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});

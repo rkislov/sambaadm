@@ -1,0 +1,3 @@
+#!/bin/sh
+# Unified first-install wizard. Existing deployments are never reprovisioned.
+exec /usr/bin/sambaadm server-init "$@"

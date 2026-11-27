@@ -9,12 +9,15 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"sambaadm/internal/audit"
 )
 
 // ACLEntry is one POSIX ACL line.
 type ACLEntry struct {
+	Identity  string `json:"identity,omitempty"`
+	Effective string `json:"effective,omitempty"`
 	Kind      string `json:"kind"`                // user|group|mask|other
 	Qualifier string `json:"qualifier,omitempty"` // name or empty
 	Perms     string `json:"perms"`               // rwx / r-x / ---
@@ -64,10 +67,22 @@ type SetACLInput struct {
 type FSACLService struct {
 	audit  *audit.Logger
 	shares *ShareService
+	root   *os.Root // Optional share-scoped root, held open for the entire operation.
 }
 
 func newFSACLService(auditLog *audit.Logger, shares *ShareService) *FSACLService {
 	return &FSACLService{audit: auditLog, shares: shares}
+}
+
+func (s *FSACLService) pinPath(path string) (*pinnedHostPath, error) {
+	if s.root == nil {
+		return s.shares.pinPath(path)
+	}
+	rel, err := filepath.Rel(s.shares.cfg.SharesRoot, path)
+	if err != nil {
+		return nil, err
+	}
+	return pinHostPath(s.root, rel, path)
 }
 
 // Get returns mode/owner, ACL entries and xattrs for a path.
@@ -82,7 +97,7 @@ func (s *FSACLService) Get(ctx context.Context, path string) (*PathACL, error) {
 		return nil, err
 	}
 	original := path
-	pin, err := s.shares.pinPath(path)
+	pin, err := s.pinPath(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &PathACL{Path: original}, nil
@@ -113,6 +128,30 @@ func (s *FSACLService) Get(ctx context.Context, path string) (*PathACL, error) {
 		out.ACLText = acl
 		out.DefaultACL = def
 		out.Entries = parseACLEntries(acl, def)
+		names := map[string]string{}
+		identityCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		defer cancel()
+		if _, err := strconv.ParseUint(out.Group, 10, 32); err == nil {
+			if name, err := lookupHostGroupName(identityCtx, out.Group); err == nil {
+				out.Group = name
+			}
+		}
+		for i := range out.Entries {
+			entry := &out.Entries[i]
+			if entry.Kind != "group" || entry.Qualifier == "" {
+				continue
+			}
+			if name, ok := names[entry.Qualifier]; ok {
+				entry.Identity = name
+				continue
+			}
+			name, err := lookupHostGroupName(identityCtx, entry.Qualifier)
+			if err != nil {
+				name = entry.Qualifier
+			}
+			names[entry.Qualifier] = name
+			entry.Identity = name
+		}
 	} else {
 		out.ACLText = err.Error()
 	}
@@ -135,12 +174,22 @@ func (s *FSACLService) Set(ctx context.Context, in SetACLInput, actor, ip string
 		return nil, err
 	}
 	original := path
-	pin, err := s.shares.pinPath(path)
+	pin, err := s.pinPath(path)
 	if err != nil {
 		s.audit.Failure(actor, "acl.set", original, ip, err)
 		return nil, err
 	}
 	defer pin.Close()
+	info, err := pin.File.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		if err := validateDirectorySearchInput(in); err != nil {
+			s.audit.Failure(actor, "acl.set", original, ip, err)
+			return nil, err
+		}
+	}
 	path = pin.Path
 	if in.Owner != "" {
 		if err := chownPath(path, in.Owner); err != nil {
@@ -230,6 +279,9 @@ func BuildACLSpec(kind, name, perms string) (string, error) {
 	kind = strings.ToLower(strings.TrimSpace(kind))
 	perms = normalizePerms(perms)
 	name = strings.TrimSpace(name)
+	if strings.ContainsAny(name, ":,;\r\n\x00") {
+		return "", fmt.Errorf("invalid ACL identity")
+	}
 	switch kind {
 	case "u", "user":
 		if name == "" {
@@ -329,7 +381,8 @@ func removeACL(path, spec string, recursive bool) error {
 }
 
 func readACL(ctx context.Context, path string) (access, def string, err error) {
-	cmd := exec.CommandContext(ctx, "getfacl", "-p", path)
+	cmd := exec.CommandContext(ctx, "getfacl", "-p", "-n", path)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var buf bytes.Buffer
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
@@ -376,11 +429,16 @@ func parseACLLine(line string, forceDefault bool) (ACLEntry, bool) {
 	if strings.HasPrefix(line, "default:") {
 		line = strings.TrimPrefix(line, "default:")
 	}
+	effective := ""
+	if before, comment, ok := strings.Cut(line, "#effective:"); ok {
+		line = strings.TrimSpace(before)
+		effective = strings.TrimSpace(comment)
+	}
 	parts := strings.Split(line, ":")
 	if len(parts) < 2 {
 		return ACLEntry{}, false
 	}
-	e := ACLEntry{Raw: raw, Default: isDef, Kind: parts[0]}
+	e := ACLEntry{Raw: raw, Default: isDef, Kind: parts[0], Effective: effective}
 	switch len(parts) {
 	case 2: // other:rwx or mask:rwx (short) — uncommon
 		e.Perms = parts[1]
@@ -401,7 +459,9 @@ func accessACLToDefaultSpec(access string) string {
 		if line == "" || strings.HasPrefix(line, "default:") {
 			continue
 		}
-		parts = append(parts, line)
+		if entry, ok := parseACLLine(line, false); ok {
+			parts = append(parts, entry.Kind+":"+entry.Qualifier+":"+entry.Perms)
+		}
 	}
 	return strings.Join(parts, ",")
 }

@@ -1,0 +1,210 @@
+@tailwind components;
+/* Shared visual system. Functional layouts, RBAC and native form semantics stay in their modules. */
+body { @apply bg-slate-50 text-slate-800; background-image:radial-gradient(ellipse at 12% 0%,rgb(15 118 110 / .035),transparent 45%); }
+body .topbar { @apply sticky z-40 rounded-2xl border border-white bg-white/95 px-6 py-3 shadow-float backdrop-blur-xl; top:12px; width:min(1492px,calc(100% - 48px)); margin:12px auto 0; }
+body .topbar .brand { @apply text-lg font-bold tracking-tight text-slate-900; }
+body .topbar .app-navigation > summary { @apply rounded-xl border-slate-100 bg-slate-50 text-xs text-slate-600 shadow-none; }
+body .topbar .user { @apply text-xs; }
+body main.container { @apply px-6 pb-12 pt-7; width:min(1540px,100%);max-width:1540px; }
+body .console-page-heading { @apply mb-7 flex min-w-0 flex-col items-start gap-0; }
+body .console-title-group { @apply min-w-0; }
+body .console-breadcrumb { @apply mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400; }
+body .console-breadcrumb a { @apply text-slate-500 no-underline hover:text-brand-600; }
+body .console-breadcrumb strong { @apply font-medium text-slate-600; }
+body main h1 { @apply text-3xl font-semibold tracking-tight text-slate-900; }
+body .console-page-heading h1,body .console-title-group h1 { @apply m-0; }
+body .console-page-subtitle { @apply mb-0 mt-2 text-sm leading-relaxed text-slate-500; }
+body :is(.form-card,.setup-card,.job-card,.workspace-tree,.workspace-list,.console-sidebar,.overview-section,.dashboard-card,.metric-card,.card,.di-card) { @apply rounded-2xl border border-white bg-white shadow-panel; }
+body :is(.form-card,.setup-card,.job-card,.card) { @apply p-6; }
+body :is(.form-card,.setup-card,.job-card,.card)>h2:first-child { @apply mt-0; }
+body .workspace-head { @apply mb-6 items-center gap-5; }
+body .workspace-head>.workspace-tools { @apply rounded-2xl border border-white bg-white p-3 shadow-float; }
+body .workspace-columns { @apply items-start gap-6; grid-template-columns:minmax(215px,248px) minmax(0,1fr); }
+body :is(.console-sidebar,.workspace-tree) { @apply sticky border-white p-4; top:100px; }
+body .console-sidebar :is(h2,h3) { @apply mb-4 mt-1 text-xs font-semibold uppercase tracking-widest text-slate-400; font-size:10px; }
+body .console-sidebar .directory-tree button { @apply rounded-lg px-2 py-2 text-xs; }
+body .console-sidebar .directory-tree button.selected { @apply bg-brand-50 text-brand-700; box-shadow:inset 3px 0 0 #0f766e; }
+body .console-sidebar .console-local-menu { @apply mb-4 rounded-xl border border-slate-100 bg-slate-50; }
+body .workspace-list { @apply min-w-0 p-5; }
+body .workspace-selection { @apply mb-4 border-b border-slate-100 pb-4 text-sm font-semibold text-slate-800; }
+body :is(.workspace-filter,.console-list-tools,.topology-controls) { @apply rounded-xl bg-slate-50 p-3; }
+body .workspace-filter { @apply items-center gap-3; }
+body .workspace-message:not(:empty) { @apply rounded-xl bg-slate-100 px-4 py-3 text-xs text-slate-500; }
+body :is(input:not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=file]),select,textarea) { @apply rounded-lg border-slate-200 bg-white text-sm text-slate-800 shadow-none; }
+body :is(input,select,textarea):focus { @apply border-brand-600 outline-none ring-2 ring-brand-100; }
+body :is(button,.btn) { @apply rounded-lg border-slate-200 text-sm font-medium shadow-sm transition; }
+body button:hover:not(:disabled) { @apply border-slate-300; }
+body :is(button[type=submit],.btn-primary) { @apply border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700; }
+body button.danger { @apply border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300 hover:bg-rose-100; }
+body main table { @apply border-0 bg-white shadow-none; }
+body main thead th { @apply border-y border-slate-100 bg-slate-50/80 px-4 py-3 text-left text-xs font-medium normal-case tracking-normal text-slate-400; }
+body main td { @apply border-b border-slate-100 px-4 py-3 text-xs text-slate-600; }
+body main tbody tr:hover { @apply bg-brand-50/30; }
+body main th button { @apply rounded-none border-0 bg-transparent p-0 text-xs font-medium text-slate-400 shadow-none hover:bg-transparent hover:text-brand-600; }
+body :is(.table-tools,.table-pages,.console-pagination,.table-pagination,.workspace-pagination) { @apply rounded-xl bg-slate-50/70 px-3 py-2 text-xs text-slate-500; }
+body dialog { @apply rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl; max-height:90vh; }
+body dialog::backdrop { @apply bg-slate-900/30 backdrop-blur-sm; }
+body :is(.workspace-dialog-close,.dialog-header,.service-detail>header) { @apply sticky top-0 z-10 border-b border-slate-100 bg-white/95 pb-4 backdrop-blur-xl; }
+body :is(.workspace-dialog,.service-detail) h2 { @apply text-xl; }
+body :is(.workspace-menu-list,.compact-actions-menu,.row-actions-menu,.console-actions-menu) { @apply rounded-xl border border-white bg-white p-2 shadow-float; }
+body :is(.self-tabs,.workspace-views,.tabs) { @apply rounded-xl border border-slate-100 bg-white p-1.5 shadow-sm; }
+body :is(.self-tabs,.workspace-views,.tabs) button { @apply rounded-lg border-0 bg-transparent px-4 py-2 text-xs text-slate-500 shadow-none; }
+body :is(.self-tabs,.workspace-views,.tabs) button:is(.active,[aria-selected=true]) { @apply bg-brand-50 font-semibold text-brand-700; }
+body :is(.alert,.panel,.setup-command) { @apply rounded-xl; }
+body .alert { @apply border-0 bg-brand-50 text-brand-700; }
+body .alert.error { @apply bg-rose-50 text-rose-700; }
+body pre { @apply rounded-xl border border-slate-100 bg-slate-50 p-4 text-xs; }
+body fieldset { @apply rounded-xl border-slate-200; }
+body .footer { @apply border-slate-200/70 bg-transparent text-xs text-slate-400; }
+body #dashboard-services { @apply overflow-hidden rounded-2xl border border-white bg-white shadow-panel; }
+body #dashboard-services .service-overview-heading { @apply gap-5 border-b border-slate-100 px-6 py-5; }
+body #dashboard-services .service-overview-heading h2 { @apply text-base font-semibold; }
+body #dashboard-services .service-overview-heading p { @apply mt-1 text-xs text-slate-400; }
+body #dashboard-services .service-matrix { @apply rounded-none; }
+body #dashboard-services .service-matrix th,body #dashboard-services .service-matrix td { @apply border-slate-100 px-4 py-3; }
+body #dashboard-services .service-glyph { @apply rounded-full px-2.5 py-1.5; }
+body #dashboard-services .service-glyph.good { @apply border-emerald-100 bg-emerald-50 text-emerald-700; }
+body #dashboard-services .service-glyph.bad { @apply border-rose-100 bg-rose-50 text-rose-700; }
+body #dashboard-services .service-glyph.warn { @apply border-amber-100 bg-amber-50 text-amber-700; }
+body #dashboard-roles form:not([method=dialog]) { @apply mt-5 flex flex-wrap items-end gap-4 rounded-xl bg-slate-50 p-4; }
+body #dashboard-roles label { @apply flex min-w-0 flex-col gap-2 text-xs text-slate-500;flex:1 1 200px; }
+body :is(.overview-section,.dashboard-card,.metric-card) { @apply p-5; }
+body .dashboard-details { @apply mt-6 rounded-2xl border border-white bg-white p-5 shadow-sm; }
+body .kea-console .kea-toolbar { @apply sticky z-20 mb-6 gap-4 rounded-2xl border-white bg-white/95 p-4 shadow-float backdrop-blur-xl;top:95px; }
+body .kea-console .kea-toolbar label { @apply gap-3 text-xs text-slate-500; }
+body .kea-console .kea-split { @apply items-start gap-6 border-0 bg-transparent;grid-template-columns:280px minmax(0,1fr); }
+body .kea-console .kea-tree { @apply sticky rounded-2xl border-0 bg-white p-4 shadow-panel;top:180px;max-height:calc(100vh - 210px); }
+body .kea-console .kea-tree button { @apply rounded-lg px-3 py-2 text-xs text-slate-500 shadow-none;white-space:normal; }
+body .kea-console .kea-tree button[aria-current=true] { @apply bg-brand-50 font-semibold text-brand-700;box-shadow:inset 3px 0 0 #0f766e; }
+body .kea-console .kea-panel { @apply min-w-0 rounded-2xl bg-white p-6 shadow-panel;min-height:610px; }
+body .kea-console .kea-panel h2 { @apply mb-5 border-slate-100 pb-5 text-base; }
+body .kea-console :is(input,select,textarea) { @apply rounded-lg border-slate-200 bg-white px-3 py-2 text-sm; }
+body .kea-console :is(.kea-table-tools,.kea-table-pages) { @apply rounded-xl bg-slate-50 p-3 text-xs; }
+body .kea-console .kea-statusbar { @apply mt-4 rounded-xl border-0 bg-transparent px-0 text-xs text-slate-400; }
+body .kea-console #kea-dialog { @apply rounded-3xl border-slate-200 bg-white p-7 shadow-2xl; }
+body #file-cluster :is(.fc-card,.fc-panel,.fc-health,.fc-summary,.fc-live,.fc-snapshot-panel,.fc-task) { @apply rounded-2xl border-white bg-white shadow-panel; }
+body #file-cluster .fc-chooser { @apply mb-6 rounded-2xl border border-white bg-white p-4 shadow-float; }
+body #file-cluster .fc-steps { @apply gap-2 rounded-2xl border border-white bg-white p-3 shadow-sm; }
+body #file-cluster :is(.fc-dialog,.fc-modal) { @apply rounded-3xl border-slate-200 bg-white shadow-2xl; }
+body #ha-mail fieldset { @apply mb-6 rounded-2xl border border-white bg-white p-6 shadow-panel; }
+body .dns-routing .card { @apply mb-6 rounded-2xl border-white bg-white p-6; }
+body :is(.diagnostics-controls,.diagnostics-empty,.survey-section) { @apply mb-6 rounded-2xl border border-white bg-white p-6 shadow-sm; }
+body .login-page { @apply bg-slate-50; }
+body .login-card { @apply rounded-3xl border-white bg-white p-8 shadow-float; }
+body .self-summary { @apply rounded-2xl border-white shadow-sm; }
+@media(max-width:1000px){body .workspace-columns{grid-template-columns:200px minmax(0,1fr)}body .kea-console .kea-split{grid-template-columns:230px minmax(0,1fr)}}
+@media(max-width:800px){body .topbar{@apply mx-3 mt-3 px-4;top:8px;width:calc(100% - 24px)}body main.container{@apply px-4 pt-6}body main h1{@apply text-2xl}body .workspace-columns,body .kea-console .kea-split{@apply grid-cols-1 gap-4}body :is(.console-sidebar,.workspace-tree),body .kea-console .kea-tree{@apply static;max-height:300px}body .kea-console .kea-toolbar{@apply static}body .workspace-head>.workspace-tools{@apply w-full}body .workspace-list,body .kea-console .kea-panel{@apply p-4}body .console-page-heading{@apply mb-5}body #dashboard-services .service-overview-heading{@apply flex-wrap p-4}}
+@media(prefers-reduced-motion:reduce){body *,body *::before,body *::after{transition:none!important;scroll-behavior:auto!important}}
+body [hidden] { display:none!important; }
+body :is(.workspace-head,.console-page-heading,.console-title-group) { scroll-margin-top:100px; }
+body main.diagnostics-page { max-width:1060px; }
+body main :is(form,fieldset) { min-width:0; }
+body .role-add-button { @apply flex h-9 w-9 min-w-0 shrink-0 items-center justify-center p-0; }
+body .role-add-button svg { @apply h-5 w-5; }
+body #dashboard-roles { @apply rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl; width:min(800px,94vw);margin:auto;max-height:90vh; }
+body #dashboard-roles .role-dialog-header { @apply sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-slate-100 bg-white/95 px-7 py-5 backdrop-blur-xl; }
+body #dashboard-roles .role-dialog-header span { @apply text-xs font-medium tracking-widest text-slate-400;font-size:10px; }
+body #dashboard-roles .role-dialog-header h2 { @apply mb-0 mt-1 text-xl; }
+body #dashboard-roles .role-dialog-header button { @apply h-8 w-8 rounded-full border-0 bg-slate-50 p-0 shadow-none; }
+body #dashboard-roles .role-dialog-body { @apply p-7; }
+body #dashboard-roles .role-dialog-body>p { @apply mt-0 text-sm text-slate-500; }
+body #dashboard-roles [data-role-review] { @apply mt-6 border-t border-slate-100 pt-5; }
+body #dashboard-roles [role=status] { @apply mt-4 whitespace-pre-wrap rounded-xl bg-brand-50 p-4 text-xs text-brand-700; }
+body #dashboard-roles [role=status]:empty { display:none; }
+body #dashboard-roles [role=status].error { @apply bg-rose-50 text-rose-700; }
+body .dashboard-health { @apply rounded-2xl border border-white bg-white p-6 shadow-panel; }
+body .policy-console { @apply gap-4 overflow-visible rounded-none border-0 bg-transparent; }
+body .policy-console-tree { @apply rounded-2xl border-0 bg-slate-50 p-4; }
+body .policy-console-main { @apply overflow-hidden rounded-2xl border border-slate-100 bg-white; }
+body .policy-console-heading { @apply border-slate-100 bg-white p-4; }
+body .policy-console-tree button.selected,body .dns-console-tree button.selected { @apply rounded-lg bg-brand-50 text-brand-700; }
+body .policy-list-tools,body .policy-list-pager { @apply gap-3 border-slate-100 bg-slate-50/60 p-3; }
+@media(max-width:600px){body #dashboard-roles .role-dialog-body{ @apply p-4 }body #dashboard-roles .role-dialog-header{ @apply px-4 }body #dashboard-roles form:not([method=dialog]){@apply flex-col items-stretch}body #dashboard-roles label{flex:0 0 auto}body #dashboard-roles [data-role-confirm]{width:100%}}
+body.api-docs-page .top { @apply sticky z-20 mx-auto mt-3 flex items-center gap-3 rounded-2xl border border-white bg-white/95 px-6 py-4 text-sm text-slate-500 shadow-float backdrop-blur-xl;top:12px;width:min(1492px,calc(100% - 48px));box-sizing:border-box; }
+body.api-docs-page #swagger { @apply mx-auto px-6 py-7;max-width:1540px; }
+body.api-docs-page .swagger-ui .opblock { @apply overflow-hidden rounded-xl border-slate-200 bg-white shadow-sm; }
+body.api-docs-page .swagger-ui .scheme-container { @apply rounded-2xl bg-white p-6 shadow-sm; }
+@media(max-width:700px){body.api-docs-page #swagger{@apply px-3}body .policy-console{grid-template-columns:minmax(0,1fr)}}
+
+/* File access, survey, and notification panels use the same surfaces as the console. */
+body :is(.share-map-sidebar, .share-map-diagram, .share-directory-panel, .share-permissions-editor,
+         .console-table-panel, .survey-page > details, #survey-import, .ha-mail-delivery, #ha-mail-form) {
+  @apply min-w-0 rounded-2xl border border-white bg-white shadow-panel;
+}
+
+body :is(.share-map-diagram, .share-permissions-editor, .survey-page > details, #survey-import) {
+  @apply p-5;
+}
+
+body .share-directory-panel { top:100px; }
+body .share-directory-panel [aria-current=page] {
+  @apply inline-block rounded-lg bg-brand-50 px-2.5 py-1.5 text-brand-700 no-underline;
+}
+
+body .share-permissions-editor > h2 { @apply mt-0 break-words; }
+body .share-permissions-editor .perm-section { @apply rounded-xl border-slate-200; }
+body .share-permissions-editor .perm-section .form-card { @apply shadow-none; }
+body .share-map-toolbar {
+  @apply rounded-2xl border border-white bg-white/95 p-4 shadow-float;
+}
+
+body .share-map-extra[open] > button { @apply rounded-xl shadow-float; }
+body .share-map-diagram .topology-controls { @apply mb-3; }
+body .share-map-diagram .topology-viewport { @apply rounded-xl border-slate-200 bg-slate-50; }
+
+body :is(.share-map-side-tabs, .share-map-editor-tabs, .fc-tabs) {
+  @apply flex-wrap gap-1 rounded-xl border border-slate-100 bg-slate-50 p-1.5;
+}
+
+body :is(.share-map-side-tabs, .share-map-editor-tabs, .fc-tabs) button {
+  @apply rounded-lg border-0 bg-transparent px-3 py-2 text-xs text-slate-600 shadow-none;
+}
+
+body :is(.share-map-side-tabs, .share-map-editor-tabs, .fc-tabs) button:is([aria-selected=true], [aria-pressed=true]) {
+  @apply bg-brand-50 font-semibold text-brand-700;
+}
+
+body .share-map-status { @apply rounded-xl border-0 bg-brand-50 text-brand-700; }
+body .share-map-status.error { @apply bg-rose-50 text-rose-700; }
+
+body :is(.share-map-dialog, #ha-notifications) {
+  @apply rounded-3xl border-slate-200 bg-white p-0 shadow-2xl;
+}
+
+body :is(.share-map-dialog-heading, .share-map-review-footer, .ha-notification-header) {
+  @apply border-slate-100 bg-white/95 backdrop-blur-xl;
+}
+
+body .ha-notification-toolbar { @apply mx-4 my-3 rounded-xl bg-slate-50 p-3; }
+body .ha-notification-row { @apply my-2 rounded-xl border border-l-4 border-slate-100; }
+body .ha-notification-row[data-read=false] { @apply bg-brand-50/70; }
+body .ha-notification-row.critical { @apply border-l-rose-400; }
+body .ha-notification-row.change { @apply border-l-amber-400; }
+body .ha-notification-row.recovered { @apply border-l-emerald-400; }
+
+body #ha-mail-fields { @apply m-0 border-0 p-0 shadow-none; }
+body #ha-mail .ha-mail-recipient { @apply mb-3 border px-3 py-2 shadow-none; }
+body #ha-mail .ha-mail-recipient,
+body :is(.ha-mail-test, .ss-shell .ss-picker) {
+  @apply rounded-xl border-slate-200 bg-slate-50;
+}
+
+body .survey-page > details { @apply my-5; }
+body .survey-page > details > summary { @apply cursor-pointer font-semibold text-slate-800; }
+body #survey-import {
+  @apply my-5 grid grid-cols-2 items-end gap-4;
+}
+
+body #survey-import label { @apply grid min-w-0 gap-2; }
+body #survey-import button { @apply justify-self-start; }
+body .survey-page .survey-scroll, body .console-table-panel { @apply overflow-x-auto; }
+body .console-table-panel table { @apply m-0 w-full; min-width:640px; }
+
+@media (max-width:800px) {
+  body :is(.share-map-diagram, .share-permissions-editor, .survey-page > details, #survey-import) { @apply p-4; }
+  body .share-map-workbench { @apply grid-cols-1; }
+}
+
+@media (max-width:600px) {
+  body #survey-import { @apply grid-cols-1; }
+}

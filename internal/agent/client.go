@@ -181,7 +181,7 @@ func (c *Client) call(ctx context.Context, name, method string, in, out any, add
 		return e
 	}
 	req := Request{Version: Version, Node: node.Name, ID: hex.EncodeToString(nonce), Time: time.Now().Unix(), Method: method, Params: params}
-	if strings.HasPrefix(method, "sysvol.") {
+	if credentialMethod(method) {
 		credentials, present, err := OperationCredentials(ctx)
 		if err != nil {
 			return err
@@ -203,7 +203,7 @@ func (c *Client) call(ctx context.Context, name, method string, in, out any, add
 		return fmt.Errorf("helper request exceeds limit")
 	}
 	timeout := 60 * time.Second
-	if method == "domain.init.plan" || (method == "domain.demote.plan" || method == "domain.demote.manifest") {
+	if strings.HasPrefix(method, "printing.") || method == "kea.gss.ad.apply" || method == "kea.gss.ad.plan" || method == "kea.ddns.apply" || strings.HasPrefix(method, "kea.install") || strings.HasPrefix(method, "shares.permission-map") || strings.HasPrefix(method, "filecluster.") || strings.HasPrefix(method, "storage.") || method == "domain.init.plan" || (method == "domain.demote.plan" || method == "domain.demote.manifest") {
 		timeout = 190 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)

@@ -11,7 +11,7 @@ func (s *ShareService) hostCall(ctx context.Context, method string, in HostOpera
 	}
 	node := HostNode(ctx, cfg.HostNode)
 	e := s.helpers.Call(ctx, node, method, in, out)
-	actions := map[string]string{"shares.create": "share.create", "shares.delete": "share.delete", "shares.access": "share.access", "shares.param": "share.set", "printers.create": "printer.create", "printers.delete": "printer.delete", "acl.set": "acl.set", "samba.profile.apply": "samba.profile"}
+	actions := map[string]string{"shares.create": "share.create", "shares.delete": "share.delete", "shares.access": "share.access", "shares.param": "share.set", "printers.create": "printer.create", "printers.delete": "printer.delete", "acl.set": "acl.set", "shares.path-acl.set": "acl.set", "shares.permission-map.apply": "shares.permission-map.apply", "samba.profile.apply": "samba.profile"}
 	if action := actions[method]; action != "" && s.audit != nil {
 		target := node + " " + in.Name + in.Path
 		if e != nil {

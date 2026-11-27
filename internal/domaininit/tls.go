@@ -136,6 +136,9 @@ func ValidateCertificate(in Input, expectedCA []byte) error {
 	return nil
 }
 func (e *Engine) deploymentTLS(in Input) (map[string][]byte, error) {
+	if in.Mode == "member" {
+		return nil, nil
+	}
 	if err := ValidateCertificate(in, in.CA); err != nil {
 		return nil, err
 	}

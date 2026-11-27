@@ -36,7 +36,7 @@ audit:
   file: /tmp/helper-audit.log
 EOF
  compose cp "$work/helper.yaml" "$helper_service:/tmp/helper.yaml"
- compose exec -T "$helper_service" sh -c 'chown root:root /tmp/helper.yaml /tmp/helper-signing.pub; chmod 600 /tmp/helper.yaml; umask 077; printf "%s\n" "$SAMBAADM_LAB_PASSWORD" > /tmp/helper-password; mkdir -p /srv/samba /tmp/helper-state'
+ compose exec -T "$helper_service" sh -c 'chown root:root /tmp/helper.yaml /tmp/helper-signing.pub; chmod 600 /tmp/helper.yaml; umask 077; printf "%s\n" "$SAMBAADM_LAB_PASSWORD" > /tmp/helper-password; install -d -m 0755 /srv/samba; install -d -m 0700 /tmp/helper-state'
  compose exec -d "$helper_service" sh -c 'exec /tmp/sambaadm-helper serve --config /tmp/helper.yaml >/tmp/helper-server.log 2>&1'
 done
 

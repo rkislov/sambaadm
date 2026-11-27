@@ -112,7 +112,7 @@
       create:{label:t('Создать папку','Create share'),href:'/shares/new',method:'POST'},
       toolbar:[action(t('Перечитать конфигурацию Samba','Reload Samba configuration'),'POST','/shares/reload',[],{confirm:true}),view(t('Права каталога','Directory permissions'),'/acl',[text('path','Путь на сервере','Path on server')]),
         action(t('Изменить права каталога','Change directory permissions'),'POST','/acl',[text('path','Путь на сервере','Path on server'),text('owner','Владелец user:group','Owner user:group',{optional:true}),text('mode','Режим например 0770','Mode e.g. 0770',{optional:true}),text('acl','POSIX ACL','POSIX ACL',{optional:true}),text('defaultAcl','ACL по умолчанию','Default ACL',{optional:true}),text('recursive','Рекурсивно','Recursive',{type:'checkbox'}),text('defaultRecursive','Рекурсивно для ACL по умолчанию','Recursive default ACL',{type:'checkbox'}),text('clearAcl','Очистить ACL','Clear ACL',{type:'checkbox'}),text('clearDefault','Очистить ACL по умолчанию','Clear default ACL',{type:'checkbox'}),text('removeAcl','Удалить запись ACL','Remove ACL entry',{optional:true}),text('copyToDefault','Скопировать ACL в наследуемый','Copy to default ACL',{type:'checkbox'}),text('xattrName','Имя расширенного атрибута','Extended attribute name',{optional:true}),text('xattrValue','Значение расширенного атрибута','Extended attribute value',{optional:true}),text('xattrRemove','Удалить расширенный атрибут','Remove extended attribute',{optional:true})],{confirm:true})],
-      actions:[{label:t('Права и ACL','Access and ACL'),method:'GET',href:r=>'/shares/'+enc(r.name)+'/acl'},
+      actions:[{label:t('Права и ACL','Access and ACL'),method:'GET',href:r=>'/shares/'+enc(r.name)+'/acl'},{label:t('Карта прав и шаблоны','Permission map and templates'),method:'GET',href:r=>'/shares/'+enc(r.name)+'/permission-map'},
         view(t('Свойства','Properties'),r=>'/shares/'+enc(r.name)),action(t('Параметр Samba','Samba parameter'),'POST',r=>'/shares/'+enc(r.name)+'/param',[text('key','Параметр','Parameter',{list:'samba-parameters',placeholder:'read only'}),text('value','Значение','Value',{optional:true})],{sambaParam:true,help:t('Изменяет параметр выбранной секции в smb.conf на выбранном сервере и перечитывает конфигурацию Samba. Например: read only = yes — только чтение; browseable = no — скрыть из списка; valid users = @Finance — разрешить группе. Права файловой системы настраиваются в «Права и ACL».','Updates this share section in smb.conf on the selected server and reloads Samba configuration. Examples: read only = yes; browseable = no; valid users = @Finance. Configure filesystem permissions under Access and ACL.')}),remove(r=>'/shares/'+enc(r.name))]},
     '/printers':{title:t('Принтеры','Printers'),endpoint:'/printers',id:r=>r.name,
       columns:[['name',t('Имя','Name')],['printerName',t('Очередь','Queue')],['path',t('Путь','Path')]],
@@ -223,7 +223,7 @@
   }
   if(cfg===configs['/users']&&admin){listTools.querySelector('.btn-primary')?.classList.remove('btn-primary');listTools.prepend(button('Мастер сотрудника',()=>openEmployee(),'btn-primary'));}
   listTools.hidden=!listTools.childElementCount;
-  if(cfg===configs['/shares']){listTools.hidden=false;const label=el('label','share-server-picker','Сервер общих папок'),select=el('select'),note=el('span','muted');select.setAttribute('aria-label','Сервер общих папок');label.append(select);listTools.prepend(label);const initial=el('option','',shareNode||'Текущий сервер');initial.value=shareNode;select.append(initial);label.append(note);
+  if(cfg===configs['/shares']){listTools.hidden=false;const clusterLink=el('a','btn',t('Файловые кластеры','File clusters'));clusterLink.href='/file-clusters';tools.prepend(clusterLink);const label=el('label','share-server-picker','Сервер общих папок'),select=el('select'),note=el('span','muted');select.setAttribute('aria-label','Сервер общих папок');label.append(select);listTools.prepend(label);const initial=el('option','',shareNode||'Текущий сервер');initial.value=shareNode;select.append(initial);label.append(note);
    function links(){for(const link of listTools.querySelectorAll('a'))link.href=sharePath(new URL(link.href).pathname);}
    select.addEventListener('change',()=>{shareNode=select.value;const url=new URL(location.href);if(shareNode)url.searchParams.set('node',shareNode);else url.searchParams.delete('node');history.replaceState(null,'',url);rows=[];selectedObject='';selectedDN='';selectedIDs=null;renderRows();links();load();});
    request('/share-servers').then(data=>{if(!Array.isArray(data.nodes))throw Error('Неверный список серверов');if(!shareNode)shareNode=data.default||'';select.replaceChildren();for(const name of data.nodes.length?[...data.nodes].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})):['']){const option=el('option','',name||'Локальный сервер sambaadm');option.value=name;select.append(option);}if(![...select.options].some(o=>o.value===shareNode)){const unavailable=el('option','',shareNode+' — недоступен');unavailable.value=shareNode;select.append(unavailable);}select.value=shareNode;select.disabled=data.nodes.length<2;links();}).catch(error=>{note.textContent='Список серверов недоступен: '+error.message;});
@@ -1579,7 +1579,6 @@
         actions=[
           action(t('Перенести в сайт','Move to site'),'POST',row=>'/sites/controllers/'+enc(row.name)+'/move',[text('site','Новый сайт','New site')],{revision:true,confirm:true}),
           {...view(t('Проверить репликацию','Inspect replication'),'/repl/status',[text('dc','Контроллер','Controller')]),prefill:row=>({dc:row.dns})},
-          {label:'Установить helper',method:'GET',adminOnly:true,href:row=>'/settings/helpers?node='+enc(row.dns)},
           {label:'Снять роль DC',method:'GET',adminOnly:true,href:row=>'/settings/domain-demote?node='+enc(row.dns)}
         ];
       }else{
@@ -1603,9 +1602,9 @@
       heading.textContent=title;
       commands.replaceChildren();commands.dataset.compactActions=kind==='site'?'2':'1';
       searchBox.hidden=kind==='site';
-      if(kind==='servers'&&admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init'+(site?'?site='+enc(site.name):'');const retire=el('a','btn secondary','Снять роль DC');retire.href='/settings/domain-demote';commands.append(link,retire);}
+      if(kind==='servers'&&admin){const retire=el('a','btn secondary','Снять роль DC');retire.href='/settings/domain-demote';commands.append(retire);}
       if(kind==='sites'){
-        if(admin){const link=el('a','btn','Развернуть контроллер');link.href='/settings/domain-init';commands.append(link);}
+
         addAction(commands,action(t('Создать сайт','New Site'),'POST','/sites',[name()]));
       }else if(kind==='site'){
         commands.append(button(serverLabel,()=>select(item('servers',site))),button(subnetLabel,()=>select(item('subnets',site))));

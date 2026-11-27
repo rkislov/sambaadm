@@ -82,8 +82,8 @@ func (s *Server) handleDomainInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	realm := dnsFromBaseDN(s.cfg.LDAP.BaseDN)
-	if (request.Mode != "DC" && request.Mode != "RODC") || request.Realm != realm || !strings.EqualFold(request.Node, request.Hostname+"."+realm) {
-		writeJSON(w, 400, map[string]string{"error": "Выберите новый контроллер в текущем домене"})
+	if (request.Mode != "DC" && request.Mode != "RODC" && request.Mode != "member") || request.Realm != realm || !strings.EqualFold(request.Node, request.Hostname+"."+realm) {
+		writeJSON(w, 400, map[string]string{"error": "Выберите новый сервер в текущем домене"})
 		return
 	}
 	// Sites and the replication source come from AD, not arbitrary request values.
@@ -92,7 +92,7 @@ func (s *Server) handleDomainInit(w http.ResponseWriter, r *http.Request) {
 		upstreamError(w, err)
 		return
 	}
-	found := false
+	found := request.Mode == "member"
 	for _, site := range sites {
 		if site.Name == request.Site {
 			found = true
@@ -125,7 +125,7 @@ func (s *Server) handleDomainInit(w http.ResponseWriter, r *http.Request) {
 	defer clear(raw)
 	ctx, cancel := context.WithTimeout(r.Context(), 190*time.Second)
 	defer cancel()
-	if action == "start" {
+	if action == "start" && request.Mode != "member" {
 		_, _, ca, err := pki.LoadAuthority(s.cfg.Server.CertificateDir)
 		if err != nil {
 			upstreamError(w, err)
@@ -155,9 +155,11 @@ func (s *Server) handleDomainInit(w http.ResponseWriter, r *http.Request) {
 		upstreamError(w, err)
 		return
 	}
-	if err = domaininit.SignPlan(&out, request.Input, s.cfg.Server.CertificateDir); err != nil {
-		upstreamError(w, err)
-		return
+	if request.Mode != "member" {
+		if err = domaininit.SignPlan(&out, request.Input, s.cfg.Server.CertificateDir); err != nil {
+			upstreamError(w, err)
+			return
+		}
 	}
 	if s.audit != nil {
 		s.audit.Success(sessionFrom(r).Username, "domain.init."+action, request.Node, r.RemoteAddr)

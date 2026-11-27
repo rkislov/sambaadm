@@ -110,6 +110,10 @@ jobs:
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-demote.cjs
       - name: Compact dashboard and SSO fallback
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/dashboard.cjs
+      - name: CUPS console and home role dialog
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/printing.cjs
+      - name: Kea DHCP console and DDNS browser contracts
+        run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/kea.cjs
       - name: Domain search and direct object cards
         run: NODE_PATH="$RUNNER_TEMP/browser/node_modules" node testdata/web/domain-search.cjs
       - name: User login diagnosis and unlock

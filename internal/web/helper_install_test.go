@@ -136,15 +136,23 @@ func TestHelperInstallHistoryPagesDoNotHideOldJobsOrOtherOwners(t *testing.T) {
 		Jobs                         []helperInstallJob
 		Page, PageSize, Total, Pages int
 		Running                      bool
-	}) { r := httptest.NewRequest("GET", "/api/v1/helper-install"+query, nil); r.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID}); w := httptest.NewRecorder(); s.Router().ServeHTTP(w, r); var result struct {
-		Jobs                         []helperInstallJob
-		Page, PageSize, Total, Pages int
-		Running                      bool
-	}; if w.Code == 200 {
-		if e := json.Unmarshal(w.Body.Bytes(), &result); e != nil {
-			t.Fatal(e)
+	}) {
+		r := httptest.NewRequest("GET", "/api/v1/helper-install"+query, nil)
+		r.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
+		w := httptest.NewRecorder()
+		s.Router().ServeHTTP(w, r)
+		var result struct {
+			Jobs                         []helperInstallJob
+			Page, PageSize, Total, Pages int
+			Running                      bool
 		}
-	}; return w.Code, result }
+		if w.Code == 200 {
+			if e := json.Unmarshal(w.Body.Bytes(), &result); e != nil {
+				t.Fatal(e)
+			}
+		}
+		return w.Code, result
+	}
 	seen := map[string]bool{}
 	for _, query := range []string{"?page=1&pageSize=10", "?page=2&pageSize=10", "?page=3&pageSize=10", "?page=4&pageSize=10"} {
 		code, v := get(query)
@@ -169,5 +177,36 @@ func TestHelperInstallHistoryPagesDoNotHideOldJobsOrOtherOwners(t *testing.T) {
 		if code, _ := get(q); code != 400 {
 			t.Fatal(q, code)
 		}
+	}
+}
+
+func TestFileServerHelperUsesDomainLDAPS(t *testing.T) {
+	s := testWorkspaceServer(t)
+	s.cfg.Server.EnrollmentDir = t.TempDir()
+	s.cfg.LDAP.BaseDN = "DC=example,DC=com"
+	s.cfg.LDAP.URI = "ldaps://dc.example.com:636"
+	s.cfg.LDAP.AllowLegacyCN = true
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	raw, _ := x509.CreateCertificateRequest(rand.Reader, &x509.CertificateRequest{}, key)
+	csr := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: raw}))
+	staged, err := s.prepareInstallRegistration("fs.example.com", csr, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		LDAP struct {
+			URI    string `json:"uri"`
+			Legacy bool   `json:"allow_legacy_cn"`
+		} `json:"ldap"`
+	}
+	if err = json.Unmarshal(staged.files["config.yaml"], &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LDAP.URI != s.cfg.LDAP.URI || !cfg.LDAP.Legacy {
+		t.Fatal("member helper incorrectly expects local LDAP", cfg)
+	}
+	s.cfg.LDAP.URI = "ldap://dc.example.com"
+	if _, err = s.prepareInstallRegistration("fs.example.com", csr, true); err == nil {
+		t.Fatal("member LDAP configuration lost TLS")
 	}
 }

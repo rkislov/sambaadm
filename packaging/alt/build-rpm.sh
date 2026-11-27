@@ -19,10 +19,12 @@ cp "$binary" "$work/payload/sambaadm"
 cp "$out/sambaadm-helper-$version-alt1.$arch.rpm" "$work/payload/helper.rpm"
 cp "$repo/packaging/alt/"{sambaadm.service,config.yaml,env} "$work/payload/"
 cp "$repo/deploy/sambaadm-prepare-logs" "$work/payload/"
-cp "$repo/deploy/samba-domain-init" "$work/payload/"
+cp "$repo/deploy/samba-server-init" "$repo/deploy/samba-domain-init" "$work/payload/"
 cp "$repo/deploy/sambaadm-setup" "$repo/deploy/sambaadm-renew-certificates" "$work/payload/"
 cp "$repo/deploy/sambaadm-package" "$work/payload/"
 cp "$repo/"{LICENSE,NOTICE} "$work/payload/"
+cp -R "$repo/docs/server-init-guide" "$work/payload/"
+cp "$repo/docs/server-init.md" "$work/payload/"
 cp "$repo/docs/alt-install.md" "$repo/docs/quick-install.md" "$repo/docs/caja-plugin.md" "$work/payload/"
 systemd-analyze verify "$work/payload/sambaadm.service" 2>"$work/unit-check.log" || {
  # ExecStart is provided by the RPM, not yet installed in the builder.

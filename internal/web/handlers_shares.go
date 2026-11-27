@@ -91,11 +91,11 @@ func (s *Server) handleShareACL(w http.ResponseWriter, r *http.Request) {
 		s.render(w, "shares/acl.html", pd)
 		return
 	}
-	acl, err := s.svcs.FSACL.Get(r.Context(), sh.Path)
+	acl, err := s.svcs.FSACL.GetSharePath(r.Context(), name, r.FormValue("path"))
 	if err != nil {
 		pd.Error = err.Error()
 	}
-	pd.Content = map[string]any{"Share": sh, "ACL": acl}
+	pd.Content = map[string]any{"Share": sh, "ACL": acl, "RelativePath": r.FormValue("path")}
 	s.render(w, "shares/acl.html", pd)
 }
 
@@ -119,12 +119,12 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 	renderErr := func(msg string) {
 		pd := s.page(r, "shares.acl", nil)
 		pd.Error = msg
-		acl, _ := s.svcs.FSACL.Get(r.Context(), sh.Path)
+		acl, _ := s.svcs.FSACL.GetSharePath(r.Context(), name, r.FormValue("path"))
 		fresh, _ := s.svcs.Shares.Show(r.Context(), name)
 		if fresh != nil {
 			sh = fresh
 		}
-		pd.Content = map[string]any{"Share": sh, "ACL": acl}
+		pd.Content = map[string]any{"Share": sh, "ACL": acl, "RelativePath": r.FormValue("path")}
 		s.render(w, "shares/acl.html", pd)
 	}
 
@@ -152,7 +152,7 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "xattr":
-		_, err := s.svcs.FSACL.Set(r.Context(), service.SetACLInput{
+		_, err := s.svcs.FSACL.SetSharePath(r.Context(), name, r.FormValue("path"), service.SetACLInput{
 			Path:        sh.Path,
 			XAttrName:   r.FormValue("xattr_name"),
 			XAttrValue:  r.FormValue("xattr_value"),
@@ -164,6 +164,39 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 		}
 	default: // fs
 		aclSpec := strings.TrimSpace(r.FormValue("acl"))
+		buildSpec := service.BuildACLSpec
+		if r.FormValue("domain_group") != "" || aclSpec == "" && r.FormValue("acl_kind") != "" {
+			selected, err := s.svcs.FSACL.GetSharePath(r.Context(), name, r.FormValue("path"))
+			if err != nil {
+				renderErr(err.Error())
+				return
+			}
+			if selected.IsDir {
+				buildSpec = service.BuildDirectoryACLSpec
+			}
+		}
+		if group := r.FormValue("domain_group"); group != "" {
+			resolved, err := s.svcs.ResolveFileGroup(r.Context(), group)
+			if err != nil {
+				renderErr(err.Error())
+				return
+			}
+			perms := ""
+			if formOn(r, "acl_r") {
+				perms += "r"
+			}
+			if formOn(r, "acl_w") {
+				perms += "w"
+			}
+			if formOn(r, "acl_x") {
+				perms += "x"
+			}
+			aclSpec, err = buildSpec("group", resolved["gid"], perms)
+			if err != nil {
+				renderErr(err.Error())
+				return
+			}
+		}
 		if aclSpec == "" && r.FormValue("acl_kind") != "" {
 			perms := ""
 			if formOn(r, "acl_r") {
@@ -175,19 +208,24 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 			if formOn(r, "acl_x") {
 				perms += "x"
 			}
-			built, err := service.BuildACLSpec(r.FormValue("acl_kind"), r.FormValue("acl_name"), perms)
+			built, err := buildSpec(r.FormValue("acl_kind"), r.FormValue("acl_name"), perms)
 			if err != nil {
 				renderErr(err.Error())
 				return
 			}
 			aclSpec = built
 		}
-		_, err := s.svcs.FSACL.Set(r.Context(), service.SetACLInput{
+		defaultSpec := shareDefaultACL(r, aclSpec)
+		if r.FormValue("acl_scope") == "default" {
+			defaultSpec = aclSpec
+			aclSpec = ""
+		}
+		_, err := s.svcs.FSACL.SetSharePath(r.Context(), name, r.FormValue("path"), service.SetACLInput{
 			Path:             sh.Path,
 			Owner:            r.FormValue("owner"),
 			Mode:             r.FormValue("mode"),
 			ACL:              aclSpec,
-			DefaultACL:       r.FormValue("default_acl"),
+			DefaultACL:       defaultSpec,
 			RemoveACL:        r.FormValue("remove_acl"),
 			Recursive:        formOn(r, "recursive"),
 			DefaultRecursive: formOn(r, "default_recursive"),
@@ -200,7 +238,7 @@ func (s *Server) handleShareACLPost(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	http.Redirect(w, r, shareURL(r, "/shares/"+url.PathEscape(name)+"/acl"), http.StatusSeeOther)
+	http.Redirect(w, r, shareURL(r, "/shares/"+url.PathEscape(name)+"/acl?path="+url.QueryEscape(r.FormValue("path"))), http.StatusSeeOther)
 }
 
 func formOn(r *http.Request, name string) bool {
@@ -313,7 +351,12 @@ func (s *Server) handleAPIShareACLGet(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
-	acl, err := s.svcs.FSACL.Get(r.Context(), sh.Path)
+	var acl *service.PathACL
+	if rel, present := r.URL.Query()["path"]; present && len(rel) > 0 {
+		acl, err = s.svcs.FSACL.GetSharePath(r.Context(), name, rel[0])
+	} else {
+		acl, err = s.svcs.FSACL.Get(r.Context(), sh.Path)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
@@ -338,7 +381,12 @@ func (s *Server) handleAPIShareACLSet(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Path = sh.Path
 	sess := sessionFrom(r)
-	acl, err := s.svcs.FSACL.Set(r.Context(), in, sess.Username, r.RemoteAddr)
+	var acl *service.PathACL
+	if rel, present := r.URL.Query()["path"]; present && len(rel) > 0 {
+		acl, err = s.svcs.FSACL.SetSharePath(r.Context(), name, rel[0], in, sess.Username, r.RemoteAddr)
+	} else {
+		acl, err = s.svcs.FSACL.Set(r.Context(), in, sess.Username, r.RemoteAddr)
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return

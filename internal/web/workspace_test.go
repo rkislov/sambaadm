@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"sambaadm/internal/agent"
 	"sambaadm/internal/auth"
 	"sambaadm/internal/config"
 )
@@ -67,7 +68,7 @@ func testWorkspaceServer(t *testing.T) *Server {
 // Service pointers are intentionally nil: rejected requests must never reach a mutation.
 func TestExtendedMutationsEnforceSessionRoleCSRFAndInput(t *testing.T) {
 	routes := []struct{ method, path string }{
-		{"PUT", "/api/v1/gpo/scope"}, {"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/filter"}, {"POST", "/api/v1/shares/wizard"}, {"PUT", "/api/v1/samba/profile"},
+		{"PUT", "/api/v1/gpo/scope"}, {"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/filter"}, {"POST", "/api/v1/shares/docs/permission-map/plan"}, {"POST", "/api/v1/shares/docs/permission-map/apply"}, {"POST", "/api/v1/shares/wizard"}, {"PUT", "/api/v1/samba/profile"},
 		{"POST", "/api/v1/sites/links"}, {"PUT", "/api/v1/sites/links/WAN"}, {"DELETE", "/api/v1/sites/links/WAN"}, {"PUT", "/api/v1/sites/links/WAN/schedule"}, {"POST", "/api/v1/sites/controllers/DC2/move"}, {"PUT", "/api/v1/subnets/site"}, {"POST", "/api/v1/repl/connections"}, {"PUT", "/api/v1/repl/connections/manual-test"}, {"DELETE", "/api/v1/repl/connections/manual-test"}, {"POST", "/api/v1/repl/kcc"},
 		{"PUT", "/api/v1/users/alice"},
 		{"PUT", "/api/v1/gpo/{00000000-0000-0000-0000-000000000001}/alt-settings"},
@@ -115,8 +116,11 @@ func TestWorkspacePagesRenderWithoutLDAP(t *testing.T) {
 		req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
 		rec := httptest.NewRecorder()
 		s.Router().ServeHTTP(rec, req)
-		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `data-module="`+path+`"`) || !strings.Contains(rec.Body.String(), "workspace.js") {
+		if rec.Code != 200 || (path != "/printers" && (!strings.Contains(rec.Body.String(), `data-module="`+path+`"`) || !strings.Contains(rec.Body.String(), "workspace.js"))) {
 			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
+		}
+		if path == "/printers" && !strings.Contains(rec.Body.String(), `id="printing-console"`) {
+			t.Fatal("missing CUPS panel")
 		}
 	}
 }
@@ -146,7 +150,14 @@ func TestWorkspaceBrowserFixtures(t *testing.T) {
 			req := httptest.NewRequest("GET", "/"+path, nil)
 			req.AddCookie(&http.Cookie{Name: "sambaadm_session", Value: sess.ID})
 			rec := httptest.NewRecorder()
+			previousHelpers := s.svcs.Helpers
+			if path == "printers" {
+				s.svcs.Helpers = &agent.Client{Config: agent.Config{Nodes: []agent.Node{
+					{Name: "print-01.example.com"}, {Name: "print-02.example.com"},
+				}}}
+			}
 			s.Router().ServeHTTP(rec, req)
+			s.svcs.Helpers = previousHelpers
 			if rec.Code != 200 {
 				t.Fatal(rec.Code)
 			}

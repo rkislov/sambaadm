@@ -1,0 +1,18 @@
+{{define "dhcp/index.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>{{template "head" .}}<link rel="stylesheet" href="/static/css/kea.css"></head><body>
+{{template "nav" .}}
+<main class="container kea-console" data-csrf="{{.CSRF}}" data-domain="{{.Content.Domain}}">
+<h1>DHCP</h1>
+<div class="kea-toolbar" role="toolbar" aria-label="Действия DHCP">
+<label>Сервер <select id="kea-server">{{range .Content.Nodes}}<option>{{.}}</option>{{end}}</select></label>
+<button type="button" id="kea-refresh">↻ Обновить</button>
+<button type="button" id="kea-review">Проверить и применить…</button>
+<span id="kea-dirty" role="status"></span>
+</div>
+{{if not .Content.Nodes}}<p class="alert">Добавьте сервер с <a href="/settings/helpers">sambaadm-helper</a>, чтобы управлять DHCP.</p>{{end}}
+<p id="kea-message" role="status" aria-live="polite"></p>
+<div class="kea-split"><nav id="kea-tree" class="kea-tree" aria-label="Дерево DHCP"></nav><section id="kea-panel" class="kea-panel" aria-label="Свойства DHCP"><p>Выберите сервер.</p></section></div>
+<div class="kea-statusbar" id="kea-status">Управление Kea через sambaadm-helper</div>
+<dialog id="kea-dialog"><form method="dialog"><button class="kea-close" aria-label="Закрыть">×</button></form><div id="kea-dialog-content"></div></dialog>
+</main>{{template "footer" .}}<script src="/static/js/kea.js" defer></script></body></html>
+{{end}}

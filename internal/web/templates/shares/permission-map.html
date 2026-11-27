@@ -1,0 +1,17 @@
+{{define "shares/permission-map.html"}}
+<!DOCTYPE html><html lang="{{.Lang}}"><head>
+{{template "head" .}}
+<link rel="stylesheet" href="/static/css/share-permission-map.css?v=20261126-ui2">
+<script src="/static/js/share-permission-map.js?v=20261126-ui2" defer></script>
+</head><body>{{template "nav" .}}
+<main class="container share-map-page">
+ <p><a href="/shares{{if .HostNode}}?node={{urlquery .HostNode}}{{end}}">← Общие папки</a></p>
+ <header class="share-map-heading">
+  <div><h1>Карта прав каталогов</h1></div>
+  {{if .HostNode}}<div class="share-map-context">Сервер <strong>{{.HostNode}}</strong></div>{{end}}
+ </header>
+ {{with .Content}}<div id="share-permission-map" data-share="{{.Share.Name}}" data-root="{{.Root}}" data-admin="{{canAdmin $.Role}}">
+ <p class="share-map-intro"><strong>{{.Share.Name}}</strong> · {{.Share.Path}} · снимок прав и шаблоны для дерева папок</p>
+ </div>{{end}}
+</main>{{template "footer" .}}</body></html>
+{{end}}

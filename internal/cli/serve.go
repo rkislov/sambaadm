@@ -176,6 +176,12 @@ var serveCmd = &cobra.Command{
 				}
 			}()
 		}
+		monitorCtx, stopMonitor := context.WithCancel(cmd.Context())
+		defer stopMonitor()
+		go srv.MonitorHA(monitorCtx)
+		go srv.MonitorHAMail(monitorCtx)
+		go srv.MonitorPrinting(monitorCtx)
+
 		go func() {
 			serveErr := httpSrv.Serve(listener)
 			if serveErr != nil && serveErr != http.ErrServerClosed {

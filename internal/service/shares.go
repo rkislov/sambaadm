@@ -222,6 +222,10 @@ func (s *ShareService) Create(ctx context.Context, in CreateShareInput, actor, i
 		if in.Mode != "" {
 			mode = in.Mode
 		}
+		if err := validateDirectorySearchInput(SetACLInput{Mode: mode, ACL: in.ACL, DefaultACL: in.DefaultACL}); err != nil {
+			s.audit.Failure(actor, "share.create", name, ip, err)
+			return nil, err
+		}
 		pin, err := s.prepareDir(path, mode, in.Owner)
 		if err != nil {
 			s.audit.Failure(actor, "share.create", name, ip, err)

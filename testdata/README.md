@@ -70,3 +70,55 @@ testdata/samba/test-domain-restore.sh
 смена krbtgt, сохранение пользовательских SID/GUID/хеша пароля и пробный запуск
 с Kerberos/LDAP/SMB. Исходные данные и архив не меняются. Это отдельный сценарий
 от проверки нативного создания cold-копии без Samba CLI.
+
+## Шаблоны прав и наследование на живом файловом ресурсе
+
+```sh
+SAMBAADM_TWO_DC=1 SAMBAADM_HELPERS=1 \
+SAMBAADM_IT_TEST_PATTERN='IntegrationSharePermissionTemplatesAndInheritance|IntegrationHostHelperFilesystemConfinement' \
+testdata/samba/run-integration.sh
+```
+
+Сценарий использует настоящий Samba AD, группы/пользователей LDAP, NSS/winbind,
+подписанные запросы к HTTPS-helper и два независимых SMB-сеанса. Ресурс с POSIX
+ACL создаётся только на время теста. Проверяются всё дерево, более позднее правило
+для архивной папки, наследование новыми объектами, фактические отказы записи,
+конфликт устаревшей карты, сохранность существующего файла и журнал исходных ACL.
+Отдельно проверяется поведение новых SMB-файлов при `inherit acls=no` и `yes`.
+
+Для NSS в образе установлены `winbind` и `libnss-winbind`. Каталог `/srv/samba`
+имеет `0755` для прохода пользователей к тестовому ресурсу, а `/tmp/helper-state`
+остаётся приватным (`0700`). SYSVOL использует свой прежний NT ACL/xattr-профиль;
+тестовый файловый ресурс явно переключается на POSIX ACL.
+
+[Протокол живой проверки от 26.11.2026](../docs/file-resources/live-samba-validation.md).
+
+
+## Проверка ZFS на отдельных ядрах ALT p10/p11
+
+`filecluster/prepare-vms.py` создаёт только отдельные qcow2 overlays и NoCloud
+seed. Нужен заранее загруженный cloud-образ `alt-p10-cloud-aarch64.qcow2`
+или `alt-p11-cloud-aarch64.qcow2` с проверенным источником SHA256SUMS.
+Скрипт сверяет SHA256 до подготовки ВМ и не переписывает узел с qemu.pid.
+Ключ SSH отдельный для стенда, парольный вход выключен. `UsePAM no` — только
+настройка одноразового стенда для исключения зависаний SSH при reload служб.
+
+```sh
+python3 testdata/filecluster/prepare-vms.py /tmp/sambaadm-ha-lab-p10 --branch p10 --ssh-base 2230 --cluster-base 19200
+python3 testdata/filecluster/extract-boot.py /tmp/sambaadm-ha-lab-p10
+```
+
+Извлечение boot выполняется до запуска ВМ; используются read-only образ,
+временная копия раздела и debugfs в Docker. Запускать аргументы из `vms.json`
+нужно без shell-интерполяции. Для p11 используйте другой каталог и порты.
+На стенде устанавливаются `zfs-utils`, модуль ZFS именно работающего ядра,
+`acl`, `attr`; проверяется их доступность в репозиториях выбранной ветки.
+
+`filecluster/zfs-probe.py` запускается root только в госте с маркером стенда.
+Создаёт уникальный пул на новом временном файловом vdev, отдельные state/data,
+проверяет ACL, доступ без root, именной readonly-снимок, экспорт/импорт,
+multihost и отсутствие отката служебного состояния. Удаляет свой пул в finally.
+При отсутствии `/etc/hostid` создаёт постоянный hostid этого одноразового гостя.
+Не запускайте этот тест на рабочем файловом сервере. Показанные проверки
+не являются проверкой failover общего LUN или SMB Previous Versions.
+Результаты: [p10/p11](../docs/filecluster-zfs.md).

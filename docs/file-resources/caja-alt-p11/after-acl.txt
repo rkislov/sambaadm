@@ -1,0 +1,48 @@
+# file: /srv/sambaadm-caja-test/acl-mask-no-x
+# owner: 0
+# group: 0
+user::rwx
+group::---
+group:1000:r-x
+mask::r-x
+other::---
+default:user::rwx
+default:group::---
+default:group:1000:r-x
+default:mask::r-x
+default:other::---
+
+# file: /srv/sambaadm-caja-test/file-no-exec.txt
+# owner: 0
+# group: 0
+user::rw-
+group::r--
+other::r--
+
+# file: /srv/sambaadm-caja-test/mode-r--
+# owner: 0
+# group: 1000
+user::rwx
+group::r--
+group:1000:r-x
+mask::r-x
+other::---
+default:user::rwx
+default:group::r--
+default:group:1000:r-x
+default:mask::r-x
+default:other::---
+
+# file: /srv/sambaadm-caja-test/mode-r-x
+# owner: 0
+# group: 1000
+user::rwx
+group::r-x
+group:1000:r-x
+mask::r-x
+other::---
+default:user::rwx
+default:group::r-x
+default:group:1000:r-x
+default:mask::r-x
+default:other::---

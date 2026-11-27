@@ -13,7 +13,9 @@ mkdir "$kit"
 for pkg in sambaadm sambaadm-helper; do
   cp "$dist/$pkg-$version-alt1.$arch.rpm" "$kit/$pkg.rpm"
 done
-cp "$root/deploy/sambaadm-setup" "$root/deploy/sambaadm-renew-certificates" "$root/deploy/configure-server.sh" "$root/deploy/setup-alt.sh" "$root/docs/alt-install.md" "$root/docs/quick-install.md" "$root/docs/dns-routing.md" "$root/docs/caja-plugin.md" "$root/docs/helper.md" "$root/docs/certificates.md" "$root/docs/session-credentials.md" "$kit/"
+cp "$root/deploy/samba-server-init" "$root/deploy/samba-domain-init" "$root/deploy/sambaadm-setup" "$root/deploy/sambaadm-renew-certificates" "$root/deploy/configure-server.sh" "$root/deploy/setup-alt.sh" "$root/docs/alt-install.md" "$root/docs/quick-install.md" "$root/docs/dns-routing.md" "$root/docs/caja-plugin.md" "$root/docs/helper.md" "$root/docs/certificates.md" "$root/docs/session-credentials.md" "$kit/"
+cp "$root/docs/server-init.md" "$kit/"
+cp -R "$root/docs/server-init-guide" "$kit/"
 # Include the illustrated manuals with the matching installation instructions.
 cp "$root/docs/admin.md" "$root/docs/user.md" "$root/docs/domain-init.md" "$root/docs/domain-demote.md" "$root/docs/domain-recovery.md" "$kit/"
 cp -R "$root/docs/admin-guide" "$root/docs/user-guide" "$root/docs/domain-init-guide" "$kit/"

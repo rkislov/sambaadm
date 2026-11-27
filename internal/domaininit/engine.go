@@ -25,29 +25,30 @@ import (
 	"unicode/utf8"
 )
 
-//go:embed worker.py existing.py assets/*
+//go:embed worker.py existing.py member.py assets/*
 var Files embed.FS
 
 // Administrator passwords are passed to Start/Resume through stdin and never saved.
 type Input struct {
-	ServiceUser   string `json:"serviceUser,omitempty"`
-	TransferRoles bool   `json:"transferRoles,omitempty"`
-	Certificate   []byte `json:"certificate,omitempty"`
-	CA            []byte `json:"ca,omitempty"`
-	Mode          string `json:"mode"`
-	Realm         string `json:"realm"`
-	NetBIOS       string `json:"netbios"`
-	Hostname      string `json:"hostname"`
-	Address       string `json:"address"`
-	Site          string `json:"site"`
-	Source        string `json:"source"`
-	Forwarder     string `json:"forwarder"`
-	Level         string `json:"level"`
-	PanelName     string `json:"panelName"`
-	Revision      string `json:"revision,omitempty"`
-	Confirm       bool   `json:"confirm,omitempty"`
-	Username      string `json:"username,omitempty"`
-	Password      string `json:"password,omitempty"`
+	IdentityProvider string `json:"identityProvider,omitempty"`
+	ServiceUser      string `json:"serviceUser,omitempty"`
+	TransferRoles    bool   `json:"transferRoles,omitempty"`
+	Certificate      []byte `json:"certificate,omitempty"`
+	CA               []byte `json:"ca,omitempty"`
+	Mode             string `json:"mode"`
+	Realm            string `json:"realm"`
+	NetBIOS          string `json:"netbios"`
+	Hostname         string `json:"hostname"`
+	Address          string `json:"address"`
+	Site             string `json:"site"`
+	Source           string `json:"source"`
+	Forwarder        string `json:"forwarder"`
+	Level            string `json:"level"`
+	PanelName        string `json:"panelName"`
+	Revision         string `json:"revision,omitempty"`
+	Confirm          bool   `json:"confirm,omitempty"`
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
 }
 
 func (Input) GoString() string { return "[domain deployment input]" }
@@ -69,6 +70,12 @@ func DNS(name string) bool {
 	return true
 }
 func (in Input) Validate() error {
+	if in.Mode == "member" {
+		return in.validateMember()
+	}
+	if in.IdentityProvider != "" {
+		return fmt.Errorf("Профиль идентификации задаётся только для файлового сервера")
+	}
 	if !DNS(in.Realm) || !shortName.MatchString(in.Hostname) || !(shortName.MatchString(in.NetBIOS) || (in.Mode == "existing" && in.NetBIOS == "")) {
 		return fmt.Errorf("Укажите DNS-имя домена, короткое имя контроллера и NetBIOS (до 15 знаков)")
 	}
@@ -163,6 +170,10 @@ func (e *Engine) script() (string, error) {
 	if err := e.base(); err != nil {
 		return "", err
 	}
+	member, _ := Files.ReadFile("member.py")
+	if err := os.WriteFile(filepath.Join(e.Dir, "member.py"), member, 0600); err != nil {
+		return "", err
+	}
 	extra, _ := Files.ReadFile("existing.py")
 	extraFile, err := os.CreateTemp(e.Dir, ".existing-")
 	if err != nil {
@@ -223,6 +234,9 @@ func (e *Engine) Plan(ctx context.Context, in Input) (*Plan, error) {
 	}
 	if err != nil || result.Error != "" {
 		return nil, fmt.Errorf("%s", result.Error)
+	}
+	if in.Mode == "member" {
+		return &result.Plan, nil
 	}
 	_, csr, err := e.certificateKey(result.Revision, in)
 	if err != nil {

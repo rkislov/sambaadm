@@ -3,6 +3,9 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
+  <link rel="stylesheet" href="/static/css/dashboard-services.css">
+  <script src="/static/js/dashboard-services.js" defer></script>
+  {{if canAdmin .Role}}<script src="/static/js/roles.js" defer></script>{{end}}
   <script src="/static/js/dashboard.js" defer></script>
   <script src="/static/js/host-metrics.js" defer></script>
   <script src="/static/js/domain-overview.js" defer></script>
@@ -12,6 +15,50 @@
   <main class="container dashboard-home">
     {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
     <h1>{{if eq .Lang "ru"}}Обзор домена{{else}}Domain overview{{end}}</h1>
+    <section id="dashboard-services" data-admin="{{canAdmin .Role}}" aria-labelledby="dashboard-services-title">
+      <header class="service-overview-heading">
+        <div>
+          <h2 id="dashboard-services-title">{{if eq .Lang "ru"}}Серверы и службы{{else}}Servers and services{{end}}</h2>
+          <p id="service-overview-summary" role="status">{{if eq .Lang "ru"}}Проверяем состояние…{{else}}Checking status…{{end}}</p>
+        </div>
+        <div class="service-overview-tools">
+          <input type="search" id="service-overview-search" aria-label="{{if eq .Lang "ru"}}Найти сервер{{else}}Find server{{end}}" placeholder="{{if eq .Lang "ru"}}Найти сервер{{else}}Find server{{end}}" hidden>
+          <label id="service-overview-filter-label" hidden><input type="checkbox" id="service-overview-filter"> {{if eq .Lang "ru"}}Требуют внимания{{else}}Needs attention{{end}}</label>
+          {{if canAdmin .Role}}<button type="button" id="dashboard-role-add" class="btn-primary role-add-button" aria-label="Добавить роли и службы" title="Добавить роли и службы" aria-haspopup="dialog" aria-controls="dashboard-roles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>{{end}}
+          <button type="button" id="service-overview-refresh">{{if eq .Lang "ru"}}Обновить службы{{else}}Refresh services{{end}}</button>
+        </div>
+      </header>
+      <p id="service-overview-warning" role="status" hidden></p>
+      <div id="service-overview-servers"></div>
+      <nav id="service-overview-pages" aria-label="{{if eq .Lang "ru"}}Страницы списка серверов{{else}}Server list pages{{end}}" hidden>
+        <span id="service-overview-range" aria-live="polite"></span>
+        <button type="button" id="service-overview-prev">{{if eq .Lang "ru"}}Назад{{else}}Previous{{end}}</button>
+        <button type="button" id="service-overview-next">{{if eq .Lang "ru"}}Далее{{else}}Next{{end}}</button>
+      </nav>
+      <div id="service-overview-clusters" hidden>
+        <h3>{{if eq .Lang "ru"}}Файловые кластеры{{else}}File clusters{{end}}</h3>
+        <ul></ul>
+      </div>
+      <dialog id="service-overview-detail" class="service-detail" aria-labelledby="service-detail-title">
+        <header>
+          <h2 id="service-detail-title"></h2>
+          <form method="dialog"><button autofocus>{{if eq .Lang "ru"}}Закрыть{{else}}Close{{end}}</button></form>
+        </header>
+        <div id="service-detail-body"></div>
+      </dialog>
+    </section>
+    {{if canAdmin .Role}}<dialog id="dashboard-roles" class="role-dialog" aria-labelledby="roles-title">
+      <header class="role-dialog-header"><div><span>ИНФРАСТРУКТУРА ДОМЕНА</span><h2 id="roles-title">Добавить роли и службы</h2></div><button type="button" data-role-close aria-label="Закрыть">✕</button></header>
+      <div class="role-dialog-body"><p>Выберите роль и сервер. Проверим зависимости и покажем план установки перед применением.</p>
+      <form class="service-overview-tools">
+        <label>Роль или служба<select name="role"><option value="ad">Контроллер Samba AD</option><option value="smb">Файловый сервер Samba</option><option value="cluster">Отказоустойчивый файловый кластер</option><option value="dns">DNS BIND9 DLZ / встроенный DNS</option><option value="dhcp4">DHCPv4 Kea</option><option value="dhcp6">DHCPv6 Kea</option><option value="ddns">Динамическое обновление DNS (D2)</option><option value="gss">Защищённые обновления DNS (GSS-TSIG)</option><option value="cups">Сервер печати CUPS</option><option value="helper">Подключение сервера (helper)</option></select></label>
+        <label>Сервер<select name="node"><option value="">Выберите сервер</option></select></label>
+        <label hidden>DNS-бэкенд<select name="backend"><option value="BIND9_DLZ">BIND9 DLZ</option><option value="SAMBA_INTERNAL">Встроенный DNS Samba</option></select></label>
+        <button type="submit" data-role-plan>Открыть мастер настройки</button>
+      </form>
+      <p role="status" aria-live="polite"></p>
+      <section data-role-review role="region" aria-label="Подтверждение настройки роли" hidden><div data-role-preview></div><button type="button" class="btn-primary" data-role-confirm>Подтверждаю — настроить роль</button></section></div>
+    </dialog>{{end}}
     <section id="domain-dashboard" aria-label="Domain summary"></section>
     <details class="dashboard-details" id="dashboard-domain-details">
       <summary>{{if eq .Lang "ru"}}Подробности и диагностика{{else}}Details and diagnostics{{end}}</summary>

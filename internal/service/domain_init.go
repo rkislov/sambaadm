@@ -21,8 +21,8 @@ func helperDomainInit(ctx context.Context, cfg *config.Config, method string, in
 	if err := decodeHost(in.Input, &req); err != nil {
 		return nil, err
 	}
-	if (req.Mode != "DC" && req.Mode != "RODC") || !filepath.IsAbs(cfg.Helper.StateDir) || !strings.EqualFold(req.Hostname+"."+req.Realm, cfg.Helper.Node) {
-		return nil, fmt.Errorf("Разрешено только добавление контроллера с именем зарегистрированного helper")
+	if (req.Mode != "DC" && req.Mode != "RODC" && req.Mode != "member") || !filepath.IsAbs(cfg.Helper.StateDir) || !strings.EqualFold(req.Hostname+"."+req.Realm, cfg.Helper.Node) {
+		return nil, fmt.Errorf("Разрешена подготовка нового сервера с именем зарегистрированного helper")
 	}
 	if method == "domain.init.plan" {
 		check, cancel := context.WithTimeout(ctx, 180*time.Second)

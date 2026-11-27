@@ -14,7 +14,9 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
           --option='xattr_tdb:file = /var/lib/samba/private/xattr.tdb' \
           --option='acl_xattr:ignore system acls = yes'
     else
-    samba-tool domain provision --use-rfc2307 --realm=SAMBAADM.TEST \
+    set --
+    if [ -n "${SAMBAADM_LAB_HOST_IP:-}" ]; then set -- "--host-ip=$SAMBAADM_LAB_HOST_IP"; fi
+    samba-tool domain provision "$@" --use-rfc2307 --realm=SAMBAADM.TEST \
         --domain=SAMBAADM --server-role=dc --dns-backend=SAMBA_INTERNAL \
         --adminpass="$SAMBAADM_LAB_PASSWORD" --host-name=dc1 \
         --option='dns forwarder = 1.1.1.1' \
@@ -23,6 +25,8 @@ if [ ! -f /var/lib/samba/private/sam.ldb ]; then
         --option='acl_xattr:ignore system acls = yes'
     fi
 fi
+# Resolve real AD identities through the host NSS stack for filesystem ACL tests.
+sed -i -E '/^(passwd|group):/ { /winbind/! s/$/ winbind/; }' /etc/nsswitch.conf
 cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
 printf 'nameserver 127.0.0.1\nsearch sambaadm.test\n' > /etc/resolv.conf
 tls=/var/lib/samba/private/tls

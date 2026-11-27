@@ -25,7 +25,7 @@ import (
 
 func init() {
 	var addr, dir string
-	cmd := &cobra.Command{Use: "domain-init", Short: "Открыть веб-мастер нового леса или первого Samba RWDC в существующем домене", Args: cobra.NoArgs,
+	cmd := &cobra.Command{Use: "domain-init", Aliases: []string{"server-init"}, Short: "Открыть веб-мастер контроллера домена или файлового сервера", Args: cobra.NoArgs,
 		PersistentPreRunE: func(*cobra.Command, []string) error { return nil },
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runtime.GOOS != "linux" || os.Geteuid() != 0 {
@@ -33,7 +33,7 @@ func init() {
 			}
 			engine := &domaininit.Engine{Dir: filepath.Join(dir, "domain-init")}
 			readOnly := false
-			for _, p := range []string{"/var/lib/samba/private/sam.ldb", "/var/lib/samba/sam.ldb", "/var/lib/samba/private/secrets.ldb"} {
+			for _, p := range []string{"/var/lib/samba/private/sam.ldb", "/var/lib/samba/sam.ldb", "/var/lib/samba/private/secrets.ldb", "/var/lib/samba/private/secrets.tdb"} {
 				if _, err := os.Stat(p); err == nil {
 					readOnly = true
 				}

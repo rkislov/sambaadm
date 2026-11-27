@@ -1,0 +1,186 @@
+{{define "shares/file-cluster.html"}}
+<!doctype html>
+<html lang="ru">
+<head>
+  {{template "head" .}}
+  <link rel="stylesheet" href="/static/css/file-cluster.css">
+  <script src="/static/js/file-cluster.js" defer></script>
+</head>
+<body>
+  {{template "nav" .}}
+  <main id="file-cluster" data-can-manage="{{canAdmin .Role}}" class="container fc" data-realm="{{.Content}}">
+    <header class="fc-heading">
+      <div>
+        <a class="fc-back" href="/shares">← Файловые ресурсы</a>
+        <h1>Файловые кластеры</h1>
+        <p>Общий SMB-ресурс на двух узлах с ZFS и iSCSI multipath.</p>
+      </div>
+
+    </header>
+    <p id="fc-alert" class="fc-alert" role="alert" hidden></p>
+    <section id="fc-dashboard" aria-label="Кластеры">
+      <div class="fc-chooser">
+        <label id="fc-choice" hidden>Кластер<select id="fc-select"></select></label>
+        <button type="button" id="fc-refresh">Обновить</button>
+      </div>
+      {{if canAdmin .Role}}<div id="fc-drafts" class="fc-drafts"></div>{{end}}
+      <div id="fc-empty" class="fc-panel" hidden><h2>Нет обнаруженных кластеров</h2>{{if canAdmin .Role}}<p>Выберите два зарегистрированных хелпера в мастере настройки.</p>{{end}}</div>
+      <div id="fc-live" hidden>
+        <div class="fc-live-title">
+          <div><h2 id="fc-live-name"></h2><code id="fc-unc"></code></div>
+          <div id="fc-quorum"></div>
+        </div>
+        <nav class="fc-tabs" aria-label="Просмотр кластера">
+          <button type="button" aria-pressed="true" data-view="status">Состояние</button>
+          <button type="button" aria-pressed="false" data-view="snapshots">Снимки</button>
+        </nav>
+        <div id="fc-status"></div>
+        <section id="fc-snapshots" class="fc-panel" hidden aria-labelledby="fc-snapshot-title">
+          <div class="fc-row fc-snapshot-head">
+            <div><h3 id="fc-snapshot-title">Именные снимки</h3><p class="fc-muted" id="fc-schedule-summary">Загрузка расписания…</p></div>
+            {{if canAdmin .Role}}<div class="fc-snapshot-buttons"><button type="button" id="fc-edit-schedule">Автоснимки</button><button type="button" class="fc-primary" id="fc-new-snapshot">Создать снимок</button></div>{{end}}
+          </div>
+          <p id="fc-snapshot-announcement" class="fc-muted" role="status"></p>
+          <div id="fc-snapshot-list"></div>
+        </section>
+      </div>
+    </section>
+
+    {{if canAdmin .Role}}
+    <section id="fc-setup" hidden aria-label="Мастер настройки">
+      <button type="button" class="fc-link" id="fc-close-setup">← К кластерам</button>
+      <ol class="fc-steps" id="fc-steps"><li>Узлы</li><li>Хранилище</li><li>Fencing</li><li>Развёртывание</li></ol>
+      <section class="fc-panel fc-wizard" data-step="nodes">
+        <div class="fc-step-header"><h2>Узлы и SMB-адрес</h2><p>Выберите два хелпера на одной ветке ALT и задайте общий адрес файлового сервера.</p></div>
+        <form id="fc-pair">
+          <div class="fc-grid">
+            <fieldset><legend>Первый узел</legend><label>Хелпер<select name="first" required></select></label><label>IPv4 узла<input name="address1" placeholder="192.0.2.11" required></label></fieldset>
+            <fieldset><legend>Второй узел</legend><label>Хелпер<select name="second" required></select></label><label>IPv4 узла<input name="address2" placeholder="192.0.2.12" required></label></fieldset>
+          </div>
+          <div class="fc-grid fc-network">
+            <label>Имя SMB<input name="name" placeholder="files" pattern="[a-z][a-z0-9\-]{0,14}" maxlength="15" required></label>
+            <label>DNS-домен<input name="realm" value="{{.Content}}" placeholder="corp.example" required></label>
+            <label>Виртуальный IPv4<input name="vip" placeholder="192.0.2.50" required></label>
+            <label>Префикс<input name="prefix" type="number" min="1" max="30" value="24" required></label>
+          </div>
+          <label class="fc-check"><input type="checkbox" name="dedicatedZFS"> Выделенные узлы без пулов ZFS. Подготовить hostid и отключить автоимпорт</label>
+          <div class="fc-actions"><button type="submit" class="fc-primary">Проверить и подготовить узлы</button></div>
+        </form>
+      </section>
+      <section class="fc-panel fc-wizard" data-step="storage" hidden>
+        <div class="fc-step-header"><h2>Общее хранилище</h2><p>Найдите цель на обоих узлах и выберите общий LUN для ZFS.</p></div>
+        <form id="fc-discover">
+          <label>Порталы iSCSI <span class="fc-muted">по одному на строку</span><textarea name="portals" rows="3" placeholder="192.0.2.80:3260&#10;192.0.2.81:3260" required></textarea></label>
+          <div class="fc-actions"><button type="submit">Найти цели</button></div>
+        </form>
+        <form id="fc-connect" class="fc-divider" hidden>
+          <label>Общая цель<select name="target" required></select></label>
+          <details class="fc-extra"><summary>Реквизиты CHAP, если нужны</summary><div class="fc-grid">
+            <label>Имя пользователя CHAP<input name="username" autocomplete="off"></label><label>Пароль CHAP<input type="password" name="password" autocomplete="new-password"></label>
+          </div></details>
+          <div class="fc-actions"><button type="submit" class="fc-primary">Подключить цель</button></div>
+        </form>
+        <form id="fc-map" hidden>
+          <label>Общий LUN<select name="wwid" required></select></label>
+          <p class="fc-muted">Хелперы проверят сигнатуры и соберут по одной карте multipath.</p>
+          <div class="fc-actions"><button type="submit" class="fc-primary">Настроить multipath</button></div>
+        </form>
+      </section>
+      <section class="fc-panel fc-wizard" data-step="fencing" hidden>
+        <div class="fc-step-header"><h2>Fencing через Redfish</h2><p>Хелперы по очереди выключат и включат друг друга. Панель проверит, что каждый действительно перезагрузился.</p></div>
+        <form id="fc-fence">
+          <div id="fc-fence-fields" class="fc-grid"></div>
+          <label class="fc-check"><input name="confirm" type="checkbox" required> Разрешаю поочерёдное отключение узлов</label>
+          <div class="fc-actions"><button type="submit" class="fc-primary">Проверить fencing</button></div>
+        </form>
+      </section>
+      <section class="fc-panel fc-wizard" data-step="deploy" hidden>
+        <div class="fc-step-header"><h2>Проверка и развёртывание</h2><p>Первый хелпер создаст пул на выбранном LUN. Кластер запустит отдельный SMB-сервер и подключит его к AD.</p></div>
+        <dl class="fc-facts" id="fc-review"></dl>
+        <form id="fc-deploy">
+          <div class="fc-grid">
+            <label>NetBIOS-имя домена<input name="workgroup" placeholder="CORP" maxlength="15" required></label>
+            <label>Контроллер домена<input name="controller" placeholder="dc1.corp.example" required></label>
+          </div>
+          <label>SID группы доступа к папке<input name="groupSID" placeholder="S-1-5-21-…-513" required></label>
+          <div class="fc-grid">
+            <label>Учётная запись для ввода в AD<input name="username" placeholder="admin@corp.example" autocomplete="off" required></label>
+            <label>Пароль<input type="password" name="password" autocomplete="new-password" required></label>
+          </div>
+          <label class="fc-check"><input name="confirm" type="checkbox" required> Подтверждаю создание ZFS на указанном LUN</label>
+          <div class="fc-actions"><button type="submit" class="fc-primary">Развернуть кластер</button></div>
+        </form>
+      </section>
+      <section id="fc-progress" class="fc-progress" hidden>
+        <p id="fc-progress-message" role="status"></p>
+        <details id="fc-journal"><summary>Журнал работы хелперов</summary><ol id="fc-log"></ol></details>
+      </section>
+    </section>
+
+    <dialog id="fc-snapshot-dialog" class="fc-dialog" aria-labelledby="fc-snapshot-dialog-title">
+      <form id="fc-snapshot-form">
+        <h2 id="fc-snapshot-dialog-title">Создать именной снимок</h2>
+        <p class="fc-muted" id="fc-snapshot-target"></p>
+        <label>Имя снимка<input name="label" maxlength="120" placeholder="Перед обновлением документов" required></label>
+        <p id="fc-snapshot-error" class="fc-alert" role="alert" hidden></p>
+        <div class="fc-actions"><button type="button" id="fc-cancel-snapshot">Отмена</button><button type="submit" class="fc-primary">Создать</button></div>
+      </form>
+    </dialog>
+    <dialog id="fc-schedule-dialog" class="fc-dialog" aria-labelledby="fc-schedule-title">
+      <form id="fc-schedule-form">
+        <h2 id="fc-schedule-title">Автоснимки</h2>
+        <label class="fc-check"><input type="checkbox" name="enabled"> Включить расписание</label>
+        <div id="fc-schedule-fields" hidden>
+          <div class="fc-grid">
+            <label>Интервал<select name="intervalMinutes"><option value="60">Каждый час</option><option value="360">Каждые 6 часов</option><option value="1440">Ежедневно</option></select></label>
+            <label>Хранить последних<input type="number" name="retain" min="1" max="168" required value="14"></label>
+          </div>
+          <p class="fc-muted">Старые автоснимки удаляются по лимиту. Ручные снимки остаются. Расписание действует на активном узле.</p>
+        </div>
+        <p id="fc-schedule-error" class="fc-alert" role="alert" hidden></p>
+        <div class="fc-actions"><button type="button" id="fc-cancel-schedule">Отмена</button><button type="submit" class="fc-primary">Сохранить</button></div>
+      </form>
+    </dialog>
+    {{end}}
+    <dialog id="fc-info-dialog" class="fc-dialog" aria-labelledby="fc-info-title">
+      <h2 id="fc-info-title">Сведения о снимке</h2>
+      <p id="fc-info-label"></p>
+      <label>Путь к предыдущей версии по SMB<input readonly id="fc-info-path"></label>
+      <p class="fc-muted" id="fc-copy-result" role="status"></p>
+      <div class="fc-actions"><button type="button" id="fc-close-info">Закрыть</button><button type="button" class="fc-primary" id="fc-copy-path">Копировать путь</button></div>
+    </dialog>
+    {{if canAdmin .Role}}
+    <dialog id="fc-restore-dialog" class="fc-dialog fc-restore-dialog" aria-labelledby="fc-restore-title">
+      <h2 id="fc-restore-title">Восстановить из снимка</h2>
+      <p id="fc-restore-context" class="fc-muted"></p>
+      <p id="fc-restore-error" class="fc-alert" role="alert" hidden></p>
+      <section id="fc-restore-picker">
+        <div class="fc-row fc-restore-location">
+          <code id="fc-restore-directory">/</code>
+          <button type="button" id="fc-restore-up">На уровень выше</button>
+        </div>
+        <div id="fc-restore-entries" class="fc-restore-list" aria-label="Содержимое снимка"></div>
+        <div class="fc-row fc-restore-pages">
+          <button type="button" id="fc-restore-prev" hidden>Назад</button>
+          <button type="button" id="fc-restore-next" hidden>Ещё</button>
+        </div>
+        <p id="fc-restore-selection" class="fc-muted" aria-live="polite"></p>
+        <label class="fc-check"><input type="checkbox" id="fc-restore-overwrite"> Заменить существующие файлы и вернуть права существующих папок из снимка</label>
+        <div class="fc-actions"><button type="button" class="fc-primary" id="fc-restore-preview">Предпросмотр</button></div>
+      </section>
+      <section id="fc-restore-review" hidden>
+        <div id="fc-restore-counts" class="fc-restore-counts"></div>
+        <div id="fc-restore-items" class="fc-restore-list" aria-label="Предпросмотр восстановления"></div>
+        <p class="fc-muted">Объекты восстановятся по исходным путям. Файлы, добавленные после снимка, останутся на месте.</p>
+        <label class="fc-check"><input type="checkbox" id="fc-restore-confirm"> Подтверждаю показанные изменения</label>
+        <div class="fc-actions"><button type="button" id="fc-restore-back">Изменить выбор</button><button type="button" class="fc-primary" id="fc-restore-apply">Восстановить</button></div>
+      </section>
+      <p id="fc-restore-progress" class="fc-muted" role="status"></p>
+      <div class="fc-actions"><button type="button" id="fc-restore-close">Закрыть</button></div>
+    </dialog>
+    {{end}}
+  </main>
+  {{template "footer" .}}
+</body>
+</html>
+{{end}}

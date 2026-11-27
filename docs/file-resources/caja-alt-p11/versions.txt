@@ -1,0 +1,5 @@
+mate-file-manager-1.28.1-alt1.aarch64
+gvfs-1.58.5-alt1.aarch64
+gvfs-backend-smb-1.58.5-alt1.aarch64
+samba-4.22.11-alt4.aarch64
+samba-client-4.22.11-alt4.aarch64

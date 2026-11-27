@@ -80,7 +80,11 @@ func readNeighbors(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi
 	return neighbors.Neighbor, nil
 }
 func (c *Client) KCC(ctx context.Context) error {
-	return c.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {
+	// A synchronous DsExecuteKCC waits for Samba's topology worker, which can
+	// run for up to 40 seconds. Allow for binding and the reply as well.
+	operation := *c
+	operation.rpcTimeout = 60 * time.Second
+	return operation.drs(ctx, func(ctx context.Context, client drsuapi.DrsuapiClient, h *drsuapi.Handle) error {
 		_, err := client.ExecuteKCC(ctx, &drsuapi.ExecuteKCCRequest{Handle: h, InVersion: 1, In: &drsuapi.MessageKCCExecute{Value: &drsuapi.MessageKCCExecute_V1{V1: &drsuapi.MessageKCCExecuteV1{}}}})
 		return err
 	})

@@ -94,3 +94,29 @@ func TestBackgroundCredentialResolverRemainsRevocable(t *testing.T) {
 		t.Fatal("expired identity silently fell back")
 	}
 }
+
+func TestKeaGSSCredentialsRestrictedToExactADMethods(t *testing.T) {
+	public, key, _ := ed25519.GenerateKey(rand.Reader)
+	credentials := Credentials{Username: "admin@example.test", Password: "request-only-secret"}
+	for _, method := range []string{"kea.gss.ad.plan", "kea.gss.ad.apply", "kea.gss.ad.apply.other", "kea.gss.install.start", "kea.gss.install.plan", "kea.gss.install.status", "kea.ddns.apply"} {
+		t.Run(method, func(t *testing.T) {
+			verifier := &Verifier{Node: "node.example.test", Keys: []ed25519.PublicKey{public}, seen: map[string]int64{}}
+			req := Request{Version: CredentialVersion, Node: verifier.Node, ID: strings.Repeat("e", 32), Time: time.Now().Unix(), Method: method, Params: json.RawMessage(`{}`), Credentials: &credentials}
+			data, _ := json.Marshal(req)
+			envelope, _ := json.Marshal(Envelope{Request: data, Signature: ed25519.Sign(key, data)})
+			called := false
+			result := verifier.Dispatch(t.Context(), envelope, func(ctx context.Context, _ string, _ json.RawMessage) (any, error) {
+				called = true
+				got, present, err := OperationCredentials(ctx)
+				if err != nil || !present || got != credentials {
+					t.Fatal("missing actor identity")
+				}
+				return "ok", nil
+			})
+			expected := method == "kea.gss.ad.plan" || method == "kea.gss.ad.apply"
+			if called != expected || !expected && result.Code != "unauthorized" {
+				t.Fatalf("unexpected forwarding: called=%v result=%+v", called, result)
+			}
+		})
+	}
+}

@@ -1,0 +1,3 @@
+getting file \restore-ui-1795718832320\notes.txt of size 15 as - (3.7 KiloBytes/sec) (average 3.7 KiloBytes/sec)
+PASS browser restore: stale preview refused, file and merged folder restored with POSIX/default ACL, UID/GID, mode, xattr and signed SMB access enforcement
+PASS live cluster discovery, two nodes, quorum, both multipath maps and snapshots

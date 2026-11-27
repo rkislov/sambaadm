@@ -28,6 +28,10 @@ type Config struct {
 }
 
 type HelperServerConfig struct {
+	KeaDDNSConfig        string    `mapstructure:"kea_ddns_config"`
+	KeaDDNSKeytab        string    `mapstructure:"kea_ddns_keytab"`
+	Kea4Config           string    `mapstructure:"kea4_config"`
+	Kea6Config           string    `mapstructure:"kea6_config"`
 	DNSConfig            string    `mapstructure:"dns_config"`
 	DomainRestoreEnabled bool      `mapstructure:"domain_restore_enabled"`
 	DomainRestoreRoot    string    `mapstructure:"domain_restore_root"`

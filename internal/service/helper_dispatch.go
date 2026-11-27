@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"sambaadm/internal/adremote"
 	"sambaadm/internal/agent"
 	"sambaadm/internal/config"
+	"sambaadm/internal/filecluster"
 	"sambaadm/internal/policy"
 )
 
@@ -55,6 +57,34 @@ func decodeHost(raw []byte, out any) error {
 // HelperDispatch is the closed host-operation allowlist. There is no shell,
 // arbitrary executable, credential export, or general filesystem endpoint.
 func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, method string, raw json.RawMessage) (result any, err error) {
+	if method == "printing.jobs" || method == "printing.inspect" || method == "printing.models" || method == "printing.windows.catalog" {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return s.helperPrinting(ctx, cfg, method, in)
+	}
+	if method == "printing.install.status" {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return s.helperPrinting(ctx, cfg, method, in)
+	}
+	if method == "kea.gss.install.status" {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return helperKea(ctx, cfg, method, in)
+	}
+	if method == "filecluster.job.status" {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return filecluster.ReadJob(cfg.Helper.StateDir, in.Name)
+	}
 	if method == "domain.demote.status" {
 		var in HostOperation
 		if e := decodeHost(raw, &in); e != nil {
@@ -80,6 +110,29 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		}
 		return dnsBackendStatus(cfg, req.ID)
 	}
+	// Read-only monitoring must remain available during package and service changes.
+	switch method {
+	case "host.services", "filecluster.catalog", "filecluster.monitor":
+		var in HostOperation
+		if err := decodeHost(raw, &in); err != nil {
+			return nil, err
+		}
+		switch method {
+		case "host.services":
+			return observeHostServices(ctx, cfg), nil
+		case "filecluster.catalog":
+			return filecluster.Probe(ctx, "cluster-catalog", struct{}{}, cfg.Helper.StateDir)
+		case "filecluster.monitor":
+			var request filecluster.ClusterReadInput
+			if err := decodeHost(in.Input, &request); err != nil {
+				return nil, err
+			}
+			if err := request.Validate(); err != nil {
+				return nil, err
+			}
+			return filecluster.Probe(ctx, "cluster-monitor", request, cfg.Helper.StateDir)
+		}
+	}
 	unlock, e := lockHelper(ctx, cfg.Helper.StateDir)
 	if e != nil {
 		return nil, e
@@ -97,6 +150,13 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 			s.Audit.Success(actor, method, cfg.Helper.Node, "")
 		}
 	}()
+	if strings.HasPrefix(method, "printing.") {
+		var in HostOperation
+		if e := decodeHost(raw, &in); e != nil {
+			return nil, e
+		}
+		return s.helperPrinting(ctx, cfg, method, in)
+	}
 	if strings.HasPrefix(method, "sysvol.") {
 		return s.helperSYSVOL(ctx, cfg, strings.TrimPrefix(method, "sysvol."), raw)
 	}
@@ -124,6 +184,145 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return nil, e
 	}
 	switch method {
+	case "filecluster.prerequisites":
+		var profile filecluster.Prerequisites
+		if err := decodeHost(in.Input, &profile); err != nil {
+			return nil, err
+		}
+		if err := profile.Validate(); err != nil {
+			return nil, err
+		}
+		return filecluster.Probe(ctx, "repository", map[string]any{"packages": profile.Packages(), "storage": profile.Storage, "filesystem": profile.Filesystem}, cfg.Helper.StateDir)
+	case "filecluster.prepare":
+		var request filecluster.PrepareInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		payload := map[string]any{"revision": request.Revision, "prepareDedicatedZFS": request.PrepareDedicatedZFS, "profile": map[string]any{"packages": request.Profile.Packages(), "storage": request.Profile.Storage, "filesystem": request.Profile.Filesystem}}
+		return filecluster.StartJob(cfg.Helper.StateDir, "packages", payload, request.RequestID)
+	case "filecluster.credentials.put":
+		var request filecluster.CredentialInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		return filecluster.Probe(ctx, "credential-put", request, cfg.Helper.StateDir)
+	case "filecluster.fence.test":
+		var request filecluster.FenceTestInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(cfg.Helper.Node); err != nil {
+			return nil, err
+		}
+		payload := map[string]any{"cluster": request.Cluster, "target": request.Target, "confirm": request.Confirm, "localNode": cfg.Helper.Node}
+		return filecluster.StartJob(cfg.Helper.StateDir, "fence-test", payload, request.RequestID)
+	case "storage.inventory":
+		return filecluster.Probe(ctx, "inventory", struct{}{}, cfg.Helper.StateDir)
+	case "filecluster.status":
+		var request filecluster.ClusterReadInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		return filecluster.Probe(ctx, "cluster-status", request, cfg.Helper.StateDir)
+	case "filecluster.stage":
+		var request filecluster.StageInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		payload, err := request.Payload(cfg.Helper.Node, cfg.Helper.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		return filecluster.StartJob(cfg.Helper.StateDir, "cluster-stage", payload, request.RequestID)
+	case "filecluster.restore.browse", "filecluster.restore.preview", "filecluster.restore.apply":
+		var request filecluster.RestoreInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		action := strings.TrimPrefix(method, "filecluster.restore.")
+		if err := request.Validate(action); err != nil {
+			return nil, err
+		}
+		return filecluster.StartJob(cfg.Helper.StateDir, "cluster-restore-"+action, request, request.RequestID)
+	case "filecluster.snapshot-schedule":
+		var request filecluster.SnapshotScheduleInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.ActivationInput.Validate("snapshot-schedule"); err != nil {
+			return nil, err
+		}
+		if err := request.Policy.Validate(); err != nil {
+			return nil, err
+		}
+		return filecluster.StartJob(cfg.Helper.StateDir, "cluster-snapshot-schedule", request, request.RequestID)
+	case "filecluster.online", "filecluster.initialize", "filecluster.snapshot", "filecluster.snapshot-timer":
+		var request filecluster.ActivationInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		action := strings.TrimPrefix(method, "filecluster.")
+		if err := request.Validate(action); err != nil {
+			return nil, err
+		}
+		return filecluster.StartJob(cfg.Helper.StateDir, "cluster-"+action, request, request.RequestID)
+	case "storage.iscsi.connect":
+		var request filecluster.ISCSIConnectInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		payload := struct {
+			filecluster.ISCSIConnectInput
+			LocalNode string `json:"localNode"`
+		}{request, cfg.Helper.Node}
+		return filecluster.StartJob(cfg.Helper.StateDir, "iscsi-connect", payload, request.RequestID)
+	case "storage.multipath.configure":
+		var request filecluster.MultipathInput
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		return filecluster.StartJob(cfg.Helper.StateDir, "multipath", request, request.RequestID)
+	case "storage.iscsi.discover":
+		var request struct {
+			Portals []string `json:"portals"`
+		}
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		return filecluster.Probe(ctx, "discover", request)
+	case "filecluster.repository":
+		var request filecluster.Input
+		if err := decodeHost(in.Input, &request); err != nil {
+			return nil, err
+		}
+		if err := request.Validate(); err != nil {
+			return nil, err
+		}
+		matches := false
+		for _, node := range request.Nodes {
+			if strings.EqualFold(node.Name, cfg.Helper.Node) {
+				matches = true
+			}
+		}
+		if !matches {
+			return nil, fmt.Errorf("helper не входит в выбранный кластер")
+		}
+		return filecluster.Probe(ctx, "repository", map[string]any{"packages": request.Packages(), "storage": request.Storage, "filesystem": request.Filesystem}, cfg.Helper.StateDir)
 	case "domain.demote.manifest", "domain.demote.plan", "domain.demote.start", "domain.demote.resume":
 		return helperDomainDemote(ctx, cfg, method, in)
 	case "domain.init.plan", "domain.init.start":
@@ -132,8 +331,35 @@ func (s *Services) HelperDispatch(ctx context.Context, cfg *config.Config, metho
 		return helperDNSBackend(ctx, cfg, method, in)
 	case "dns.forward.inspect", "dns.forward.plan", "dns.forward.apply":
 		return helperDNSForward(ctx, cfg, method, in)
+	case "kea.gss.install.plan", "kea.gss.install.start", "kea.gss.install.status", "kea.gss.ad.plan", "kea.gss.ad.apply", "kea.inspect", "kea.plan", "kea.apply", "kea.service", "kea.install.plan", "kea.install", "kea.leases", "kea.lease.delete", "kea.lease.reserve.plan", "kea.ddns.inspect", "kea.ddns.plan", "kea.ddns.apply", "kea.ddns.service":
+		return helperKea(ctx, cfg, method, in)
 	case "time.inspect", "time.plan", "time.apply":
 		return helperTime(ctx, cfg, method, in)
+	case "shares.permission-map":
+		return s.Shares.PermissionMap(ctx, in.Name, in.Path)
+	case "shares.permission-map.plan", "shares.permission-map.apply":
+		var data SharePermissionMapRequest
+		if err := decodeHost(in.Input, &data); err != nil {
+			return nil, err
+		}
+		if method == "shares.permission-map.plan" {
+			return s.Shares.PlanPermissionMap(ctx, in.Name, data)
+		}
+		return s.Shares.ApplyPermissionMap(ctx, in.Name, data, in.Actor, in.IP, cfg.Helper.StateDir)
+	case "shares.directories":
+		offset, err := strconv.Atoi(in.Key)
+		if err != nil {
+			return nil, err
+		}
+		return s.Shares.Directories(ctx, in.Name, in.Path, offset)
+	case "shares.path-acl.get":
+		return s.FSACL.GetSharePath(ctx, in.Name, in.Path)
+	case "shares.path-acl.set":
+		var data SetACLInput
+		if err := decodeHost(in.Input, &data); err != nil {
+			return nil, err
+		}
+		return s.FSACL.SetSharePath(ctx, in.Name, in.Path, data, in.Actor, in.IP)
 	case "shares.list":
 		return s.Shares.List(ctx)
 	case "shares.show":

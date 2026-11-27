@@ -1,0 +1,25 @@
+{"uid": 1000500, "userSID": "S-1-5-21-1281360530-1448425781-3178936072-500", "user": "SAMBAADM\\administrator", "identityProvider": "winbind", "domainSID": "S-1-5-21-1281360530-1448425781-3178936072", "groupSID": "S-1-5-21-1281360530-1448425781-3178936072-513", "gid": 1000513, "group": "SAMBAADM\\domain users", "smbSignedReadWrite": true, "nonExecutableFile": true, "inheritedDirectorySearch": true, "occupiedNameRejected": true}
+Password for [Administrator@sambaadm.test]:putting file /tmp/upload.txt as \uploaded.txt (21.5 kb/s) (average 21.5 kb/s)
+getting file \uploaded.txt of size 22 as /tmp/download.txt (220000.0 KiloBytes/sec) (average inf KiloBytes/sec)
+
+  .                                   D        0  Thu Nov 26 15:55:23 2026
+  ..                                  D        0  Thu Nov 26 15:55:23 2026
+  child                               D        0  Thu Nov 26 15:55:23 2026
+  uploaded.txt                        A       22  Thu Nov 26 15:55:23 2026
+
+		474095688 blocks of size 1024. 338178908 blocks available
+
+getfacl: Removing leading '/' from absolute path names
+# file: srv/samba/check/child
+# owner: 1000500
+# group: 1000513
+user::rwx
+group::r-x
+group:1000513:r-x
+mask::r-x
+other::---
+default:user::rwx
+default:group::r-x
+default:group:1000513:r-x
+default:mask::r-x
+default:other::---

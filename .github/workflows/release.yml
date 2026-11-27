@@ -38,7 +38,7 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Verify compiled Tailwind stylesheet
-        run: npm ci --ignore-scripts && npm run build:css && git diff --exit-code -- internal/web/static/css/ui.css
+        run: npm ci --ignore-scripts && npm run build:css && git diff --exit-code -- internal/web/static/css/ui.css internal/web/static/css/console-theme.css internal/web/static/css/printing.css internal/domaininit/assets/theme.css
       - name: Test and vet
         run: go test ./... && go vet ./...
       - name: Build release assets

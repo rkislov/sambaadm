@@ -173,6 +173,7 @@ func (s *PrinterService) Create(ctx context.Context, in CreatePrinterInput, acto
 
 	doc.SetParam(name, "path", path)
 	doc.SetParam(name, "printable", "yes")
+	doc.SetParam(name, "printing", "cups")
 	doc.SetParam(name, "printer name", printerName)
 	doc.SetParam(name, "browseable", boolYesNo(browseable))
 	doc.SetParam(name, "guest ok", boolYesNo(guestOK))

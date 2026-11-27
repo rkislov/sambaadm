@@ -1,0 +1,65 @@
+{{define "settings/ha-mail.html"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}">
+<head>
+  {{template "head" .}}
+  <link rel="stylesheet" href="/static/css/ha-mail.css">
+  <script src="/static/js/ha-mail.js" defer></script>
+</head>
+<body>
+  {{template "nav" .}}
+  <main class="container ha-mail" id="ha-mail">
+    <p><a href="/settings">← Настройки</a></p>
+    <h1>Почтовые уведомления HA</h1>
+    <form id="ha-mail-form">
+      <fieldset id="ha-mail-fields" disabled>
+        <legend>SMTP и отправитель</legend>
+        <label class="ha-mail-check"><input type="checkbox" name="enabled"> Отправлять уведомления</label>
+        <div class="ha-mail-connection">
+          <label>SMTP-сервер<input name="host" type="text" placeholder="smtp.example.org" maxlength="253"></label>
+          <label>Порт<input name="port" type="number" min="1" max="65535" value="587"></label>
+          <label>Подключение
+            <select name="security">
+              <option value="starttls">STARTTLS</option>
+              <option value="tls">TLS</option>
+              <option value="local">Локальный SMTP</option>
+            </select>
+          </label>
+          <label>Отправитель<input name="from" type="email" maxlength="254" placeholder="sambaadm@example.org"></label>
+          <label>Имя пользователя SMTP<input name="username" type="text" maxlength="254" autocomplete="off"></label>
+        </div>
+        <p class="ha-mail-help" id="ha-mail-password" hidden>Пароль берётся из переменной <code>SAMBAADM_HA_SMTP_PASSWORD</code> службы Samba Admin. <span></span></p>
+        <section class="ha-mail-test" aria-labelledby="ha-mail-test-title">
+          <h2 id="ha-mail-test-title">Проверка SMTP</h2>
+          <p class="ha-mail-help">Письмо отправляется с текущими параметрами SMTP без сохранения настроек.</p>
+          <div class="ha-mail-test-tools">
+            <label>Получатель тестового письма
+              <select id="ha-mail-test-recipient"><option value="">Выберите адрес</option></select>
+            </label>
+            <label id="ha-mail-test-custom" hidden>Другой адрес
+              <input type="text" inputmode="email" id="ha-mail-test-address" maxlength="254" placeholder="ops@example.org">
+            </label>
+            <button type="button" id="ha-mail-test-send" disabled>Отправить тестовое письмо</button>
+          </div>
+          <p id="ha-mail-test-result" role="status" aria-atomic="true"></p>
+        </section>
+        <section aria-labelledby="ha-mail-recipients-title">
+          <h2 id="ha-mail-recipients-title">Получатели и события</h2>
+          <div id="ha-mail-recipients"></div>
+          <button type="button" id="ha-mail-add">Добавить получателя</button>
+        </section>
+        <footer><button type="submit">Сохранить настройки</button><p id="ha-mail-message" role="status"></p></footer>
+      </fieldset>
+    </form>
+    <section class="ha-mail-delivery" aria-labelledby="ha-mail-delivery-title">
+      <header>
+        <div><h2 id="ha-mail-delivery-title">Доставка</h2><p id="ha-mail-summary" role="status"></p></div>
+        <button type="button" id="ha-mail-refresh">Обновить доставку</button>
+      </header>
+      <ul id="ha-mail-recent"></ul>
+    </section>
+  </main>
+  {{template "footer" .}}
+</body>
+</html>
+{{end}}

@@ -95,5 +95,5 @@ echo "Компоненты $components версии $release установле�
 if [ "$new_server" = true ] && [ -d /run/systemd/system ] && { [ -t 0 ] && [ -t 1 ]; }; then
   /usr/sbin/sambaadm-setup
 elif [ "$new_server" = true ]; then
-  echo 'Для первичной настройки выполните sudo sambaadm-setup.'
+  echo 'Новый контроллер или файловый сервер: sudo samba-server-init. Подключение панели к домену: sudo sambaadm-setup.'
 fi

@@ -55,6 +55,10 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
    else if(endpoint==='/gpo/distribute/job1')result={id:'job1',status:'ok',progress:100,steps:[{title:'SYSVOL',status:'ok'}]};
    else if(endpoint==='/gpo/links')result='GPO: {abc}';
    else if(endpoint==='/repl/partners')result=[{name:'dc1',dn:'CN=NTDS Settings,'+base,status:'ok'}];
+   else if(endpoint==='/printing/inspect'){
+    if(u.searchParams.get('node')==='print-01.example.com')result={state:'active',queues:[{name:'cups-finance',model:'IPP Everywhere',accepting:true}]};
+    else{status=409;result={error:'Хелпер сервера печати недоступен'};}
+   }
    else if(endpoint==='/domain/fsmo')result=[{role:'pdc',owner:'dc1',source:'ldap'}];
    else result=listings[endpoint.slice(1)]||user;
    if(endpoint.endsWith('/scripts')){
@@ -377,7 +381,15 @@ const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await open('gpo');await clickGPO('Сценарии');dialog=page.getByRole('dialog');await dialog.getByRole('button',{name:'Резервные копии и восстановление',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByText(backupOld,{exact:true}).waitFor();assert.equal(await dialog.getByRole('button',{name:'Удалить копию',exact:true}).count(),1);const oldBackup=dialog.locator('article').filter({hasText:backupOld});await oldBackup.getByLabel('Подтверждаю удаление этой копии',{exact:true}).check();await oldBackup.getByRole('button',{name:'Удалить копию',exact:true}).click();await dialog.getByText('Список копий обновлён',{exact:true}).waitFor();assert.equal(maintenanceState.backups.length,1);await close();
   scriptPending=true;maintenanceState.pending=true;maintenanceState.backups[0].protected=true;await clickGPO('Сценарии');dialog=page.getByRole('dialog');await dialog.getByRole('alert').filter({hasText:'unfinished policy save'}).waitFor();await dialog.getByRole('button',{name:'Резервные копии и восстановление',exact:true}).click();dialog=page.getByRole('dialog');await dialog.getByText('Обнаружено незавершённое сохранение',{exact:true}).waitFor();await dialog.getByRole('button',{name:'Предпросмотр завершения',exact:true}).click();await dialog.getByText('План восстановления',{exact:true}).waitFor();await dialog.getByLabel('Подтверждаю восстановление по этому плану',{exact:true}).check();assert.equal(await dialog.locator('input:invalid').count(),1);await dialog.getByLabel('Разрешаю заменить перечисленные внешние или частичные изменения',{exact:true}).check();await dialog.getByRole('button',{name:'Применить восстановление',exact:true}).click();await dialog.getByText('Восстановление завершено. Версия GPO обновлена.',{exact:true}).waitFor();assert.equal(scriptPending,false);await close();
   await open('shares');await (await rowAction('Параметр Samba')).click();dialog=page.getByRole('dialog');await dialog.getByText(/Изменяет параметр выбранной секции в smb.conf/).waitFor();await dialog.getByLabel('Параметр',{exact:true}).fill('read only');await dialog.getByLabel('Значение',{exact:true}).fill('yes');await dialog.getByRole('button',{name:'Выполнить',exact:true}).click();await dialog.getByText('Операция выполнена',{exact:true}).waitFor();assert.deepEqual(calls.filter(c=>c.path==='/shares/Finance/param').at(-1).body,{key:'read only',value:'yes'});await close();
-  for(const module of ['groups','computers','ou','domain','sites','repl','trusts','shares','printers'])await open(module);
+  for(const module of ['groups','computers','ou','domain','sites','repl','trusts','shares'])await open(module);
+  await visit(url+'/printers');
+  const cups=page.locator('#printing-console');
+  await cups.getByRole('heading',{name:'Служба CUPS работает',exact:true}).waitFor();
+  await cups.getByRole('button',{name:'Принтеры',exact:true}).click();
+  await cups.getByRole('cell',{name:'cups-finance',exact:true}).waitFor();
+  await cups.getByLabel('Сервер печати',{exact:true}).selectOption('print-02.example.com');
+  await cups.getByText('Хелпер сервера печати недоступен',{exact:true}).waitFor();
+  assert.equal(await cups.getByRole('cell',{name:'cups-finance',exact:true}).count(),0);
   await open('sites');await page.getByRole('button',{name:'Кэш RODC',exact:true}).click();const rodc=page.getByRole('dialog');await rodc.getByLabel('Контроллер RODC',{exact:true}).selectOption('dc2.example.com');await rodc.getByRole('button',{name:'Разрешения',exact:true}).waitFor();await rodc.getByText('Добавить разрешение или запрет',{exact:true}).click();
   await rodc.getByLabel('DN учётной записи или группы',{exact:true}).fill(user.dn);await rodc.getByRole('button',{name:'Предпросмотр назначения',exact:true}).click();await rodc.getByRole('heading',{name:'Предпросмотр RODC',exact:true}).waitFor();await rodc.getByLabel('Подтверждаю выбранный RODC и операцию',{exact:true}).check();rodcConflict=true;await rodc.getByRole('button',{name:'Применить к выбранному RODC',exact:true}).click();await rodc.getByText('RODC policy changed; preview again',{exact:true}).waitFor();rodcConflict=false;
   await rodc.getByRole('button',{name:'Предпросмотр назначения',exact:true}).click();await rodc.getByLabel('Подтверждаю выбранный RODC и операцию',{exact:true}).check();await rodc.getByRole('button',{name:'Применить к выбранному RODC',exact:true}).click();await rodc.getByRole('button',{name:'Убрать назначение',exact:true}).waitFor();

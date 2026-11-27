@@ -185,7 +185,7 @@ func (h *bootstrapHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fail(400, "Некорректные параметры")
 		return
 	}
-	if in.Mode != "forest" && in.Mode != "existing" {
+	if in.Mode != "forest" && in.Mode != "existing" && in.Mode != "member" {
 		fail(400, "Выберите новый лес или присоединение к существующему домену")
 		return
 	}

@@ -24,12 +24,13 @@ on the management server.
 %prep
 %build
 %install
-mkdir -p %buildroot/usr/bin %buildroot/lib/systemd/system
+mkdir -p %buildroot/usr/libexec %buildroot/usr/bin %buildroot/lib/systemd/system
 mkdir -p %buildroot/etc/sambaadm-helper %buildroot/var/lib/sambaadm-helper
 mkdir -p %buildroot/var/lib/sambaadm-helper/backups
 mkdir -p %buildroot/var/log/sambaadm-helper %buildroot/usr/share/doc/sambaadm-helper
 mkdir -p %buildroot/srv/samba
 install -m755 %{payload_dir}/sambaadm-helper %buildroot/usr/bin/sambaadm-helper
+install -m700 %{payload_dir}/sambaadm-filecluster-secret %buildroot/usr/libexec/sambaadm-filecluster-secret
 install -m644 %{payload_dir}/sambaadm-helper.service %buildroot/lib/systemd/system/sambaadm-helper.service
 install -m600 %{payload_dir}/helper-config.yaml %buildroot/etc/sambaadm-helper/config.yaml
 install -m644 %{payload_dir}/helper.md %{payload_dir}/LICENSE %{payload_dir}/NOTICE %buildroot/usr/share/doc/sambaadm-helper/
@@ -39,6 +40,8 @@ getent group sambaadm-agent >/dev/null || groupadd -r sambaadm-agent
 getent passwd sambaadm-agent >/dev/null || useradd -r -g sambaadm-agent -d /var/lib/sambaadm-agent -s /bin/sh sambaadm-agent
 
 %post
+# Prepare the optional Kea mount point before starting the sandboxed helper.
+mkdir -p /etc/kea
 if [ -d /run/systemd/system ]; then systemctl daemon-reload || :; fi
 # No keys are trusted and no network service is started automatically.
 
@@ -53,6 +56,7 @@ if [ -d /run/systemd/system ]; then systemctl daemon-reload || :; fi
 %files
 %defattr(-,root,root)
 /usr/bin/sambaadm-helper
+%attr(0700,root,root) /usr/libexec/sambaadm-filecluster-secret
 /lib/systemd/system/sambaadm-helper.service
 %dir %attr(0700,root,root) /etc/sambaadm-helper
 %config(noreplace) %attr(0600,root,root) /etc/sambaadm-helper/config.yaml

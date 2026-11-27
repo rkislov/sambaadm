@@ -40,6 +40,13 @@ type Options struct {
 
 // Server is the HTTP front-end (SSR UI + REST API).
 type Server struct {
+	printingHistory     printingJournalStore
+	haHistory           haHistoryStore
+	haMail              haMailStore
+	clusterMu           sync.Mutex
+	clusterRunning      map[string]bool
+	clusterCatalogMu    sync.Mutex
+	clusterSeen         map[string]clusterCatalogObservation
 	kerberos            http.Handler
 	backupMu            sync.Mutex
 	certMu              sync.Mutex
@@ -79,6 +86,7 @@ func New(opts Options) (*Server, error) {
 		"year":        func() int { return time.Now().Year() },
 		"urlpath":     url.PathEscape,
 		"t":           func(lang i18n.Lang, key string) string { return i18n.T(lang, key) },
+		"canRead":     auth.CanRead,
 		"canAdmin":    auth.CanAdmin,
 		"canHelpdesk": auth.CanHelpdesk,
 		"navClass": func(active, href string) string {
@@ -183,11 +191,13 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/gpo/sysvol-sync", s.sysvolSyncPage)
 		r.Get("/domain", s.handleWorkspace)
 		r.Get("/shares", s.handleWorkspace)
+		r.Get("/file-clusters", s.fileClusterPage)
 		r.Get("/shares/new", s.handleShareCreateForm)
 		r.Post("/shares", s.handleShareCreatePost)
+		r.Get("/shares/{name}/permission-map", s.sharePermissionMapPage)
 		r.Get("/shares/{name}/acl", s.handleShareACL)
 		r.Post("/shares/{name}/acl", s.handleShareACLPost)
-		r.Get("/printers", s.handleWorkspace)
+		r.Get("/printers", s.printingPage)
 		r.Get("/printers/new", s.handlePrinterCreateForm)
 		r.Post("/printers", s.handlePrinterCreatePost)
 		r.Get("/backups", s.handleObjectBackups)
@@ -198,12 +208,14 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/diagnostics/run", s.handleDiagnosticsRun)
 		r.Get("/settings/certificates", s.handleCertificates)
 		r.Get("/dns/routing", s.handleDNSRouting)
+		r.Get("/dhcp", s.handleKea)
 		r.Get("/settings/time", s.handleTimeSettings)
 		r.Post("/settings/time", s.handleTimeSettings)
 		r.Post("/settings/certificates", s.handleCertificates)
 		r.Get("/settings/domain-demote", s.domainDemotePage)
 		r.Get("/settings/domain-init", s.domainInitPage)
 		r.Handle("/domain-init-assets/*", domainInitAssets())
+		r.Get("/settings/ha-mail", s.haMailPage)
 		r.Get("/settings/helpers", s.enrollHelper)
 		r.Post("/settings/helpers", s.enrollHelper)
 		r.Get("/me", s.handleSelfPage)
@@ -216,6 +228,13 @@ func (s *Server) buildRouter() chi.Router {
 		r.Use(s.requireSession)
 		r.Use(s.csrfProtect)
 		r.Use(s.shareNodeContext)
+		r.Get("/services/overview", s.handleServiceOverview)
+		r.Get("/services/ha-history", s.handleHAHistory)
+		r.Get("/services/ha-mail", s.handleHAMail)
+		r.Put("/services/ha-mail", s.handleHAMail)
+		r.Post("/services/ha-mail/test", s.handleHAMailTest)
+		r.Get("/services/ha-notifications", s.handleHANotifications)
+		r.Post("/services/ha-notifications/read", s.handleHANotifications)
 		r.Get("/certificates/rollouts", s.handleCertificateRollouts)
 		r.Post("/certificates/rollouts", s.handleCertificateRollouts)
 		r.Get("/backups", s.handleAPIObjectBackups)
@@ -246,6 +265,26 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/surveys", s.surveysAPI)
 		r.Post("/system/diagnostics", s.handleAPIDiagnostics)
 		r.Get("/system/metrics", s.handleAPIHostMetrics)
+		r.Get("/dhcp", s.handleAPIKea)
+		r.Post("/dhcp/gss/install/plan", s.handleAPIKea)
+		r.Post("/dhcp/gss/install/start", s.handleAPIKea)
+		r.Get("/dhcp/gss/install/status", s.handleAPIKea)
+		r.Post("/dhcp/gss/ad/plan", s.handleAPIKea)
+		r.Post("/dhcp/gss/ad/pair/plan", s.handleAPIKea)
+		r.Post("/dhcp/gss/ad/pair/apply", s.handleAPIKea)
+		r.Post("/dhcp/gss/ad/apply", s.handleAPIKea)
+		r.Get("/dhcp/ddns", s.handleAPIKea)
+		r.Post("/dhcp/ddns/plan", s.handleAPIKea)
+		r.Post("/dhcp/ddns/apply", s.handleAPIKea)
+		r.Post("/dhcp/ddns/service", s.handleAPIKea)
+		r.Get("/dhcp/leases", s.handleAPIKea)
+		r.Post("/dhcp/leases/delete", s.handleAPIKea)
+		r.Post("/dhcp/leases/reservation/plan", s.handleAPIKea)
+		r.Post("/dhcp/plan", s.handleAPIKea)
+		r.Post("/dhcp/apply", s.handleAPIKea)
+		r.Post("/dhcp/service", s.handleAPIKea)
+		r.Post("/dhcp/install/plan", s.handleAPIKea)
+		r.Post("/dhcp/install", s.handleAPIKea)
 		r.Get("/system/time", s.handleAPITime)
 		r.Post("/system/time/plan", s.handleAPITime)
 		r.Put("/system/time", s.handleAPITime)
@@ -432,14 +471,29 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/helper-install", s.handleHelperInstall)
 		r.Post("/helper-install", s.handleHelperInstall)
 		r.Post("/helper-install/package", s.handleHelperPackage)
+		r.Get("/file-clusters", s.handleFileClusterAPI)
+		r.Get("/file-clusters/status", s.handleFileClusterAPI)
+		r.Post("/file-clusters/snapshot", s.handleFileClusterAPI)
+		r.Post("/file-clusters/snapshot-schedule", s.handleFileClusterAPI)
+		r.Post("/file-clusters/restore/{operation}", s.handleFileClusterAPI)
+		r.Get("/file-clusters/jobs/{id}", s.handleFileClusterAPI)
+		r.Post("/file-clusters/setup", s.handleFileClusterAPI)
+		r.Get("/file-clusters/setup/{id}", s.handleFileClusterAPI)
+		r.Post("/file-clusters/setup/{id}/{action}", s.handleFileClusterAPI)
 		r.Get("/share-servers", s.handleShareNodes)
 		r.Get("/shares", s.handleAPIShares)
 		r.Post("/shares", s.handleAPIShareCreate)
 		r.Get("/shares/{name}", s.handleAPIShareGet)
 		r.Delete("/shares/{name}", s.handleAPIShareDelete)
+		r.Get("/shares/{name}/permission-map", s.handleSharePermissionMap)
+		r.Post("/shares/{name}/permission-map/plan", s.handleSharePermissionPlan)
+		r.Post("/shares/{name}/permission-map/apply", s.handleSharePermissionApply)
+		r.Get("/shares/{name}/directories", s.handleShareDirectories)
 		r.Get("/shares/{name}/acl", s.handleAPIShareACLGet)
 		r.Post("/shares/{name}/acl", s.handleAPIShareACLSet)
 
+		r.Get("/printing/{operation}", s.handlePrinting)
+		r.Post("/printing/{operation}", s.handlePrinting)
 		r.Get("/printers", s.handleAPIPrinters)
 		r.Post("/printers", s.handleAPIPrinterCreate)
 		r.Delete("/printers/{name}", s.handleAPIPrinterDelete)

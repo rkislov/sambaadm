@@ -1,8 +1,8 @@
 const {chromium}=require('playwright'),http=require('http'),fs=require('fs'),path=require('path'),assert=require('assert/strict');
 const project=path.resolve(__dirname,'../..'),out=process.env.SAMBAADM_SYSVOL_SCREENSHOTS||'/tmp/sambaadm-sysvol-ui';fs.mkdirSync(out,{recursive:true});
 const server=http.createServer((req,res)=>{
- if(req.url==='/'){res.setHeader('Content-Type','text/html');return res.end('<html lang="ru"><head><meta charset="utf-8"><meta name="csrf-token" content="test-csrf"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/domain-init-assets/wizard.css"><link rel="stylesheet" href="/static/css/sysvol-sync.css"><script defer src="/static/js/sysvol-sync.js"></script></head><body><main class="di-shell ss-shell"><h1>Синхронизация SYSVOL</h1><div data-sysvol-sync></div></main></body></html>');}
- const file=req.url.includes('wizard.css')?path.join(project,'internal/domaininit/assets/wizard.css'):path.join(project,'internal/web',req.url);
+ if(req.url==='/'){res.setHeader('Content-Type','text/html');return res.end('<html lang="ru"><head><meta charset="utf-8"><meta name="csrf-token" content="test-csrf"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/domain-init-assets/wizard.css"><link rel="stylesheet" href="/domain-init-assets/theme.css"><link rel="stylesheet" href="/static/css/sysvol-sync.css"><script defer src="/static/js/sysvol-sync.js"></script></head><body><main class="di-shell ss-shell"><h1>Синхронизация SYSVOL</h1><div data-sysvol-sync></div></main></body></html>');}
+ const file=['/domain-init-assets/wizard.css','/domain-init-assets/theme.css'].includes(req.url)?path.join(project,'internal/domaininit/assets',path.basename(req.url)):path.join(project,'internal/web',req.url);
  if(!file.startsWith(project)||!fs.existsSync(file)){res.writeHead(404).end();return;}res.setHeader('Content-Type',file.endsWith('.js')?'application/javascript':'text/css');res.end(fs.readFileSync(file));
 });
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const browser=await chromium.launch();try{

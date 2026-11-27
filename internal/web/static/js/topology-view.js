@@ -2,13 +2,14 @@
   'use strict';
   // The world retains readable node dimensions; only this viewport is scaled.
   // View controls never call the AD mutation API or change connection endpoints.
-  window.sambaadmTopologyViewport=function(map,width,height){
+  window.sambaadmTopologyViewport=function(map,width,height,options={}){
     const ru=document.documentElement.lang==='ru',t=(a,b)=>ru?a:b;
     const el=(tag,text='')=>{const element=document.createElement(tag);element.textContent=text;return element;};
+    const identity=value=>options.caseSensitive?value:value.toLowerCase();
     const wrap=el('section'),tools=el('div');tools.className='topology-controls';
     const viewport=el('div');viewport.className='topology-viewport';viewport.tabIndex=0;
-    viewport.setAttribute('aria-label',t('Масштабируемая схема контроллеров','Zoomable controller topology'));
-    const search=el('input');search.type='search';search.placeholder=t('Найти контроллер','Find controller');search.setAttribute('aria-label',search.placeholder);
+    viewport.setAttribute('aria-label',options.directory?t('Масштабируемая карта каталогов','Zoomable directory map'):t('Масштабируемая схема контроллеров','Zoomable controller topology'));
+    const search=el('input');search.type='search';search.placeholder=options.directory?t('Найти папку или группу','Find folder or group'):t('Найти контроллер','Find controller');search.setAttribute('aria-label',search.placeholder);
     const site=el('select');site.setAttribute('aria-label',t('Фильтр по сайту','Site filter'));
     const all=el('option',t('Все сайты','All sites'));all.value='';site.append(all);
     const nodes=Array.from(map.querySelectorAll('.topology-node')),edges=Array.from(map.querySelectorAll('polyline'));
@@ -18,16 +19,16 @@
     for(const name of [...new Set(frames.map(n=>n.dataset.site).filter(Boolean))].sort()){
       const option=el('option',name);option.value=name;site.append(option);
     }
-    const focus=el('input');focus.type='checkbox';focus.setAttribute('role','switch');focus.checked=nodes.length>20;
+    const focus=el('input');focus.type='checkbox';focus.setAttribute('role','switch');focus.checked=!options.directory&&nodes.length>20;
     const label=el('label',t('Связи выбранного DC','Selected DC connections'));label.prepend(focus);
     const info=el('output'),hint=el('p');hint.className='muted';info.setAttribute('aria-live','polite');
-    let scale=1,x=0,y=0,selected='',autoFit=true,visibleCount=nodes.length,pan=null;
+    let scale=1,x=0,y=0,selected=options.selected||'',autoFit=true,visibleCount=nodes.length,pan=null;
     const button=(text,name,action)=>{
       const b=el('button',text);b.type='button';b.setAttribute('aria-label',name);b.title=name;b.addEventListener('click',action);return b;
     };
     function apply(){
       map.style.transform=`translate(${x}px, ${y}px) scale(${scale})`;
-      info.textContent=(scale<.01?(scale*100).toFixed(2):Math.round(scale*100))+'% · DC: '+visibleCount+'/'+nodes.length;
+      info.textContent=(scale<.01?(scale*100).toFixed(2):Math.round(scale*100))+'% · '+(options.directory?t('Папки: ','Folders: '):'DC: ')+visibleCount+'/'+nodes.length;
     }
     function zoom(factor,px=viewport.clientWidth/2,py=viewport.clientHeight/2){
       const minimum=Math.min(.05,viewport.clientWidth/width/2,viewport.clientHeight/height/2);
@@ -59,7 +60,7 @@
         const show=(!site.value||n.dataset.site===site.value)&&(!needle||(n.dataset.dc+' '+n.textContent).toLocaleLowerCase().includes(needle));
         n.hidden=!show;n.classList.toggle('focused',n.dataset.dc===selected);
         n.setAttribute('aria-pressed',String(n.dataset.dc===selected));
-        if(show){visible.add(n.dataset.dc.toLowerCase());visibleSites.add(n.dataset.site);}
+        if(show){visible.add(identity(n.dataset.dc));visibleSites.add(n.dataset.site);}
       }
       for(const frame of frames)frame.hidden=(!!site.value&&frame.dataset.site!==site.value)||(!!needle&&!visibleSites.has(frame.dataset.site));
       for(const link of links)link.hidden=!!site.value||!!needle;
@@ -68,10 +69,11 @@
       for(const edge of edges){
         const a=edge.dataset.source,b=edge.dataset.destination;
         // SVG does not implement the HTML hidden property.
-        edge.style.display=visible.has(a)&&visible.has(b)&&(!focus.checked||!!selected&&(a===selected.toLowerCase()||b===selected.toLowerCase()))?'':'none';
+        edge.style.display=visible.has(a)&&visible.has(b)&&(!focus.checked||!!selected&&(a===identity(selected)||b===identity(selected)))?'':'none';
       }
-      hint.textContent=!visibleCount?t('Контроллеры не найдены','No controllers found'):
-        focus.checked&&!visible.has(selected.toLowerCase())?t('Выберите контроллер на схеме, чтобы увидеть его связи.','Select a controller on the map to see its connections.'):
+      hint.textContent=options.directory?t('Выберите папку для наложения шаблона. Перетащите фон для прокрутки; Ctrl + колесо меняет масштаб.','Select a folder for a template. Drag the background to pan; Ctrl + wheel zooms.'):
+        !visibleCount?t('Контроллеры не найдены','No controllers found'):
+        focus.checked&&!visible.has(identity(selected))?t('Выберите контроллер на схеме, чтобы увидеть его связи.','Select a controller on the map to see its connections.'):
         t('Перетащите фон для прокрутки. Узлы и заголовки сайтов можно двигать мышью или клавишами со стрелками.','Drag the background to pan. Move nodes and site headings by dragging or with the arrow keys.');
       if(refit)fit();else apply();
     }
@@ -80,6 +82,7 @@
       button('+',t('Увеличить масштаб','Zoom in'),()=>zoom(1.25)),
       button('100%',t('Исходный масштаб','Actual size'),()=>zoom(1/scale)),
       button(t('Вписать целиком','Fit to view'),t('Вписать целиком','Fit to view'),fit),label,info);
+    if(options.directory){site.hidden=true;label.hidden=true;}
     wrap.append(tools,hint,viewport);viewport.append(map);
     wrap.addEventListener('topology-fit',fit);
     Object.assign(map.style,{width:width+'px',height:height+'px',aspectRatio:'auto',margin:'0',transformOrigin:'0 0'});

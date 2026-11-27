@@ -1,0 +1,15 @@
+p10
+PASS: live systemd D2 signed A/AAAA/PTR add and delete
+dcb1041d-fb32-41ca-8ea2-e053a2d80216
+active
+active
+Result=success
+ExecMainStartTimestamp=Fri 2026-11-27 07:50:35 UTC
+
+p11
+PASS: live systemd D2 signed A/AAAA/PTR add and delete
+4f882789-78e7-465e-a929-2fcce95ae3d1
+active
+active
+Result=success
+ExecMainStartTimestamp=Fri 2026-11-27 07:51:06 UTC

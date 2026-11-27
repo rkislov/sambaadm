@@ -1,0 +1,102 @@
+@tailwind components;
+/* Scoped Tailwind components: built locally and embedded in the Go binary. */
+#printing-console { @apply px-6 pb-12 pt-7; width:min(1540px,100%); }
+#printing-console .print-page-heading { @apply mb-7 flex items-center justify-between gap-5; }
+#printing-console .print-breadcrumb { @apply mb-3 flex items-center gap-2 text-xs text-slate-400; }
+#printing-console .print-breadcrumb a { @apply text-slate-500 no-underline hover:text-brand-600; }
+#printing-console .print-breadcrumb strong { @apply font-medium text-slate-600; }
+#printing-console h1 { @apply m-0 text-3xl font-semibold tracking-tight text-slate-900; }
+#printing-console .print-page-heading p { @apply mb-0 mt-2 text-sm text-slate-500; }
+#printing-console .print-edition { @apply rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-500 shadow-sm; }
+#printing-console .print-edition span { @apply mx-1 text-slate-300; }
+#printing-console .print-toolbar { @apply sticky z-20 mb-6 flex flex-wrap items-center gap-4 rounded-2xl border border-white bg-white/95 p-4 shadow-float backdrop-blur-xl; top:96px; }
+#printing-console .print-server-icon { @apply flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600; }
+#printing-console svg { @apply h-5 w-5 shrink-0; }
+#printing-console .print-server-icon svg { @apply h-6 w-6; }
+#printing-console label { @apply flex flex-col gap-1.5 text-xs font-medium text-slate-500; }
+#printing-console input:not([type=checkbox]),#printing-console select { @apply m-0 h-10 min-h-0 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-none outline-none transition focus:border-brand-600 focus:ring-2 focus:ring-brand-100; }
+#printing-console .print-server-picker { @apply min-w-0; width:300px; }
+#printing-console .print-server-picker select { @apply h-8 border-0 bg-transparent p-0 font-semibold text-slate-900; }
+#printing-console .print-connection { @apply inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500; }
+#printing-console .print-connection i { @apply h-1.5 w-1.5 rounded-full bg-slate-400; }
+#printing-console .print-connection[data-state=active] { @apply bg-emerald-50 text-emerald-700; }
+#printing-console .print-connection[data-state=active] i { @apply bg-emerald-500; }
+#printing-console .print-connection[data-state=failed] { @apply bg-rose-50 text-rose-700; }
+#printing-console .print-toolbar-right { @apply ml-auto flex items-center gap-4; }
+#printing-console #printing-updated { @apply text-xs text-slate-400; }
+#printing-console button { @apply m-0 min-h-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-50; }
+#printing-console .print-primary { @apply border-brand-600 bg-brand-600 text-white hover:border-brand-700 hover:bg-brand-700; }
+#printing-console .print-summary { @apply mb-6 grid grid-cols-4 gap-4; }
+#printing-console .print-stat { @apply relative flex items-start justify-between gap-3 rounded-2xl border border-white bg-white p-5 shadow-panel; }
+#printing-console .print-stat-label { @apply mb-2 block text-xs font-medium text-slate-500; }
+#printing-console .print-stat-value { @apply block text-xl font-semibold tracking-tight text-slate-900; }
+#printing-console .print-stat-note { @apply mt-1 block text-xs text-slate-400; }
+#printing-console .print-stat-icon { @apply flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400; }
+#printing-console .print-stat[data-tone=good] .print-stat-icon { @apply bg-brand-50 text-brand-600; }
+#printing-console .print-layout { @apply grid items-start gap-6; grid-template-columns:238px minmax(0,1fr); }
+#printing-console .print-sidebar { @apply sticky rounded-2xl border border-white bg-white p-3 shadow-panel; top:192px; }
+#printing-console .print-sidebar-title { @apply px-3 pb-3 pt-2 text-xs font-semibold tracking-widest text-slate-400; font-size:10px; }
+#printing-console #printing-tree { @apply flex flex-col gap-1; }
+#printing-console #printing-tree button { @apply flex w-full items-center justify-start gap-3 rounded-xl border-0 bg-transparent px-3 py-3 text-left text-xs font-medium text-slate-500 shadow-none hover:bg-slate-50 hover:text-slate-900; }
+#printing-console #printing-tree button span { @apply flex text-slate-400; }
+#printing-console #printing-tree button[aria-current=true] { @apply bg-brand-50 font-semibold text-brand-700; box-shadow:inset 3px 0 0 #0f766e; }
+#printing-console #printing-tree button[aria-current=true] span { @apply text-brand-600; }
+#printing-console .print-sidebar-footer { @apply mx-3 mt-5 border-t border-slate-100 pb-2 pt-4 text-xs text-slate-500; font-size:10px; }
+#printing-console .print-sidebar-footer small { @apply mt-2 block leading-relaxed text-slate-400; font-size:10px; }
+#printing-console .print-secure-dot { @apply mr-1 inline-block h-1.5 w-1.5 rounded-full bg-brand-600; }
+#printing-console .print-content-card { @apply min-w-0 overflow-hidden rounded-2xl border border-white bg-white shadow-panel; }
+#printing-console .print-panel-heading { @apply flex items-center justify-between gap-4 border-b border-slate-100 px-6 py-5; }
+#printing-console .print-panel-heading h2 { @apply m-0 text-base font-semibold text-slate-900; }
+#printing-console .print-panel-heading p { @apply mb-0 mt-1 text-xs text-slate-400; }
+#printing-console #printing-view-icon { @apply flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-slate-400; }
+#printing-console #printing-panel { @apply min-w-0 px-6 pb-5 pt-4; min-height:360px; }
+#printing-console .print-search { @apply mb-5 flex max-w-none flex-wrap items-end gap-3 rounded-xl bg-slate-50/80 p-4; }
+#printing-console .print-search label { @apply min-w-0 flex-1; min-width:130px; }
+#printing-console .print-search button { @apply h-10 shrink-0; }
+#printing-console .print-actions { @apply my-4 flex flex-wrap items-center gap-2; }
+#printing-console .print-table { @apply -mx-6 overflow-x-auto; }
+#printing-console table { @apply m-0 w-full border-collapse border-0 shadow-none; table-layout:auto; }
+#printing-console thead { @apply bg-slate-50/80; }
+#printing-console th { @apply border-y border-slate-100 px-4 py-3 text-left text-xs font-medium text-slate-400; }
+#printing-console th:first-child,#printing-console td:first-child { @apply pl-6; }
+#printing-console td { @apply border-0 border-b border-slate-100 px-4 py-4 align-middle text-xs text-slate-600; max-width:320px; overflow-wrap:anywhere; }
+#printing-console tbody tr { @apply transition hover:bg-brand-50/30; }
+#printing-console td:first-child { @apply font-medium text-slate-800; }
+#printing-console th button { @apply justify-start whitespace-nowrap rounded-none border-0 bg-transparent p-0 text-xs font-medium text-slate-400 shadow-none hover:bg-transparent hover:text-brand-600; }
+#printing-console td button { @apply whitespace-nowrap px-2.5 py-1.5 text-xs; }
+#printing-console .print-pager { @apply mb-0 mt-5 flex items-center justify-end gap-3; }
+#printing-console .print-pager span { @apply mr-auto text-xs text-slate-400; }
+#printing-console .print-badge { @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600; font-size:11px; }
+#printing-console .print-badge[data-tone=good] { @apply bg-emerald-50 text-emerald-700; }
+#printing-console .print-badge[data-tone=warning] { @apply bg-amber-50 text-amber-700; }
+#printing-console .print-badge[data-tone=danger] { @apply bg-rose-50 text-rose-700; }
+#printing-console .print-note,#printing-console .print-notice { @apply rounded-xl bg-slate-50 p-4 text-xs leading-relaxed text-slate-500; }
+#printing-console #printing-message { @apply mb-4 whitespace-pre-wrap rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700; }
+#printing-console #printing-message:empty { @apply hidden; }
+#printing-console #printing-message.error { @apply bg-rose-50 text-rose-700; }
+#printing-console #printing-dialog { @apply rounded-3xl border border-slate-200 bg-white p-0 shadow-2xl; width:min(880px,94vw); max-height:90vh; overflow:auto; }
+#printing-dialog::backdrop { @apply bg-slate-900/30 backdrop-blur-sm; }
+#printing-console .print-dialog-bar { @apply sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-7 py-4 backdrop-blur-xl; }
+#printing-console .print-dialog-bar span { @apply text-xs font-medium tracking-widest text-slate-400; font-size:10px; }
+#printing-console .print-dialog-bar button { @apply h-8 w-8 rounded-full border-0 bg-slate-50 p-0 shadow-none; }
+#printing-console #printing-dialog-content { @apply p-7; }
+#printing-console #printing-dialog-content h2 { @apply mb-6 mt-0 text-xl; }
+#printing-console form:not(.print-search) { @apply mb-5 grid max-w-none gap-4 rounded-xl border border-slate-100 p-5; grid-template-columns:repeat(2,minmax(0,1fr)); }
+#printing-console form:not(.print-search) > button { @apply col-span-full justify-self-start; }
+#printing-console label:has(input[type=checkbox]) { @apply flex-row items-center gap-2 text-sm text-slate-600; }
+#printing-console pre { @apply overflow-auto rounded-xl border border-slate-100 bg-slate-50 p-4 text-xs text-slate-600; max-height:45vh; white-space:pre-wrap; overflow-wrap:anywhere; }
+#printing-console .print-driver-card { @apply mb-3 rounded-xl border border-slate-200 p-4; }
+#printing-console a { @apply text-brand-600; }
+#printing-console .print-state-card { @apply mb-5 flex items-center gap-4 rounded-xl border border-brand-100 bg-brand-50/50 p-5; }
+#printing-console .print-state-card h2 { @apply m-0 text-sm text-brand-700; }
+#printing-console .print-state-card p { @apply mb-0 mt-1 text-xs text-slate-500; }
+#printing-console .print-state-icon { @apply flex h-11 w-11 items-center justify-center rounded-xl bg-white text-brand-600 shadow-sm; }
+@media(max-width:1100px){#printing-console .print-layout{grid-template-columns:210px minmax(0,1fr)}#printing-console .print-summary{@apply grid-cols-2}#printing-console #printing-updated{@apply hidden}}
+@media(max-width:760px){#printing-console{@apply px-4}#printing-console .print-page-heading{@apply mb-5}#printing-console h1{@apply text-2xl}#printing-console .print-edition{@apply hidden}#printing-console .print-toolbar{@apply static gap-3 p-3}#printing-console .print-server-picker{width:calc(100% - 64px)}#printing-console .print-toolbar-right{@apply ml-auto}#printing-console .print-layout{@apply grid-cols-1 gap-4}#printing-console .print-sidebar{@apply static p-2}#printing-console .print-sidebar-title,#printing-console .print-sidebar-footer{@apply hidden}#printing-console #printing-tree{@apply flex-row flex-wrap}#printing-console #printing-tree button{@apply w-auto px-3 py-2}#printing-console .print-stat{@apply p-4}#printing-console .print-stat-value{@apply text-base}#printing-console .print-summary{@apply gap-3}#printing-console form:not(.print-search){@apply grid-cols-1}#printing-console #printing-panel{@apply px-4}#printing-console .print-table{@apply -mx-4}}
+@media(prefers-reduced-motion:reduce){#printing-console *{transition:none!important;scroll-behavior:auto!important}}
+#printing-console #printing-panel>button,#printing-console #printing-dialog-content>button { @apply mb-2 mr-2; }
+#printing-console .print-table[data-table=journal] table { min-width:1100px; }
+#printing-console .print-table[data-table=journal] td:first-child { @apply whitespace-nowrap; }
+#printing-console .print-search label:has(input[type=date]) { @apply flex-none; width:150px; }
+#printing-console [hidden] { display:none!important; }
+#printing-console .print-server-picker { @apply flex flex-col gap-1.5; }

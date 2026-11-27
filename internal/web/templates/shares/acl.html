@@ -3,6 +3,8 @@
 <html lang="{{.Lang}}">
 <head>
   {{template "head" .}}
+  <script src="/static/js/share-tree.js?v=20261126" defer></script>
+  <link rel="stylesheet" href="/static/css/share-tree.css?v=20261126">
 </head>
 <body>
   {{template "nav" .}}
@@ -19,11 +21,20 @@
     </p>
     {{end}}
 
+    <p><a class="btn" href="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/permission-map?path={{urlquery .RelativePath}}{{if $.HostNode}}&amp;node={{urlquery $.HostNode}}{{end}}">Карта прав и шаблоны для дерева</a></p>
+    <div class="share-permissions-layout">
+    <aside class="share-directory-panel" aria-label="Каталоги общей папки">
+      <h2>Каталоги</h2>
+      <div id="share-directory-tree" data-share="{{with .Share}}{{.Name}}{{end}}" data-selected="{{.RelativePath}}" data-is-dir="{{with .ACL}}{{.IsDir}}{{end}}"></div>
+    </aside>
+    <div class="share-permissions-editor">
+    <h2>Выбранный каталог: <span class="mono">{{with .RelativePath}}{{.}}{{else}}/ (корень ресурса){{end}}</span></h2>
+    <p class="field-hint">Здесь отображаются POSIX ACL. Группы разрешаются файловым сервером через NSS/winbind. Параметры доступа Samba ниже действуют на весь ресурс. ACL по умолчанию задаёт права новых объектов; это не расчёт эффективного SMB-доступа.</p>
     {{if canAdmin $.Role}}
-    <section class="perm-section">
-      <h2>{{t $.Lang "shares.section.samba"}}</h2>
+    <details class="perm-section">
+      <summary>{{t $.Lang "shares.section.samba"}} — весь ресурс</summary>
       <p class="field-hint">{{t $.Lang "shares.access.hint"}}</p>
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl?path={{urlquery .RelativePath}}{{if $.HostNode}}&amp;node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="samba">
         {{with .Share}}
@@ -53,36 +64,39 @@
         {{end}}
         <button type="submit">{{t $.Lang "shares.access.save"}}</button>
       </form>
-    </section>
+    </details>
     {{end}}
 
     {{with .ACL}}
     <section class="perm-section">
       <h2>{{t $.Lang "shares.section.fs"}}</h2>
       <dl class="kv">
+        <dt>Путь</dt><dd class="mono">{{.Path}}</dd>
         <dt>{{t $.Lang "shares.acl.exists"}}</dt><dd>{{.Exists}}</dd>
         <dt>{{t $.Lang "shares.field.mode"}}</dt><dd class="mono">{{.Mode}}</dd>
         <dt>{{t $.Lang "shares.field.owner"}}</dt><dd>{{.Owner}}:{{.Group}}</dd>
       </dl>
       {{if .Entries}}
-      <table>
+      <div class="share-acl-table"><table>
         <thead><tr>
           <th>{{t $.Lang "shares.acl.col.scope"}}</th>
           <th>{{t $.Lang "shares.acl.col.kind"}}</th>
           <th>{{t $.Lang "shares.acl.col.who"}}</th>
           <th>{{t $.Lang "shares.acl.col.perms"}}</th>
+          {{if canAdmin $.Role}}<th>Действия</th>{{end}}
         </tr></thead>
         <tbody>
         {{range .Entries}}
           <tr>
-            <td>{{if .Default}}{{t $.Lang "shares.acl.default"}}{{else}}{{t $.Lang "shares.acl.access"}}{{end}}</td>
-            <td>{{.Kind}}</td>
-            <td class="mono">{{.Qualifier}}</td>
-            <td class="mono">{{.Perms}}</td>
+            <td data-label="Область">{{if .Default}}{{t $.Lang "shares.acl.default"}}{{else}}{{t $.Lang "shares.acl.access"}}{{end}}</td>
+            <td data-label="Тип">{{.Kind}}</td>
+            <td data-label="Пользователь / группа" class="mono">{{if .Identity}}{{.Identity}}{{else if .Qualifier}}{{.Qualifier}}{{else if eq .Kind "group"}}{{$.Content.ACL.Group}} (группа-владелец){{else if eq .Kind "user"}}{{$.Content.ACL.Owner}} (владелец){{else}}—{{end}}</td>
+            <td data-label="Права" class="mono">{{.Perms}}{{if .Effective}} (с учётом маски: {{.Effective}}){{end}}</td>
+            {{if canAdmin $.Role}}<td data-label="Действия"><button type="button" class="share-acl-edit" data-kind="{{.Kind}}" data-name="{{.Qualifier}}" data-perms="{{.Perms}}" data-default="{{.Default}}">Изменить</button> {{if .Qualifier}}<button type="button" class="share-acl-remove" data-kind="{{.Kind}}" data-name="{{.Qualifier}}" data-default="{{.Default}}">Удалить запись</button>{{end}}</td>{{end}}
           </tr>
         {{end}}
         </tbody>
-      </table>
+      </table></div>
       {{end}}
       {{if .ACLText}}<h3>{{t $.Lang "shares.acl.raw"}}</h3><pre class="panel">{{.ACLText}}</pre>{{end}}
       {{if .DefaultACL}}<h3>{{t $.Lang "shares.field.default_acl"}}</h3><pre class="panel">{{.DefaultACL}}</pre>{{end}}
@@ -92,19 +106,27 @@
     {{if canAdmin $.Role}}
     <section class="perm-section">
       <h2>{{t $.Lang "shares.acl.edit"}}</h2>
-      <p class="field-hint">{{t $.Lang "shares.acl.edit.hint"}}</p>
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
+      <p class="field-hint">Изменения применяются только к выбранному каталогу. Для новых объектов используйте ACL по умолчанию. Изменение записи пересчитывает POSIX ACL-маску; проверьте права остальных записей после сохранения.</p>
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl?path={{urlquery .RelativePath}}{{if $.HostNode}}&amp;node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="fs">
-        <label>{{t $.Lang "shares.field.owner"}} <input name="owner" value="{{with .ACL}}{{.Owner}}{{if .Group}}:{{.Group}}{{end}}{{end}}"></label>
-        <label>{{t $.Lang "shares.field.mode"}} <input name="mode" value="{{with .ACL}}{{.Mode}}{{end}}"></label>
+        <label>Область записи <select name="acl_scope"><option value="access">Доступ к выбранному каталогу</option><option value="default">ACL по умолчанию для новых объектов</option></select></label>
+        <label>{{t $.Lang "shares.field.owner"}} <input name="owner" placeholder="Оставьте пустым, чтобы сохранить владельца"></label>
+        <label>{{t $.Lang "shares.field.mode"}} <input name="mode" placeholder="Оставьте пустым, чтобы сохранить режим"></label>
 
         <fieldset>
           <legend>{{t $.Lang "shares.acl.builder"}}</legend>
           <p class="field-hint">{{t $.Lang "shares.acl.builder.hint"}}</p>
+          <label>Доменная группа безопасности
+            <input type="search" id="share-group-search" placeholder="Поиск групп" aria-label="Поиск доменных групп">
+            <select name="domain_group" id="share-domain-group" aria-label="Доменная группа безопасности"><option value="">Выберите группу или используйте ручной ввод ниже</option></select>
+            <span id="share-group-status" role="status"></span>
+          </label>
+          <label class="check"><input type="checkbox" name="group_default" value="1"> Назначить этой группе те же права для новых файлов и каталогов</label>
           <div class="acl-builder">
             <label>{{t $.Lang "shares.acl.col.kind"}}
               <select name="acl_kind">
+                <option value="">Не менять запись вручную</option>
                 <option value="group">group</option>
                 <option value="user">user</option>
                 <option value="other">other</option>
@@ -115,9 +137,10 @@
             <div class="check-row">
               <label class="check"><input type="checkbox" name="acl_r" value="1" checked> r</label>
               <label class="check"><input type="checkbox" name="acl_w" value="1"> w</label>
-              <label class="check"><input type="checkbox" name="acl_x" value="1" checked> x</label>
+              <label class="check"><input type="checkbox" name="acl_x" value="1" checked> {{with .ACL}}{{if .IsDir}}x — проход в каталог{{else}}x — выполнение{{end}}{{else}}x{{end}}</label>
             </div>
           </div>
+          {{with .ACL}}{{if .IsDir}}<p class="field-hint">Для каталогов чтение означает r-x, запись — rwx. Редактор сохраняет x; ACL-маска не должна убирать проход.</p>{{else}}<p class="field-hint">Обычным файлам для чтения и записи выполнение x не требуется.</p>{{end}}{{end}}
           <label>{{t $.Lang "shares.field.acl"}} <input name="acl" placeholder="g:domain users:rwx,u:alice:r-x,o::---">
             <span class="field-hint">{{t $.Lang "shares.field.acl.hint"}}</span>
           </label>
@@ -129,8 +152,6 @@
 
         <div class="check-row">
           <label class="check"><input type="checkbox" name="inherit_default" value="1"> {{t $.Lang "shares.acl.copy_default"}}</label>
-          <label class="check"><input type="checkbox" name="recursive" value="1"> {{t $.Lang "shares.acl.recursive"}}</label>
-          <label class="check"><input type="checkbox" name="default_recursive" value="1"> {{t $.Lang "shares.acl.default_recursive"}}</label>
           <label class="check"><input type="checkbox" name="clear_acl" value="1"> {{t $.Lang "shares.acl.clear"}}</label>
           <label class="check"><input type="checkbox" name="clear_default" value="1"> {{t $.Lang "shares.acl.clear_default"}}</label>
         </div>
@@ -138,8 +159,8 @@
       </form>
     </section>
 
-    <section class="perm-section">
-      <h2>{{t $.Lang "shares.xattr.title"}}</h2>
+    <details class="perm-section">
+      <summary>{{t $.Lang "shares.xattr.title"}}</summary>
       <p class="field-hint">{{t $.Lang "shares.xattr.hint"}}</p>
       {{with .ACL}}
       {{if .XAttrs}}
@@ -155,7 +176,7 @@
       <p class="muted">{{t $.Lang "common.no_data"}}</p>
       {{end}}
       {{end}}
-      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
+      <form method="post" action="/shares/{{with .Share}}{{urlpath .Name}}{{end}}/acl?path={{urlquery .RelativePath}}{{if $.HostNode}}&amp;node={{urlquery $.HostNode}}{{end}}" class="form-card form-wide">
         {{if $.CSRF}}<input type="hidden" name="csrf_token" value="{{$.CSRF}}">{{end}}
         <input type="hidden" name="action" value="xattr">
         <label>{{t $.Lang "shares.xattr.name"}} <input name="xattr_name" placeholder="user.comment"></label>
@@ -163,8 +184,10 @@
         <label>{{t $.Lang "shares.xattr.remove"}} <input name="xattr_remove" placeholder="user.comment"></label>
         <button type="submit">{{t $.Lang "shares.xattr.save"}}</button>
       </form>
-    </section>
+    </details>
     {{end}}
+    </div>
+    </div>
     {{end}}
     <p><a href="/shares{{if $.HostNode}}?node={{urlquery $.HostNode}}{{end}}">← {{t .Lang "nav.shares"}}</a></p>
   </main>
