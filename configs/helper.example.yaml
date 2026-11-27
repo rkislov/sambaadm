@@ -50,3 +50,8 @@ gpo:
 
 audit:
   file: /var/log/sambaadm-helper/audit.log
+  # Optional CEF over local syslog, udp, tcp or tls.
+  syslog:
+    enabled: false
+    network: unixgram
+    address: /dev/log

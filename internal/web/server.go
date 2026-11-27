@@ -170,10 +170,11 @@ func (s *Server) buildRouter() chi.Router {
 	})
 	r.Get("/login", s.handleLoginGet)
 	r.Post("/login", s.handleLoginPost)
-	r.With(s.requireSession, s.csrfProtect).Post("/logout", s.handleLogout)
+	r.With(s.requireSession, s.auditRequest, s.csrfProtect).Post("/logout", s.handleLogout)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireSession)
+		r.Use(s.auditRequest)
 		r.Use(s.csrfProtect)
 		r.Use(s.shareNodeContext)
 		r.Get("/", s.handleDashboard)
@@ -226,6 +227,7 @@ func (s *Server) buildRouter() chi.Router {
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.requireSession)
+		r.Use(s.auditRequest)
 		r.Use(s.csrfProtect)
 		r.Use(s.shareNodeContext)
 		r.Get("/services/overview", s.handleServiceOverview)

@@ -39,12 +39,14 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
+		s.auditSignIn(r, "", "login.form", "", "failure")
 		loginPage("login.error.form", "")
 		return
 	}
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if username == "" || password == "" {
+		s.auditSignIn(r, username, "login.empty", "", "failure")
 		loginPage("login.error.empty", "")
 		return
 	}
@@ -57,11 +59,12 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	loginLDAP := ldapproto.NewClient(s.cfg.LDAP)
 	defer loginLDAP.Close()
 	if err := loginLDAP.Connect(loginContext); err != nil {
+		s.auditSignIn(r, username, "login.ldap", "", "failure")
 		loginPage("login.error.ldap", err.Error())
 		return
 	}
 	if err := loginLDAP.BindSimple(loginContext, username, password); err != nil {
-		s.audit.Failure(username, "login", "", r.RemoteAddr, err)
+		s.auditSignIn(r, username, "login", "", "failure")
 		loginPage("login.error.auth", "")
 		return
 	}
@@ -70,7 +73,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil || dn == "" {
 		slog.Warn("login identity lookup failed", "user", username, "err", err)
-		s.audit.Failure(username, "login.identity", "", r.RemoteAddr, err)
+		s.auditSignIn(r, username, "login.identity", "", "failure")
 		loginPage("login.error.identity", "")
 		return
 	}
@@ -78,13 +81,14 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	// A failed service bind must never leave a browser identity on that connection.
 	if err := s.ldap.Connect(loginContext); err != nil {
 		slog.Warn("LDAP service connection failed", "err", err)
-		s.audit.Failure(username, "login.service", "", r.RemoteAddr, err)
+		s.auditSignIn(r, username, "login.service", "", "failure")
 		loginPage("login.error.service", "")
 		return
 	}
 
 	sess, err := s.sessions.Create(username, dn, role)
 	if err != nil {
+		s.auditSignIn(r, username, "login.session", role, "failure")
 		http.Error(w, "session error", http.StatusInternalServerError)
 		return
 	}
@@ -94,6 +98,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	if r.FormValue("helper_auth") == "session" {
 		if err := s.sessions.RememberHelperPassword(sess.ID, password); err != nil {
 			s.sessions.Delete(sess.ID)
+			s.auditSignIn(r, username, "login.session", role, "failure")
 			http.Error(w, "session credential storage failed", http.StatusInternalServerError)
 			return
 		}
@@ -102,12 +107,12 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 	r.Form.Del("password")
 	secure := s.cfg.Server.TLS.Cert != ""
 	s.sessions.SetCookie(w, sess, secure)
-	s.audit.Success(username, "login", dn, r.RemoteAddr)
+	s.auditSignIn(r, username, "login", role, "success")
 	if skipVerify {
-		s.audit.Success(username, "login.ldap-insecure", dn, r.RemoteAddr)
+		s.auditSignIn(r, username, "login.ldap-insecure", role, "success")
 	}
 	if allowLegacy {
-		s.audit.Success(username, "login.legacy-cn", dn, r.RemoteAddr)
+		s.auditSignIn(r, username, "login.legacy-cn", role, "success")
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -115,7 +120,7 @@ func (s *Server) handleLoginPost(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if sess, ok := s.sessions.FromRequest(r); ok {
 		s.sessions.Delete(sess.ID)
-		s.audit.Success(sess.Username, "logout", "", r.RemoteAddr)
+		s.auditSignIn(r, sess.Username, "logout", sess.Role, "success")
 	}
 	s.sessions.ClearCookie(w)
 	target := "/login"
@@ -290,6 +295,10 @@ func (s *Server) handleUserCreatePost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	if !auth.CanAdmin(sessionFrom(r).Role) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	pd := s.page(r, "audit.title", nil)
 	events, err := s.audit.Recent(200)
 	if err != nil {

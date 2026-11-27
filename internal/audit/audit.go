@@ -2,6 +2,7 @@ package audit
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,40 +13,60 @@ import (
 
 // Event is a single audited action.
 type Event struct {
-	Time    time.Time `json:"time"`
-	Actor   string    `json:"actor"`
-	Action  string    `json:"action"`
-	Target  string    `json:"target,omitempty"`
-	IP      string    `json:"ip,omitempty"`
-	Result  string    `json:"result"` // success | failure
-	Error   string    `json:"error,omitempty"`
-	Details any       `json:"details,omitempty"`
+	Time       time.Time `json:"time"`
+	Actor      string    `json:"actor"`
+	Action     string    `json:"action"`
+	Target     string    `json:"target,omitempty"`
+	IP         string    `json:"ip,omitempty"`
+	Result     string    `json:"result"` // success | failure
+	Error      string    `json:"error,omitempty"`
+	Details    any       `json:"details,omitempty"`
+	Role       string    `json:"role,omitempty"`
+	Method     string    `json:"method,omitempty"`
+	HTTPStatus int       `json:"http_status,omitempty"`
+	DurationMS int64     `json:"duration_ms,omitempty"`
 }
 
 // Logger writes audit events as JSON lines.
 type Logger struct {
-	mu     sync.Mutex
-	w      io.Writer
-	closer io.Closer
-	path   string
-	slog   *slog.Logger
+	mu           sync.Mutex
+	w            io.Writer
+	closer       io.Closer
+	path         string
+	slog         *slog.Logger
+	syslog       *cefSyslog
+	host         string
+	closed       bool
+	lastOverflow time.Time
 	// mem keeps recent events when writing to stderr (no file).
 	mem []Event
 }
 
 // New creates an audit logger. If path is empty, events go to stderr via slog.
 func New(path string) (*Logger, error) {
+	return NewWithSyslog(path, SyslogConfig{})
+}
+
+// NewWithSyslog keeps the local journal and optionally forwards CEF events.
+func NewWithSyslog(path string, config SyslogConfig) (*Logger, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	l := &Logger{slog: slog.Default(), path: path}
 	if path == "" {
 		l.w = os.Stderr
-		return l, nil
+	} else {
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, err
+		}
+		l.w = f
+		l.closer = f
 	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
-	if err != nil {
-		return nil, err
+	if config.Enabled {
+		l.host = cefHost()
+		l.syslog = newCEFSyslog(config, l.slog)
 	}
-	l.w = f
-	l.closer = f
 	return l, nil
 }
 
@@ -54,6 +75,16 @@ func (l *Logger) Path() string { return l.path }
 
 // Close closes the underlying file if any.
 func (l *Logger) Close() error {
+	l.mu.Lock()
+	if l.closed {
+		l.mu.Unlock()
+		return nil
+	}
+	l.closed = true
+	l.mu.Unlock()
+	if l.syslog != nil {
+		l.syslog.close()
+	}
 	if l.closer != nil {
 		return l.closer.Close()
 	}
@@ -68,6 +99,10 @@ func (l *Logger) Log(e Event) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	if l.closed {
+		return
+	}
+
 	if l.path == "" {
 		l.mem = append(l.mem, e)
 		if len(l.mem) > 500 {
@@ -78,6 +113,16 @@ func (l *Logger) Log(e Event) {
 	enc := json.NewEncoder(l.w)
 	if err := enc.Encode(e); err != nil {
 		l.slog.Error("audit write failed", "err", err)
+	}
+	if l.syslog != nil {
+		select {
+		case l.syslog.queue <- cefMessage(e, l.syslog.config.Network, l.host):
+		default:
+			if time.Since(l.lastOverflow) >= time.Minute {
+				l.slog.Warn("audit syslog queue full")
+				l.lastOverflow = time.Now()
+			}
+		}
 	}
 }
 
@@ -123,8 +168,29 @@ func (l *Logger) Recent(limit int) ([]Event, error) {
 	}
 	defer f.Close()
 
+	info, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	end := info.Size()
 	var all []Event
-	sc := bufio.NewScanner(f)
+	start := end
+	var chunk [64 * 1024]byte
+	lines := 0
+	for start > 0 {
+		offset := max(0, start-int64(len(chunk)))
+		b := chunk[:start-offset]
+		if _, err := f.ReadAt(b, offset); err != nil {
+			return nil, err
+		}
+		lines += bytes.Count(b, []byte{'\n'})
+		start = offset
+		if offset > 0 && lines > limit {
+			start += int64(bytes.IndexByte(b, '\n')) + 1
+			break
+		}
+	}
+	sc := bufio.NewScanner(io.NewSectionReader(f, start, end-start))
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
 		line := sc.Bytes()

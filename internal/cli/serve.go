@@ -104,7 +104,7 @@ var serveCmd = &cobra.Command{
 		if (cfg.Server.TLS.Cert == "") != (cfg.Server.TLS.Key == "") {
 			return fmt.Errorf("HTTP TLS requires both --tls-cert and --tls-key")
 		}
-		auditLog, err := audit.New(cfg.Audit.File)
+		auditLog, err := audit.NewWithSyslog(cfg.Audit.File, cfg.Audit.Syslog)
 		if err != nil {
 			return fmt.Errorf("audit logger: %w", err)
 		}

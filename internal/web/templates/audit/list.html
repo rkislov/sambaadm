@@ -16,11 +16,13 @@
         <table>
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Actor</th>
-              <th>Action</th>
-              <th>Target</th>
-              <th>Result</th>
+              <th>{{t $.Lang "audit.time"}}</th>
+              <th>{{t $.Lang "audit.actor"}}</th>
+              <th>{{t $.Lang "audit.role"}}</th>
+              <th>{{t $.Lang "audit.action"}}</th>
+              <th>{{t $.Lang "audit.target"}}</th>
+              <th>{{t $.Lang "audit.result"}}</th>
+              <th>HTTP</th>
               <th>IP</th>
             </tr>
           </thead>
@@ -29,16 +31,18 @@
             <tr>
               <td class="mono">{{.Time.Format "2006-01-02 15:04:05"}}</td>
               <td>{{.Actor}}</td>
-              <td>{{.Action}}</td>
+              <td>{{.Role}}</td>
+              <td>{{with .Method}}{{.}} {{end}}{{.Action}}</td>
               <td class="mono">{{.Target}}</td>
               <td>{{if eq .Result "failure"}}<span class="badge badge-failed">{{.Result}}</span>{{else}}<span class="badge badge-ok">{{.Result}}</span>{{end}}</td>
+              <td class="mono">{{if .HTTPStatus}}{{.HTTPStatus}}{{end}}</td>
               <td class="mono">{{.IP}}</td>
             </tr>
             {{if .Error}}
-            <tr><td colspan="6" class="muted">{{.Error}}</td></tr>
+            <tr><td colspan="8" class="muted">{{.Error}}</td></tr>
             {{end}}
           {{else}}
-            <tr><td colspan="6" class="muted">{{t $.Lang "audit.empty"}}</td></tr>
+            <tr><td colspan="8" class="muted">{{t $.Lang "audit.empty"}}</td></tr>
           {{end}}
           </tbody>
         </table>

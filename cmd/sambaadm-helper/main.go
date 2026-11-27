@@ -89,7 +89,7 @@ func run() error {
 		if os.Geteuid() != 0 {
 			return fmt.Errorf("local domain recovery requires root")
 		}
-		logger, err := audit.New(cfg.Audit.File)
+		logger, err := audit.NewWithSyslog(cfg.Audit.File, cfg.Audit.Syslog)
 		if err != nil {
 			return err
 		}
@@ -171,7 +171,7 @@ func run() error {
 	if e = v.UseStateDir(cfg.Helper.StateDir); e != nil {
 		return e
 	}
-	logger, e := audit.New(cfg.Audit.File)
+	logger, e := audit.NewWithSyslog(cfg.Audit.File, cfg.Audit.Syslog)
 	if e != nil {
 		return e
 	}

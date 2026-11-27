@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sambaadm/internal/agent"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
+
+	"sambaadm/internal/agent"
+	"sambaadm/internal/audit"
 )
 
 // Config holds all runtime settings. Priority: flags > ENV > file > defaults.
@@ -127,7 +129,8 @@ type RolesConfig struct {
 }
 
 type AuditConfig struct {
-	File string `mapstructure:"file"`
+	File   string             `mapstructure:"file"`
+	Syslog audit.SyslogConfig `mapstructure:"syslog"`
 }
 
 type LoggingConfig struct {
@@ -169,6 +172,9 @@ func Load(cfgFile string) (*Config, error) {
 	}
 	if cfg.GPO.ScriptBackupKeep < 1 || cfg.GPO.ScriptBackupKeep > 100 || cfg.GPO.ScriptBackupMaxMiB < 1 || cfg.GPO.ScriptBackupMaxMiB > 1024 {
 		return nil, fmt.Errorf("gpo.script_backup_keep must be 1..100 and script_backup_max_mib 1..1024")
+	}
+	if err := cfg.Audit.Syslog.Validate(); err != nil {
+		return nil, err
 	}
 	cfg.Source = v.ConfigFileUsed()
 	if !filepath.IsAbs(cfg.Server.SettingsDir) {
@@ -235,6 +241,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ldap.bind.type", "simple")
 	v.SetDefault("ldap.bind.password_env", "SAMBAADM_PASSWORD")
 	v.SetDefault("auth.session_ttl", "8h")
+	v.SetDefault("audit.syslog.enabled", false)
+	v.SetDefault("audit.syslog.network", "unixgram")
+	v.SetDefault("audit.syslog.address", "/dev/log")
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("gpo.admx_path", "")
 	v.SetDefault("gpo.sysvol_path", "/var/lib/samba/sysvol")

@@ -26,7 +26,7 @@ func (s *Server) finishKerberosLogin(w http.ResponseWriter, r *http.Request) {
 	ctx := ldapproto.WithInsecureTLS(ldapproto.WithLegacyCN(r.Context(), false), false)
 	dn, role, guid, err := s.resolveLoginIdentity(ctx, s.ldap, username)
 	if err != nil {
-		s.audit.Failure(username, "login.kerberos.identity", "", r.RemoteAddr, err)
+		s.auditSignIn(r, username, "login.kerberos.identity", "", "failure")
 		http.Error(w, "Не удалось получить учётную запись из домена", 503)
 		return
 	}
@@ -46,12 +46,13 @@ func (s *Server) finishKerberosLogin(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		s.audit.Failure(username, "login.kerberos.account", dn, r.RemoteAddr, err)
+		s.auditSignIn(r, username, "login.kerberos.account", role, "failure")
 		http.Error(w, "Доменная учётная запись недоступна", 403)
 		return
 	}
 	sess, err := s.sessions.Create(username, dn, role)
 	if err != nil {
+		s.auditSignIn(r, username, "login.kerberos.session", role, "failure")
 		http.Error(w, "Не удалось создать сессию", 500)
 		return
 	}
@@ -61,6 +62,6 @@ func (s *Server) finishKerberosLogin(w http.ResponseWriter, r *http.Request) {
 		sess.ExpiresAt = creds.ValidUntil()
 	}
 	s.sessions.SetCookie(w, sess, true)
-	s.audit.Success(username, "login.kerberos", dn, r.RemoteAddr)
+	s.auditSignIn(r, username, "login.kerberos", role, "success")
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

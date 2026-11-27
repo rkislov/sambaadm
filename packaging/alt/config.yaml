@@ -57,6 +57,11 @@ samba:
 
 audit:
   file: /var/log/sambaadm/audit.log
+  # Optional CEF over local syslog, udp, tcp or tls.
+  syslog:
+    enabled: false
+    network: unixgram
+    address: /dev/log
 
 logging:
   level: info

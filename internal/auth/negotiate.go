@@ -36,6 +36,13 @@ type peerContextKey struct{}
 func WithPeerAddress(ctx context.Context, addr string) context.Context {
 	return context.WithValue(ctx, peerContextKey{}, addr)
 }
+
+// PeerAddress returns the transport peer before forwarded headers are applied.
+func PeerAddress(ctx context.Context) string {
+	addr, _ := ctx.Value(peerContextKey{}).(string)
+	return addr
+}
+
 func channelBinding(certDER []byte) []byte {
 	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {

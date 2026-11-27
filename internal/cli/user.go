@@ -191,7 +191,7 @@ func init() {
 }
 
 func openServices() (*service.Services, func(), error) {
-	auditLog, err := audit.New(rootCfg.Audit.File)
+	auditLog, err := audit.NewWithSyslog(rootCfg.Audit.File, rootCfg.Audit.Syslog)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -218,7 +218,7 @@ func openServices() (*service.Services, func(), error) {
 
 // openLocalServices builds services without LDAP bind (for smb.conf / ACL ops).
 func openLocalServices() (*service.Services, func(), error) {
-	auditLog, err := audit.New(rootCfg.Audit.File)
+	auditLog, err := audit.NewWithSyslog(rootCfg.Audit.File, rootCfg.Audit.Syslog)
 	if err != nil {
 		return nil, nil, err
 	}
